@@ -1,0 +1,18 @@
+name: "urban_medium"
+domain: "urban"
+difficulty: "medium"
+map_size: 80
+description: "Denser buildings, some no-fly zones, moderate traffic."
+no_fly_zones:
+  - x_min: 10
+    y_min: 10
+    x_max: 20
+    y_max: 20
+  - x_min: 40
+    y_min: 5
+    x_max: 50
+    y_max: 15
+wind: "medium"
+traffic: "medium"
+
+

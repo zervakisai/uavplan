@@ -1,0 +1,32 @@
+name: "urban_easy_v1"
+domain: "urban"
+difficulty: "easy"
+
+# Map / physics
+map_size: 25
+max_altitude: 3
+
+# City generation (levels-only)
+building_density: 0.25
+building_level: 2
+
+# Start/goal policy
+start_altitude: 1        # human drop-off level
+safe_altitude: 3         # goal_z = safe_altitude
+min_start_goal_l1: 12
+
+# Difficulty knobs (optional)
+extra_density_medium: 0.10
+extra_density_hard: 0.20
+no_fly_radius: 3
+
+# “Downtown” selection (optional, if you use it)
+downtown_window: 7
+spawn_clearance: 1
+
+# Disturbances (optional)
+wind: "none"
+traffic: "none"
+
+# Debug / checks (optional)
+debug: false
