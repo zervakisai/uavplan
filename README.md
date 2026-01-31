@@ -6,7 +6,8 @@ Welcome! This is your complete guide to the UAVBench project. Below you'll find 
 
 ## 🎯 Start Here
 
-- **[PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)** ← **START HERE** - Complete overview of all files and what they do
+- **[GETTING_STARTED.md](GETTING_STARTED.md)** ← **START HERE FIRST** - Find the right doc for your goal
+- **[PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)** - Complete overview of all files and what they do
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture diagrams and data flow
 
 ---
