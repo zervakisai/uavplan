@@ -41,6 +41,8 @@ def load_scenario(path: Path) -> ScenarioConfig:
         no_fly_radius=int(data.get("no_fly_radius", 3)),
         downtown_window=int(data.get("downtown_window", 7)),
         spawn_clearance=int(data.get("spawn_clearance", 1)),
+        map_source=str(data.get("map_source", "synthetic")),
+        osm_tile_id=data.get("osm_tile_id"),
         debug=bool(data.get("debug", False)),
         extra=dict(data.get("extra", {})) if "extra" in data else None,
     )

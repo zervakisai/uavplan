@@ -63,10 +63,14 @@ class ScenarioConfig:
     downtown_window: int = 7
     spawn_clearance: int = 1
 
+    # Map source
+    map_source: str = "synthetic"       # "synthetic" or "osm"
+    osm_tile_id: str | None = None      # e.g. "downtown", "penteli", "piraeus"
+
     # Debug
     debug: bool = False
 
-    # Optional “escape hatch” for future, without breaking schema
+    # Optional "escape hatch" for future, without breaking schema
     extra: dict[str, Any] | None = None
 
     def validate(self) -> None:
@@ -91,3 +95,7 @@ class ScenarioConfig:
             raise ValueError("spawn_clearance must be >= 0")
         if self.no_fly_radius < 0:
             raise ValueError("no_fly_radius must be >= 0")
+        if self.map_source not in ("synthetic", "osm"):
+            raise ValueError("map_source must be 'synthetic' or 'osm'")
+        if self.map_source == "osm" and self.osm_tile_id is None:
+            raise ValueError("osm_tile_id is required when map_source is 'osm'")

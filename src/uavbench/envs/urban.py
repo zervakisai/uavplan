@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
@@ -24,7 +25,7 @@ class UrbanEnv(UAVBenchEnv):
         super().__init__(config)
 
         self.map_size = config.map_size
-        self.max_altitude = 3
+        self.max_altitude = config.max_altitude
         self.max_building_height = 50.0
 
         # State: [x, y, z, gx, gy, gz, h(x,y)]
@@ -60,80 +61,25 @@ class UrbanEnv(UAVBenchEnv):
     # --------------- Domain-specific reset/step ----------------
 
     def _reset_impl(self, options: dict[str, Any] | None = None):
-        """Build a new Urban map + sample start/goal for a new episode.
-
-        Model (LEVELS-ONLY):
-          - z is discrete altitude levels: 0..max_altitude
-          - heightmap h(x,y) is also in levels: 0..max_altitude
-          - collision check can safely be: z <= h(x,y)
-        """
+        """Build or load a map + sample start/goal for a new episode."""
         options = options or {}
         cfg = self.config
-        H = W = int(self.map_size)
 
-        # ---------- 0) Basic guards (V&V / early failure) ----------
-        if H < 5:
-            raise ValueError("map_size must be >= 5 for meaningful Urban scenarios.")
-        if self.max_altitude < 1:
-            raise ValueError("max_altitude must be >= 1.")
+        # ---------- Build / load the map ----------
+        if cfg.map_source == "osm":
+            self._load_osm_tile(cfg.osm_tile_id)
+        else:
+            self._generate_synthetic_map(options)
 
-        # ---------- 1) Parameters / knobs ----------
-        # building density in [0,1]
-        building_density = float(getattr(cfg, "building_density", options.get("building_density", 0.30)))
-        building_density = float(np.clip(building_density, 0.0, 1.0))
+        H, W = self._heightmap.shape
 
-        # building height in LEVELS (0..max_altitude)
-        building_level = int(getattr(cfg, "building_level", options.get("building_level", self.max_altitude)))
-        building_level = int(np.clip(building_level, 0, self.max_altitude))
-
-        # choose safe altitude in LEVELS (0..max_altitude)
+        # ---------- Parameters for start/goal placement ----------
         safe_alt = int(getattr(cfg, "safe_altitude", options.get("safe_altitude", self.max_altitude)))
         safe_alt = int(np.clip(safe_alt, 0, self.max_altitude))
 
-        # Human drop-off start altitude: FIXED at level=1 (and clipped just in case)
-        start_alt = int(getattr(cfg, "start_altitude", options.get("start_altitude", 1)))
-        start_alt = int(np.clip(start_alt, 1, self.max_altitude))  # enforce >=1
-
-        # enforce start-goal distance (L1 / Manhattan)
         min_l1 = int(getattr(cfg, "min_start_goal_l1", options.get("min_start_goal_l1", max(2, H // 2))))
 
-        # difficulty adjustments
-        extra_density_medium = float(getattr(cfg, "extra_density_medium", options.get("extra_density_medium", 0.10)))
-        extra_density_hard = float(getattr(cfg, "extra_density_hard", options.get("extra_density_hard", 0.20)))
-
-        # hard no-fly circle radius
-        no_fly_radius = int(getattr(cfg, "no_fly_radius", options.get("no_fly_radius", max(1, H // 8))))
-
-        # ---------- 2) Build base heightmap ----------
-        # heightmap values are 0.0 for free cells, building_level (as float) for buildings
-        base_mask = (self._rng.random((H, W)) < building_density)
-        self._heightmap = np.zeros((H, W), dtype=np.float32)
-        self._heightmap[base_mask] = float(building_level)
-
-        # no-fly mask
-        self._no_fly_mask = np.zeros((H, W), dtype=bool)
-
-        # ---------- 3) Difficulty-specific tweaks ----------
-        # MEDIUM: add a little more buildings
-        if cfg.difficulty == Difficulty.MEDIUM:
-            extra_mask = (self._rng.random((H, W)) < extra_density_medium)
-            self._heightmap[extra_mask] = float(building_level)
-
-        # HARD: more buildings + central no-fly circle
-        elif cfg.difficulty == Difficulty.HARD:
-            extra_mask = (self._rng.random((H, W)) < extra_density_hard)
-            self._heightmap[extra_mask] = float(building_level)
-
-            cy, cx = H // 2, W // 2
-            yy, xx = np.ogrid[:H, :W]
-            circle = (yy - cy) ** 2 + (xx - cx) ** 2 <= no_fly_radius ** 2
-            self._no_fly_mask[circle] = True
-
-            # (Optional) ensure no-fly cells are not also "free" by definition.
-            # We keep heightmap as-is; no-fly is a separate constraint.
-
-        # ---------- 4) Collect free cells (avoid infinite loops) ----------
-        # free = no building + not no-fly
+        # ---------- Collect free cells ----------
         free_mask = (self._heightmap == 0.0) & (~self._no_fly_mask)
         free_cells = np.argwhere(free_mask)  # array of [y, x]
 
@@ -143,14 +89,13 @@ class UrbanEnv(UAVBenchEnv):
                 "Reduce building_density / no-fly constraints or increase map_size."
             )
 
-        # ---------- 5) Sample start ----------
+        # ---------- Sample start ----------
         si = int(self._rng.integers(0, free_cells.shape[0]))
         sy, sx = map(int, free_cells[si])
 
-        # ---------- 6) Sample goal with minimum L1 distance ----------
+        # ---------- Sample goal with minimum L1 distance ----------
         gx = gy = None
 
-        # Try a fixed number of attempts first (fast)
         for _ in range(200):
             gi = int(self._rng.integers(0, free_cells.shape[0]))
             ty, tx = map(int, free_cells[gi])
@@ -161,37 +106,105 @@ class UrbanEnv(UAVBenchEnv):
                 gx, gy = tx, ty
                 break
 
-        # Fallback: choose farthest free cell (guaranteed)
+        # Fallback: choose farthest free cell
         if gx is None:
             dists = np.abs(free_cells[:, 1] - sx) + np.abs(free_cells[:, 0] - sy)
             idx = int(np.argmax(dists))
             gy, gx = map(int, free_cells[idx])
 
-        # ---------- 7) Set internal state ----------
-        # Start at human-drop-off level=1
+        # ---------- Set internal state ----------
         self._agent_pos = np.array([sx, sy, safe_alt], dtype=np.int32)
-
-        # Option B (typical): goal at "cruise" altitude (lets policy learn altitude change)
         self._goal_pos = np.array([gx, gy, safe_alt], dtype=np.int32)
 
-        # IMPORTANT: do NOT touch self._step_count here (base reset handles it)
-
-        # ---------- 8) Build observation + info ----------
+        # ---------- Build observation + info ----------
         obs = self._build_observation()
 
         info: dict[str, Any] = {
             "scenario_name": getattr(cfg, "name", "unknown"),
             "domain": getattr(cfg.domain, "value", str(cfg.domain)),
             "difficulty": getattr(cfg.difficulty, "value", str(cfg.difficulty)),
-            "building_density": float(building_density),
-            "building_level": int(building_level),
-            "start_altitude": int(start_alt),
+            "map_source": cfg.map_source,
             "safe_altitude": int(safe_alt),
             "min_start_goal_l1": int(min_l1),
             "free_cells": int(free_cells.shape[0]),
-            "no_fly_radius": int(no_fly_radius) if cfg.difficulty == Difficulty.HARD else 0,
+            "map_shape": (H, W),
         }
         return obs, info
+
+    # --------------- Map generation / loading ----------------
+
+    def _generate_synthetic_map(self, options: dict[str, Any]) -> None:
+        """Generate a synthetic heightmap with random buildings (original behavior)."""
+        cfg = self.config
+        H = W = int(self.map_size)
+
+        if H < 5:
+            raise ValueError("map_size must be >= 5 for meaningful Urban scenarios.")
+        if self.max_altitude < 1:
+            raise ValueError("max_altitude must be >= 1.")
+
+        building_density = float(getattr(cfg, "building_density", options.get("building_density", 0.30)))
+        building_density = float(np.clip(building_density, 0.0, 1.0))
+
+        building_level = int(getattr(cfg, "building_level", options.get("building_level", self.max_altitude)))
+        building_level = int(np.clip(building_level, 0, self.max_altitude))
+
+        extra_density_medium = float(getattr(cfg, "extra_density_medium", options.get("extra_density_medium", 0.10)))
+        extra_density_hard = float(getattr(cfg, "extra_density_hard", options.get("extra_density_hard", 0.20)))
+        no_fly_radius = int(getattr(cfg, "no_fly_radius", options.get("no_fly_radius", max(1, H // 8))))
+
+        # Build base heightmap
+        base_mask = (self._rng.random((H, W)) < building_density)
+        self._heightmap = np.zeros((H, W), dtype=np.float32)
+        self._heightmap[base_mask] = float(building_level)
+        self._no_fly_mask = np.zeros((H, W), dtype=bool)
+
+        # Difficulty-specific tweaks
+        if cfg.difficulty == Difficulty.MEDIUM:
+            extra_mask = (self._rng.random((H, W)) < extra_density_medium)
+            self._heightmap[extra_mask] = float(building_level)
+
+        elif cfg.difficulty == Difficulty.HARD:
+            extra_mask = (self._rng.random((H, W)) < extra_density_hard)
+            self._heightmap[extra_mask] = float(building_level)
+
+            cy, cx = H // 2, W // 2
+            yy, xx = np.ogrid[:H, :W]
+            circle = (yy - cy) ** 2 + (xx - cx) ** 2 <= no_fly_radius ** 2
+            self._no_fly_mask[circle] = True
+
+    def _load_osm_tile(self, tile_id: str) -> None:
+        """Load a pre-rasterized OSM tile from data/maps/{tile_id}.npz.
+
+        Converts meter-based heightmap to altitude levels (10m per level)
+        and stores extra layers for future use.
+        """
+        npz_path = Path("data/maps") / f"{tile_id}.npz"
+        if not npz_path.exists():
+            raise FileNotFoundError(
+                f"OSM tile not found: {npz_path}. "
+                f"Run: python -m tools.osm_pipeline.fetch --tile {tile_id} && "
+                f"python -m tools.osm_pipeline.rasterize --tile {tile_id}"
+            )
+
+        data = np.load(str(npz_path))
+
+        # Convert meters → altitude levels (10m per level, clamped to max_altitude)
+        meters_per_level = 10.0
+        raw_m = data["heightmap"]
+        self._heightmap = np.clip(
+            np.ceil(raw_m / meters_per_level), 0, self.max_altitude
+        ).astype(np.float32)
+
+        self._no_fly_mask = data["nfz_mask"].astype(bool)
+
+        # Update map_size to match tile dimensions
+        self.map_size = self._heightmap.shape[0]
+
+        # Store extra layers for future phases (dynamics, visualization)
+        self._roads_mask = data["roads_mask"].astype(bool)
+        self._landuse_map = data["landuse_map"]
+        self._risk_map = data["risk_map"]
 
 
     def _step_impl(self, action: int):
