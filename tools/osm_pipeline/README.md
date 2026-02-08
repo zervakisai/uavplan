@@ -16,27 +16,63 @@ This installs: osmnx, geopandas, shapely, rasterio, scipy.
 
 ## Pipeline Overview
 
-1. **fetch** -- Query OSM via osmnx for buildings, roads, and POIs within a bounding box
-2. **rasterize** -- Convert vector geometries to fixed-resolution grid arrays
-3. **tile** -- Split large areas into fixed-size tiles suitable for UAVBench environments
-4. **export** -- Save processed tiles as .npz files with metadata
+1. **fetch** -- Query OSM via osmnx for buildings, roads, landuse, amenities, and NFZ candidates
+2. **rasterize** -- Convert .geojson layers to numpy arrays (.npz)
 
-## Output Format
+## Available Tiles
 
-Each `.npz` tile contains:
-- `heightmap`: float32 [H, W] -- building heights (meters)
-- `road_mask`: bool [H, W] -- road cells
-- `building_mask`: bool [H, W] -- building footprint cells
-- `metadata`: dict -- bbox, CRS, resolution, timestamp
+| Tile ID | Center | Description |
+|---------|--------|-------------|
+| `penteli` | (38.08, 23.83) | Wildfire-urban interface north of Athens |
+| `downtown` | (37.98, 23.73) | Dense urban core around Syntagma |
+| `piraeus` | (37.94, 23.64) | Port and maritime zone |
+
+Each tile covers ~1.5km x 1.5km (500x500 grid at ~3m resolution).
+
+## Fetch Output (per tile)
+
+Saved to `data/maps/{tile_id}/`:
+- `buildings.geojson` -- building footprints with height tags
+- `roads.geojson` -- road network edges
+- `landuse.geojson` -- landuse and natural area polygons
+- `amenities.geojson` -- hospitals, schools, critical infrastructure
+- `nfz.geojson` -- airports, military zones
+- `fetch_meta.json` -- bbox, CRS, resolution, timestamp
+
+## Rasterize Output (per tile)
+
+Saved to `data/maps/{tile_id}.npz`:
+- `heightmap` -- float32 [500, 500] building heights in meters
+- `roads_mask` -- bool [500, 500] road coverage
+- `landuse_map` -- int8 [500, 500] (0=empty, 1=forest, 2=urban, 3=industrial, 4=water)
+- `risk_map` -- float32 [500, 500] normalized [0,1] population/infrastructure density
+- `nfz_mask` -- bool [500, 500] no-fly zones
+- `roads_graph_nodes` -- float64 [N, 2] UTM coordinates
+- `roads_graph_edges` -- float64 [E, 3] (node_i, node_j, length_m)
+
+Metadata: `data/maps/{tile_id}/{tile_id}_raster_meta.json`
 
 ## Usage
 
 ```bash
-# Fetch and process a tile for central Athens
-python -m tools.osm_pipeline.fetch \
-    --bbox 37.97,23.72,37.98,23.73 \
-    --resolution 1.0 \
-    --out data/maps/athens_center.npz
+# List available tiles
+python -m tools.osm_pipeline.fetch --list
+
+# Fetch a single tile
+python -m tools.osm_pipeline.fetch --tile downtown --output data/maps/
+
+# Fetch all 3 Athens tiles
+python -m tools.osm_pipeline.fetch --tile all --output data/maps/
+
+# Rasterize a tile (requires fetched .geojson data)
+python -m tools.osm_pipeline.rasterize --tile downtown
+
+# Rasterize all tiles
+python -m tools.osm_pipeline.rasterize --tile all
+
+# Full pipeline: fetch + rasterize
+python -m tools.osm_pipeline fetch --tile all
+python -m tools.osm_pipeline rasterize --tile all
 ```
 
 ## Environment
