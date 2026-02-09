@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from uavbench.envs.urban import UrbanEnv
+from uavbench.metrics.operational import compute_all_metrics
 from uavbench.planners import PLANNERS
 from uavbench.scenarios.loader import load_scenario
 
@@ -37,7 +39,9 @@ def run_planner_once(
         raise ValueError(f"Unknown planner '{planner_id}'. Available: {list(PLANNERS.keys())}")
 
     planner = PLANNERS[planner_id](heightmap, no_fly)
+    t0 = time.perf_counter()
     path = planner.plan(start_xy, goal_xy)  # [] if no path
+    planning_time = time.perf_counter() - t0
 
     has_path = bool(path)
     violations = 0
@@ -74,6 +78,7 @@ def run_planner_once(
         "no_fly": no_fly,
         "start": start_xy,
         "goal": goal_xy,
+        "planning_time": planning_time,
         "map_source": cfg.map_source,
         "osm_tile_id": cfg.osm_tile_id,
         "config": cfg,
@@ -82,27 +87,39 @@ def run_planner_once(
 
 # ----------------- Metrics aggregation -----------------
 
-def aggregate(results: list[dict[str, Any]], metric_ids: list[str]) -> dict[str, float]:
-    """Aggregate per-trial results into metrics."""
+def aggregate(results: list[dict[str, Any]], _metric_ids: list[str] | None = None) -> dict[str, float]:
+    """Aggregate per-trial results into metrics.
+
+    Uses compute_all_metrics() for per-trial operational metrics, then
+    averages across trials.
+    """
+    if not results:
+        return {}
+
+    # Per-trial operational metrics
+    per_trial_metrics = [compute_all_metrics(r) for r in results]
+
     out: dict[str, float] = {}
 
+    # Core metrics (always computed for backward compat)
     successes = np.array([1.0 if r["success"] else 0.0 for r in results], dtype=float)
+    out["success_rate"] = float(successes.mean())
 
-    if "success_rate" in metric_ids:
-        out["success_rate"] = float(successes.mean()) if len(successes) else 0.0
+    lengths = np.array([float(r["path_length"]) for r in results if r["success"]], dtype=float)
+    out["avg_path_length"] = float(lengths.mean()) if len(lengths) else float("nan")
 
-    if "path_length" in metric_ids:
-        lengths = np.array([float(r["path_length"]) for r in results if r["success"]], dtype=float)
-        out["avg_path_length"] = float(lengths.mean()) if len(lengths) else float("nan")
+    violations = np.array([float(r["constraint_violations"]) for r in results], dtype=float)
+    out["avg_constraint_violations"] = float(violations.mean())
 
-    if "constraint_violations" in metric_ids:
-        v = np.array([float(r["constraint_violations"]) for r in results], dtype=float)
-        out["avg_constraint_violations"] = float(v.mean()) if len(v) else 0.0
+    # Operational metrics (averaged across trials)
+    all_keys = set()
+    for m in per_trial_metrics:
+        all_keys.update(m.keys())
 
-    # Placeholders (not implemented yet)
-    not_impl = [m for m in metric_ids if m in {"energy", "safety", "flight_time", "smoothness", "robustness"}]
-    for m in not_impl:
-        out[m] = float("nan")
+    for key in sorted(all_keys):
+        vals = [m[key] for m in per_trial_metrics if key in m]
+        if vals:
+            out[f"avg_{key}"] = round(float(np.mean(vals)), 4)
 
     return out
 
@@ -227,6 +244,7 @@ def main() -> None:
                         "no_fly": None,
                         "start": None,
                         "goal": None,
+                        "planning_time": 0.0,
                         "error": str(e),
                     }
                 per_trial.append(r)

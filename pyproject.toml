@@ -4,15 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "uavbench"
-version = "0.0.1"
+version = "1.0.0"
 description = "UAVBench: a reproducible UAV planning benchmark framework"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
   "gymnasium>=0.29",
   "numpy>=1.26",
   "pydantic>=2.5",
   "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/uavbench/uavbench"
+Repository = "https://github.com/uavbench/uavbench"
+Documentation = "https://github.com/uavbench/uavbench#documentation"
 
 [project.optional-dependencies]
 viz = [
@@ -21,7 +37,6 @@ viz = [
 dev = [
   "pytest>=7.0",
   "mypy>=1.0",
-  "sphinx>=7.0",
 ]
 pipeline = [
   "osmnx>=1.9",
@@ -37,7 +52,5 @@ all = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
-
 [project.scripts]
 uavbench = "uavbench.cli.benchmark:main"
-

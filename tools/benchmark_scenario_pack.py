@@ -52,15 +52,13 @@ SCENARIO_PACK = [
     "osm_athens_comms_denied_hard",
 ]
 
-METRIC_IDS = ["path_length", "success_rate", "constraint_violations"]
-
 
 def run_scenario_pack(
     planner_ids: list[str],
     trials: int,
     seed_base: int,
 ) -> list[dict[str, Any]]:
-    """Run all scenarios × planners × trials and collect results."""
+    """Run all scenarios x planners x trials and collect results."""
     all_rows: list[dict[str, Any]] = []
 
     total = len(SCENARIO_PACK) * len(planner_ids)
@@ -94,12 +92,13 @@ def run_scenario_pack(
                         "constraint_violations": 1,
                         "path_length": 0,
                         "path": None,
+                        "planning_time": 0.0,
                         "error": str(e),
                     }
                 per_trial.append(r)
 
             elapsed = time.time() - t0
-            metrics = aggregate(per_trial, METRIC_IDS)
+            metrics = aggregate(per_trial)
 
             row = {
                 "scenario": scenario_id,
@@ -108,6 +107,10 @@ def run_scenario_pack(
                 "success_rate": metrics.get("success_rate", 0.0),
                 "avg_path_length": metrics.get("avg_path_length", float("nan")),
                 "avg_violations": metrics.get("avg_constraint_violations", 0.0),
+                "path_optimality": metrics.get("avg_path_optimality", 0.0),
+                "planning_time_ms": metrics.get("avg_planning_time_ms", 0.0),
+                "path_smoothness": metrics.get("avg_path_smoothness", 0.0),
+                "risk_exposure": metrics.get("avg_risk_exposure_sum", 0.0),
                 "time_s": round(elapsed, 2),
             }
             all_rows.append(row)
@@ -115,37 +118,49 @@ def run_scenario_pack(
             sr = row["success_rate"]
             pl = row["avg_path_length"]
             pl_str = f"{pl:.0f}" if not np.isnan(pl) else "n/a"
-            print(f" SR={sr:.0%} PL={pl_str} ({elapsed:.1f}s)")
+            opt = row["path_optimality"]
+            print(f" SR={sr:.0%} PL={pl_str} OPT={opt:.2f} ({elapsed:.1f}s)")
 
     return all_rows
 
 
 def print_comparison_table(rows: list[dict[str, Any]]) -> None:
     """Print a formatted comparison table."""
-    print("\n" + "=" * 90)
-    print(f"{'Scenario':<40} {'Planner':<10} {'SR':>6} {'Path':>8} {'Viol':>6} {'Time':>7}")
-    print("-" * 90)
+    print("\n" + "=" * 110)
+    print(
+        f"{'Scenario':<40} {'Planner':<8} "
+        f"{'SR':>5} {'Path':>6} {'Opt':>5} {'Smooth':>6} "
+        f"{'Risk':>6} {'Plan ms':>8} {'Time':>6}"
+    )
+    print("-" * 110)
 
     for row in rows:
         pl = row["avg_path_length"]
         pl_str = f"{pl:.0f}" if not np.isnan(pl) else "n/a"
         print(
             f"{row['scenario']:<40} "
-            f"{row['planner']:<10} "
-            f"{row['success_rate']:>5.0%} "
-            f"{pl_str:>8} "
-            f"{row['avg_violations']:>6.2f} "
-            f"{row['time_s']:>6.1f}s"
+            f"{row['planner']:<8} "
+            f"{row['success_rate']:>4.0%} "
+            f"{pl_str:>6} "
+            f"{row['path_optimality']:>5.2f} "
+            f"{row['path_smoothness']:>6.3f} "
+            f"{row['risk_exposure']:>6.2f} "
+            f"{row['planning_time_ms']:>7.1f} "
+            f"{row['time_s']:>5.1f}s"
         )
 
-    print("=" * 90)
+    print("=" * 110)
 
 
 def save_csv(rows: list[dict[str, Any]], output_path: Path) -> None:
     """Save results to CSV."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["scenario", "planner", "trials", "success_rate",
-                   "avg_path_length", "avg_violations", "time_s"]
+    fieldnames = [
+        "scenario", "planner", "trials", "success_rate",
+        "avg_path_length", "avg_violations",
+        "path_optimality", "planning_time_ms", "path_smoothness",
+        "risk_exposure", "time_s",
+    ]
     with open(output_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -178,7 +193,7 @@ def main() -> None:
 
     planner_ids = [p.strip() for p in args.planners.split(",") if p.strip()]
 
-    print(f"[UAVBench Scenario Pack]")
+    print("[UAVBench Scenario Pack]")
     print(f"  Scenarios: {len(SCENARIO_PACK)}")
     print(f"  Planners: {planner_ids}")
     print(f"  Trials: {args.trials}")
