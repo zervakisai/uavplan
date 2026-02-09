@@ -1,355 +1,104 @@
-# UAVBench Documentation Index
+# UAVBench
 
-Welcome! This is your complete guide to the UAVBench project. Below you'll find links to all documentation organized by topic.
+A reproducible benchmark framework for UAV path planning in realistic urban environments. Uses real OpenStreetMap data rasterized to 2.5D grids with fire spread, traffic dynamics, and no-fly zone constraints.
 
----
+## Features
 
-## 🎯 Start Here
+- **Real-world maps** — 3 Athens tiles (Downtown, Penteli, Piraeus) from OpenStreetMap at 3m/pixel resolution
+- **20 operational scenarios** — Wildfire, emergency response, port security, SAR, infrastructure patrol, border surveillance, crisis, comms-denied
+- **Dynamic environments** — Cellular automaton fire spread with wind, pixel-space emergency vehicle traffic
+- **Gymnasium-based** — Standard `reset()`/`step()` API, Discrete(6) action space, 7D observation
+- **Operational metrics** — Safety (NFZ violations, risk exposure), efficiency (optimality, planning time), feasibility (smoothness, success rate)
+- **Publication-ready visualization** — Trajectory plots, fire evolution panels, dynamics overlays, MP4 video export
 
-- **[GETTING_STARTED.md](GETTING_STARTED.md)** ← **START HERE FIRST** - Find the right doc for your goal
-- **[PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)** - Complete overview of all files and what they do
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture diagrams and data flow
+## Quick Start
 
----
-
-## 🚀 Getting Started
-
-### Installation & Setup
 ```bash
-pip install -e ".[viz]"  # Install with visualization support
+# Install
+pip install -e ".[viz]"
+
+# Run a benchmark
+uavbench --scenarios osm_athens_wildfire_easy --planners astar --trials 5
+
+# Visualize with dynamics
+uavbench --scenarios osm_athens_emergency_easy --planners astar --trials 1 \
+    --save-figures outputs/ --with-dynamics
+
+# Full scenario pack (20 scenarios)
+python tools/benchmark_scenario_pack.py --planners astar --trials 3 --output outputs/
 ```
 
-### First Commands
-```bash
-# Run a simple benchmark
-uavbench --trials 5
+## Scenario Pack
 
-# Watch the best path animation
-uavbench --trials 10 --play best
+| Category | Scenarios | Tile | Dynamics |
+|----------|-----------|------|----------|
+| Wildfire WUI | easy / medium / hard | Penteli | Fire spread |
+| Emergency Response | easy / medium / hard | Downtown | Traffic |
+| Port Security | easy / medium / hard | Piraeus | Static |
+| Combined Crisis | hard | Downtown | Fire + Traffic |
+| Search & Rescue | easy / medium / hard | Penteli | Static |
+| Infrastructure Patrol | easy / medium / hard | Downtown | Static |
+| Border Surveillance | easy / medium / hard | Penteli | Static |
+| Comms-Denied | hard | Downtown | Static |
 
-# Save animations
-uavbench --trials 10 --save-videos best
-```
+Difficulty progression: altitude ceiling 10/8/6 levels, minimum L1 distance 150/200/250+.
 
-### Quick Links
-- **[QUICK_VIDEO_REFERENCE.md](QUICK_VIDEO_REFERENCE.md)** - One-page command reference
-- **[ANIMATION_WORKING.md](ANIMATION_WORKING.md)** - How to use interactive visualization
-
----
-
-## 📚 Documentation by Topic
-
-### Core Concepts
-| Topic | File | Purpose |
-|-------|------|---------|
-| **Full Project Overview** | [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) | Complete file listing and descriptions |
-| **System Architecture** | [ARCHITECTURE.md](ARCHITECTURE.md) | Diagrams, data flows, design patterns |
-| **AI Agent Instructions** | [.github/copilot-instructions.md](.github/copilot-instructions.md) | For AI coding agents working on this project |
-
-### Using the CLI
-| Topic | File | Purpose |
-|-------|------|---------|
-| **Video Features** | [ANIMATION_WORKING.md](ANIMATION_WORKING.md) | How animation works, real examples |
-| **Visualization Guide** | [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md) | Comprehensive visualization reference |
-| **Quick Reference** | [QUICK_VIDEO_REFERENCE.md](QUICK_VIDEO_REFERENCE.md) | Command cheat sheet |
-| **Video Feature Summary** | [VIDEO_FEATURE_SUMMARY.md](VIDEO_FEATURE_SUMMARY.md) | Technical details of video export |
-| **Videos Folder Guide** | [VIDEOS_FOLDER_GUIDE.md](VIDEOS_FOLDER_GUIDE.md) | How videos are saved to `videos/` folder |
-
-### Troubleshooting & Setup
-| Topic | File | Purpose |
-|-------|------|---------|
-| **Matplotlib Setup** | [MATPLOTLIB_RESOLUTION.md](MATPLOTLIB_RESOLUTION.md) | Fix visualization/dependency issues |
-| **Code Review** | [CODE_REVIEW.md](CODE_REVIEW.md) | Issues found and how they were fixed |
-
----
-
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 src/uavbench/
-├── envs/              # Environment implementations
-│   ├── base.py        # Abstract base class
-│   └── urban.py       # 2.5D urban environment
-├── scenarios/         # Scenario configuration
-│   ├── schema.py      # Data validation
-│   ├── loader.py      # YAML loader
-│   └── configs/       # Scenario YAML files
-├── planners/          # Path planning algorithms
-│   └── astar.py       # A* implementation
-├── cli/               # Command-line interface
-│   └── benchmark.py   # Main entry point
-└── viz/               # Visualization
-    └── player.py      # Animation & video export
+    envs/           Urban 2.5D grid environment (base + urban)
+    scenarios/      Pydantic config schema, YAML loader, 20+ configs
+    planners/       A* baseline (registry pattern for extensions)
+    dynamics/       Fire spread model, traffic model
+    metrics/        Safety, efficiency, feasibility metrics
+    viz/            Matplotlib player, publication figures, dynamics sim
+    cli/            Benchmark CLI entry point
 
-tests/
-├── test_scenario_basic.py     # Scenario tests
-└── test_urban_env_basic.py    # Environment tests
+tools/
+    osm_pipeline/   Offline OSM fetch + rasterize scripts
+    benchmark_scenario_pack.py
+    generate_paper_figures.py
+
+data/maps/          Pre-rasterized .npz tiles (gitignored)
 ```
 
----
+## Metrics
 
-## 🎬 Common Tasks
+| Category | Metric | Description |
+|----------|--------|-------------|
+| Safety | `nfz_violation_count` | Path cells on no-fly zones |
+| Safety | `risk_exposure_sum` | Cumulative risk along path |
+| Efficiency | `path_optimality` | Manhattan distance / path length |
+| Efficiency | `planning_time_ms` | Wall-clock planning time |
+| Feasibility | `path_smoothness` | 1 - direction changes / steps |
+| Feasibility | `success` | Path found with no violations |
 
-### Watch Animation of Best Path
-```bash
-uavbench --scenarios urban_easy --planners astar --trials 10 --play best --fps 8
-```
-See: [ANIMATION_WORKING.md](ANIMATION_WORKING.md)
+## Documentation
 
-### Save Animations as Videos
-```bash
-uavbench --scenarios urban_easy --planners astar --trials 10 --save-videos both --fps 8
-```
-Files saved to: `videos/`  
-See: [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md)
+- [INSTALLATION.md](INSTALLATION.md) — Installation and tile generation
+- [USAGE.md](USAGE.md) — CLI reference, custom scenarios, custom planners
+- [docs/API_REFERENCE.md](docs/API_REFERENCE.md) — Classes, methods, data formats
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — Benchmark results and performance data
+- [scenarios README](src/uavbench/scenarios/configs/README_SCENARIOS.md) — Detailed scenario descriptions
 
-### Run Full Benchmark Suite
-```bash
-uavbench \
-  --scenarios urban_easy,urban_medium,urban_hard \
-  --planners astar \
-  --trials 50 \
-  --seed-base 42
-```
-See: [QUICK_VIDEO_REFERENCE.md](QUICK_VIDEO_REFERENCE.md)
+## Requirements
 
-### Compare Multiple Planners
-```bash
-uavbench \
-  --scenarios urban_easy \
-  --planners astar,rrtstar \
-  --trials 20 \
-  --save-videos best
-```
+- Python 3.10+
+- Core: gymnasium, numpy, pydantic, pyyaml
+- Visualization: matplotlib (`pip install -e ".[viz]"`)
+- OSM pipeline: osmnx, geopandas, rasterio (`pip install -e ".[pipeline]"`)
 
----
+## Citation
 
-## 📖 Detailed References
-
-### Understanding the System
-
-1. **What files exist?**
-   - See [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) section "Complete File Structure"
-
-2. **How does the code work?**
-   - See [ARCHITECTURE.md](ARCHITECTURE.md) for diagrams
-   - See [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) "Core Source Files" section
-
-3. **How do I run benchmarks?**
-   - See [QUICK_VIDEO_REFERENCE.md](QUICK_VIDEO_REFERENCE.md) for commands
-   - See [ANIMATION_WORKING.md](ANIMATION_WORKING.md) for examples
-
-4. **How do I fix errors?**
-   - See [MATPLOTLIB_RESOLUTION.md](MATPLOTLIB_RESOLUTION.md) for visualization issues
-   - See [CODE_REVIEW.md](CODE_REVIEW.md) for past issues
-
-### Design Patterns
-
-**RNG Discipline** - Always use `self._rng`, never global `np.random`
-- See [.github/copilot-instructions.md](.github/copilot-instructions.md) section "Random Number Generation"
-
-**Type Safety** - Use Pydantic for config validation
-- See [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) section "scenarios/schema.py"
-
-**Immutable Collections** - Trajectory and events return copies
-- See [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) section "envs/base.py"
-
----
-
-## 🔧 Development
-
-### Running Tests
-```bash
-pytest tests/
-pytest tests/test_urban_env_basic.py -v  # Single file
-pytest -k "trajectory" -v                 # Pattern match
+```bibtex
+@software{uavbench2026,
+  title     = {UAVBench: A Reproducible Benchmark for UAV Path Planning in Urban Environments},
+  year      = {2026},
+  url       = {https://github.com/uavbench/uavbench},
+}
 ```
 
-### Adding a New Planner
-See [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) section "Extension Points"
+## License
 
-### Adding a New Scenario
-See [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) section "Extension Points"
-
-### Code Quality
-- See [CODE_REVIEW.md](CODE_REVIEW.md) for best practices
-- See [.github/copilot-instructions.md](.github/copilot-instructions.md) for patterns
-
----
-
-## 📊 Quick Stats
-
-- **Total Python Files**: 13 (11 core + 2 tests)
-- **Documentation Files**: 8 markdown files
-- **Lines of Code**: ~2,500 core logic
-- **Supported Scenarios**: 3 (easy, medium, hard)
-- **Implemented Planners**: 1 (A*, extensible)
-- **Test Coverage**: Basic environment and scenario tests
-
----
-
-## ✅ Feature Status
-
-| Feature | Status | Location |
-|---------|--------|----------|
-| Urban environment | ✅ Working | `envs/urban.py` |
-| A* planner | ✅ Working | `planners/astar.py` |
-| Scenario loading | ✅ Working | `scenarios/loader.py` |
-| CLI interface | ✅ Working | `cli/benchmark.py` |
-| Interactive visualization | ✅ Working | `viz/player.py` |
-| Video export (GIF) | ✅ Working | `viz/player.py` |
-| Video export (MP4) | ✅ With ffmpeg | `viz/player.py` |
-| Metrics computation | ✅ Working | `cli/benchmark.py` |
-| Tests | ✅ Passing | `tests/` |
-
----
-
-## 🔗 External Dependencies
-
-### Core
-- `gymnasium` - RL environment framework
-- `numpy` - Numerical computing
-- `pydantic` - Data validation
-- `PyYAML` - YAML parsing
-
-### Optional [viz]
-- `matplotlib` - Visualization
-- `pillow` - Image/GIF support
-
-### Optional [dev]
-- `pytest` - Testing
-- `mypy` - Type checking
-- `sphinx` - Documentation
-
-### Optional (system)
-- `ffmpeg` - For MP4 video export (not Python package)
-
----
-
-## 💡 Tips & Tricks
-
-### Slow-Motion Replay (for debugging)
-```bash
-uavbench --play best --fps 2
-```
-
-### Fast Review (for quick check)
-```bash
-uavbench --play best --fps 20
-```
-
-### Reproducible Results
-```bash
-uavbench --seed-base 42 --trials 50
-```
-
-### Save Only Best Paths
-```bash
-uavbench --save-videos best  # Faster than saving worst too
-```
-
-### Monitor Multiple Planners
-```bash
-uavbench --planners astar,rrtstar,ga --save-videos best
-```
-
----
-
-## 🆘 Troubleshooting
-
-### Problem: Window doesn't appear
-**Solution**: Install matplotlib properly
-```bash
-pip install --upgrade 'matplotlib>=3.8.0'
-```
-See: [MATPLOTLIB_RESOLUTION.md](MATPLOTLIB_RESOLUTION.md)
-
-### Problem: "ModuleNotFoundError: matplotlib"
-**Solution**: Install visualization dependencies
-```bash
-pip install 'uavbench[viz]'
-```
-
-### Problem: MP4 files not created
-**Solution**: ffmpeg not installed (fallback to GIF is normal). Optional:
-```bash
-brew install ffmpeg  # macOS
-```
-
-### Problem: Animation is static/frozen
-**Solution**: You're using the latest version which fixes this. Update:
-```bash
-pip install --upgrade uavbench
-```
-
-For more troubleshooting, see:
-- [MATPLOTLIB_RESOLUTION.md](MATPLOTLIB_RESOLUTION.md) - Visualization issues
-- [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md) - Troubleshooting section
-- [CODE_REVIEW.md](CODE_REVIEW.md) - Past issues and fixes
-
----
-
-## 📞 Quick Navigation
-
-**"I want to..."**
-
-| Goal | See This File |
-|------|---------------|
-| Understand the project | [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) |
-| See system architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Run a benchmark | [QUICK_VIDEO_REFERENCE.md](QUICK_VIDEO_REFERENCE.md) |
-| Watch animations | [ANIMATION_WORKING.md](ANIMATION_WORKING.md) |
-| Learn visualization options | [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md) |
-| Fix a problem | [MATPLOTLIB_RESOLUTION.md](MATPLOTLIB_RESOLUTION.md) or [CODE_REVIEW.md](CODE_REVIEW.md) |
-| Add a new feature | [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) "Extension Points" |
-| Understand the code | [ARCHITECTURE.md](ARCHITECTURE.md) or [.github/copilot-instructions.md](.github/copilot-instructions.md) |
-
----
-
-## 🎓 Learning Path
-
-1. **New to UAVBench?**
-   - Start: [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)
-   - Then: [QUICK_VIDEO_REFERENCE.md](QUICK_VIDEO_REFERENCE.md)
-   - Try: Run your first benchmark
-
-2. **Want to understand the code?**
-   - Read: [ARCHITECTURE.md](ARCHITECTURE.md)
-   - Explore: Source code in `src/uavbench/`
-   - Reference: [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) sections on each file
-
-3. **Want to extend the project?**
-   - Read: [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) "Extension Points"
-   - Learn: [.github/copilot-instructions.md](.github/copilot-instructions.md)
-   - Code: Implement new planner/scenario/domain
-
-4. **Troubleshooting?**
-   - Check: [MATPLOTLIB_RESOLUTION.md](MATPLOTLIB_RESOLUTION.md)
-   - Review: [CODE_REVIEW.md](CODE_REVIEW.md)
-   - Search: Relevant documentation file
-
----
-
-## 📝 Document Legend
-
-| File | Purpose | Audience |
-|------|---------|----------|
-| PROJECT_SUMMARY.md | Complete file reference | Everyone |
-| ARCHITECTURE.md | System design & diagrams | Developers |
-| QUICK_VIDEO_REFERENCE.md | Command cheat sheet | Users |
-| ANIMATION_WORKING.md | Visualization guide | Users |
-| VISUALIZATION_GUIDE.md | Comprehensive viz docs | Users |
-| VIDEO_FEATURE_SUMMARY.md | Technical details | Developers |
-| MATPLOTLIB_RESOLUTION.md | Dependency fix log | Troubleshooters |
-| CODE_REVIEW.md | Code fixes & review | Developers |
-| .github/copilot-instructions.md | AI agent guide | AI/Developers |
-
----
-
-**Last Updated**: 31 January 2026  
-**Version**: 0.0.1  
-**Status**: Complete and Functional ✅
-
----
-
-Happy benchmarking! 🚁📊
+MIT License. See [LICENSE](LICENSE).

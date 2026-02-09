@@ -1,0 +1,11 @@
+# Linguist overrides — ensure GitHub classifies this as a Python project
+*.py linguist-language=Python
+*.ipynb linguist-language=Python
+*.yaml linguist-detectable=false
+*.md linguist-documentation=true
+
+# Binary files
+*.npz binary
+*.png binary
+*.mp4 binary
+*.gif binary
