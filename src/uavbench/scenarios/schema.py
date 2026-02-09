@@ -67,6 +67,14 @@ class ScenarioConfig:
     map_source: str = "synthetic"       # "synthetic" or "osm"
     osm_tile_id: str | None = None      # e.g. "downtown", "penteli", "piraeus"
 
+    # Dynamic layers
+    enable_fire: bool = False
+    enable_traffic: bool = False
+    fire_ignition_points: int = 3
+    num_emergency_vehicles: int = 5
+    wind_direction: float = 0.0         # radians, 0 = North
+    wind_speed: float = 0.5             # [0, 1]
+
     # Debug
     debug: bool = False
 
@@ -99,3 +107,11 @@ class ScenarioConfig:
             raise ValueError("map_source must be 'synthetic' or 'osm'")
         if self.map_source == "osm" and self.osm_tile_id is None:
             raise ValueError("osm_tile_id is required when map_source is 'osm'")
+        if self.fire_ignition_points < 1:
+            raise ValueError("fire_ignition_points must be >= 1")
+        if self.num_emergency_vehicles < 0:
+            raise ValueError("num_emergency_vehicles must be >= 0")
+        if not (0.0 <= self.wind_speed <= 1.0):
+            raise ValueError("wind_speed must be in [0, 1]")
+        if self.enable_fire and self.map_source != "osm":
+            raise ValueError("enable_fire requires map_source='osm' (needs landuse data)")

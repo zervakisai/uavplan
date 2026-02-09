@@ -43,6 +43,12 @@ def load_scenario(path: Path) -> ScenarioConfig:
         spawn_clearance=int(data.get("spawn_clearance", 1)),
         map_source=str(data.get("map_source", "synthetic")),
         osm_tile_id=data.get("osm_tile_id"),
+        enable_fire=bool(data.get("enable_fire", False)),
+        enable_traffic=bool(data.get("enable_traffic", False)),
+        fire_ignition_points=int(data.get("fire_ignition_points", 3)),
+        num_emergency_vehicles=int(data.get("num_emergency_vehicles", 5)),
+        wind_direction=float(data.get("wind_direction", 0.0)),
+        wind_speed=float(data.get("wind_speed", 0.5)),
         debug=bool(data.get("debug", False)),
         extra=dict(data.get("extra", {})) if "extra" in data else None,
     )

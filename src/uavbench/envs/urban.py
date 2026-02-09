@@ -8,6 +8,8 @@ import numpy as np
 from gymnasium import spaces
 
 from uavbench.envs.base import UAVBenchEnv
+from uavbench.dynamics.fire_spread import FireSpreadModel
+from uavbench.dynamics.traffic import TrafficModel
 from uavbench.scenarios.schema import ScenarioConfig, Domain, Difficulty
 
 
@@ -72,6 +74,30 @@ class UrbanEnv(UAVBenchEnv):
             self._generate_synthetic_map(options)
 
         H, W = self._heightmap.shape
+
+        # ---------- Initialize dynamic layers ----------
+        self._fire_model: FireSpreadModel | None = None
+        self._traffic_model: TrafficModel | None = None
+
+        if cfg.enable_fire:
+            landuse = getattr(self, "_landuse_map", np.zeros((H, W), dtype=np.int8))
+            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
+            self._fire_model = FireSpreadModel(
+                landuse_map=landuse,
+                roads_mask=roads,
+                wind_dir=cfg.wind_direction,
+                wind_speed=cfg.wind_speed,
+                rng=self._rng,
+                n_ignition=cfg.fire_ignition_points,
+            )
+
+        if cfg.enable_traffic:
+            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
+            self._traffic_model = TrafficModel(
+                roads_mask=roads,
+                num_vehicles=cfg.num_emergency_vehicles,
+                rng=self._rng,
+            )
 
         # ---------- Parameters for start/goal placement ----------
         safe_alt = int(getattr(cfg, "safe_altitude", options.get("safe_altitude", self.max_altitude)))
@@ -284,6 +310,28 @@ class UrbanEnv(UAVBenchEnv):
         ax2, ay2, az2 = map(int, self._agent_pos)
         new_dist = float(abs(ax2 - gx) + abs(ay2 - gy) + w_z * abs(az2 - gz))
 
+        # ---------- 6b) Advance dynamic layers ----------
+        fire_exposure = False
+        traffic_proximity = False
+        fire_cells = 0
+        vehicles_near = 0
+
+        if self._fire_model is not None:
+            self._fire_model.step(dt=1.0)
+            fire_cells = int(self._fire_model.fire_mask.sum())
+            if self._fire_model.fire_mask[ay2, ax2]:
+                fire_exposure = True
+                self.log_event("fire_exposure", x=ax2, y=ay2, z=az2)
+
+        if self._traffic_model is not None:
+            self._traffic_model.step(dt=1.0)
+            H, W = self._heightmap.shape
+            traffic_buffer = self._traffic_model.get_occupancy_mask((H, W))
+            if traffic_buffer[ay2, ax2]:
+                traffic_proximity = True
+                vehicles_near = int(len(self._traffic_model.vehicle_positions))
+                self.log_event("traffic_proximity", x=ax2, y=ay2, z=az2)
+
         # ---------- 7) Reward (robust baseline) ----------
         # Step cost encourages shorter paths.
         reward = -float(step_cost)
@@ -296,6 +344,12 @@ class UrbanEnv(UAVBenchEnv):
             reward -= float(p_no_fly)
         elif attempted_building_collision:
             reward -= float(p_building)
+
+        # Dynamic layer penalties
+        if fire_exposure:
+            reward -= 20.0
+        if traffic_proximity:
+            reward -= 5.0
 
         # Goal achievement
         reached = bool(np.array_equal(self._agent_pos, self._goal_pos))
@@ -330,6 +384,14 @@ class UrbanEnv(UAVBenchEnv):
             "agent_pos": (int(ax2), int(ay2), int(az2)),
             "goal_pos": (int(gx), int(gy), int(gz)),
             "terrain_height": float(terrain_h),
+
+            # Dynamic layers
+            "fire_active": self._fire_model is not None,
+            "traffic_active": self._traffic_model is not None,
+            "fire_exposure": fire_exposure,
+            "traffic_proximity": traffic_proximity,
+            "fire_cells": fire_cells,
+            "vehicles_near": vehicles_near,
 
             # Optional debugging
             "step_index": int(self._step_count + 1),
