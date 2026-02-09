@@ -74,6 +74,9 @@ def run_planner_once(
         "no_fly": no_fly,
         "start": start_xy,
         "goal": goal_xy,
+        "map_source": cfg.map_source,
+        "osm_tile_id": cfg.osm_tile_id,
+        "config": cfg,
     }
 
 
@@ -168,6 +171,18 @@ def main() -> None:
         action="store_true",
         help="Stop immediately on any exception (V&V mode).",
     )
+    parser.add_argument(
+        "--save-figures",
+        type=str,
+        default="",
+        metavar="DIR",
+        help="Save publication-quality trajectory figures to DIR.",
+    )
+    parser.add_argument(
+        "--with-dynamics",
+        action="store_true",
+        help="Include fire/traffic dynamics overlays in visualizations (requires OSM tile).",
+    )
 
     args = parser.parse_args()
 
@@ -230,73 +245,107 @@ def main() -> None:
                     print(f"{k:>24}: {v:.3f}" if isinstance(v, float) else f"{k:>24}: {v}")
             print("------------------------------")
 
-            # AFTER TRIALS: play best/worst if requested
+            # AFTER TRIALS: visualization (play / save-videos / save-figures)
             successful = [r for r in per_trial if r.get("success", False)]
-            
-            # Handle visualization (--play) and video saving (--save-videos)
-            if (args.play or args.save_videos) and successful:
-                # Lazy import: only load matplotlib if visualization is requested
+            want_viz = args.play or args.save_videos or args.save_figures
+
+            if want_viz and successful:
                 try:
                     from uavbench.viz.player import play_path_window, save_path_video
                 except ModuleNotFoundError as e:
                     print(
-                        f"\n[ERROR] Cannot play visualization: {e}\n"
-                        "  To enable visualization, install the optional viz dependencies:\n"
-                        "    pip install uavbench[viz]\n"
-                        "  or:\n"
-                        "    pip install matplotlib>=3.8.0\n"
+                        f"\n[ERROR] Cannot load visualization: {e}\n"
+                        "  Install: pip install uavbench[viz]\n"
                     )
                     return
 
                 # Determine which paths to visualize
-                to_visualize = {}
-                if args.play:
-                    if args.play == "best":
-                        to_visualize["best"] = min(successful, key=lambda r: r["path_length"])
-                    elif args.play == "worst":
-                        to_visualize["worst"] = max(successful, key=lambda r: r["path_length"])
-                
-                if args.save_videos:
-                    if args.save_videos in ("best", "both"):
-                        to_visualize["best"] = min(successful, key=lambda r: r["path_length"])
-                    if args.save_videos in ("worst", "both"):
-                        to_visualize["worst"] = max(successful, key=lambda r: r["path_length"])
+                to_visualize: dict[str, dict] = {}
+                if args.play in ("best",) or args.save_videos in ("best", "both") or args.save_figures:
+                    to_visualize["best"] = min(successful, key=lambda r: r["path_length"])
+                if args.play == "worst" or args.save_videos in ("worst", "both"):
+                    to_visualize["worst"] = max(successful, key=lambda r: r["path_length"])
 
-                # Visualize/save the selected paths
                 for vis_type, chosen in to_visualize.items():
                     title = (
-                        f"{scenario_id} – {planner_id} – {vis_type.upper()} "
+                        f"{scenario_id} - {planner_id} - {vis_type.upper()} "
                         f"(seed={chosen['seed']}, len={chosen['path_length']})"
                     )
-                    
-                    # Play in window if requested
-                    if args.play and vis_type == (args.play if args.play != "" else None):
+
+                    # Prepare dynamics overlays if requested
+                    dynamics_kwargs: dict[str, Any] = {}
+                    if args.with_dynamics and chosen.get("map_source") == "osm":
+                        try:
+                            from uavbench.viz.dynamics_sim import simulate_dynamics_along_path
+                            tile_path = Path("data/maps") / f"{chosen['osm_tile_id']}.npz"
+                            cfg = chosen["config"]
+                            sim = simulate_dynamics_along_path(
+                                tile_path=tile_path,
+                                path=chosen["path"],
+                                enable_fire=cfg.enable_fire,
+                                enable_traffic=cfg.enable_traffic,
+                                fire_ignition_points=cfg.fire_ignition_points,
+                                wind_direction=cfg.wind_direction,
+                                wind_speed=cfg.wind_speed,
+                                num_vehicles=cfg.num_emergency_vehicles,
+                                seed=chosen["seed"],
+                            )
+                            dynamics_kwargs = {
+                                "fire_states": sim["fire_states"],
+                                "burned_states": sim["burned_states"],
+                                "traffic_states": sim["traffic_states"],
+                                "roads_mask": sim["roads_mask"],
+                                "risk_map": sim["risk_map"],
+                            }
+                        except Exception as e:
+                            print(f"[WARNING] Dynamics overlay failed: {e}")
+
+                    # Play in window
+                    if args.play and vis_type == args.play:
                         play_path_window(
-                            chosen["heightmap"],
-                            chosen["no_fly"],
-                            chosen["start"],
-                            chosen["goal"],
-                            chosen["path"],
-                            title=title,
-                            fps=args.fps,
+                            chosen["heightmap"], chosen["no_fly"],
+                            chosen["start"], chosen["goal"], chosen["path"],
+                            title=title, fps=args.fps,
+                            **dynamics_kwargs,
                         )
-                    
-                    # Save as video if requested
+
+                    # Save video
                     if args.save_videos:
                         video_dir = Path("videos")
                         video_name = f"{scenario_id}_{planner_id}_{vis_type}_seed{chosen['seed']}.mp4"
-                        video_path = video_dir / video_name
-                        
                         save_path_video(
-                            chosen["heightmap"],
-                            chosen["no_fly"],
-                            chosen["start"],
-                            chosen["goal"],
-                            chosen["path"],
-                            video_path,
-                            title=title,
-                            fps=args.fps,
+                            chosen["heightmap"], chosen["no_fly"],
+                            chosen["start"], chosen["goal"], chosen["path"],
+                            video_dir / video_name,
+                            title=title, fps=args.fps,
+                            **dynamics_kwargs,
                         )
+
+                    # Save publication figure
+                    if args.save_figures:
+                        try:
+                            from uavbench.viz.figures import plot_trajectory_with_dynamics
+                            fig_dir = Path(args.save_figures)
+                            fig_name = f"{scenario_id}_{planner_id}_{vis_type}_seed{chosen['seed']}.png"
+                            fig_kwargs: dict[str, Any] = {}
+                            if dynamics_kwargs.get("fire_states"):
+                                fig_kwargs["fire_mask"] = dynamics_kwargs["fire_states"][-1]
+                            if dynamics_kwargs.get("burned_states"):
+                                fig_kwargs["burned_mask"] = dynamics_kwargs["burned_states"][-1]
+                            if dynamics_kwargs.get("traffic_states"):
+                                fig_kwargs["vehicle_positions"] = dynamics_kwargs["traffic_states"][-1]
+                            if dynamics_kwargs.get("roads_mask") is not None:
+                                fig_kwargs["roads_mask"] = dynamics_kwargs["roads_mask"]
+                            if dynamics_kwargs.get("risk_map") is not None:
+                                fig_kwargs["risk_map"] = dynamics_kwargs["risk_map"]
+                            plot_trajectory_with_dynamics(
+                                chosen["heightmap"], chosen["no_fly"],
+                                chosen["start"], chosen["goal"], chosen["path"],
+                                fig_dir / fig_name,
+                                title=title, **fig_kwargs,
+                            )
+                        except Exception as e:
+                            print(f"[WARNING] Figure save failed: {e}")
 
 
 if __name__ == "__main__":
