@@ -1,0 +1,22 @@
+# Scenario 7: Border Surveillance — Medium
+# Application: Perimeter monitoring, area control (dual-use proxy)
+# Tile: Penteli (mixed terrain, suburban/wilderness)
+# Challenge: Extended patrol range, reduced altitude ceiling
+name: "osm_athens_border_medium"
+domain: "urban"
+difficulty: "medium"
+
+map_source: "osm"
+osm_tile_id: "penteli"
+map_size: 500
+max_altitude: 8
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 6
+min_start_goal_l1: 300
+
+wind: "none"
+traffic: "none"

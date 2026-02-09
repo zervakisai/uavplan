@@ -1,0 +1,22 @@
+# Scenario 5: Search & Rescue — Medium
+# Application: Missing person search, wilderness rescue
+# Tile: Penteli (wilderness/urban interface, varied terrain)
+# Challenge: Lower ceiling, longer search distance
+name: "osm_athens_sar_medium"
+domain: "urban"
+difficulty: "medium"
+
+map_source: "osm"
+osm_tile_id: "penteli"
+map_size: 500
+max_altitude: 8
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 6
+min_start_goal_l1: 200
+
+wind: "none"
+traffic: "none"

@@ -1,0 +1,26 @@
+# Scenario 2: Downtown Emergency Response — Hard
+# Application: Medical emergency routing, crisis response
+# Tile: Downtown Athens (dense urban, heavy road network)
+# Challenge: Heavy traffic, low ceiling, long-distance delivery
+name: "osm_athens_emergency_hard"
+domain: "urban"
+difficulty: "hard"
+
+map_source: "osm"
+osm_tile_id: "downtown"
+map_size: 500
+max_altitude: 6
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 5
+min_start_goal_l1: 250
+
+wind: "none"
+traffic: "none"
+
+# Emergency traffic dynamics — heavy traffic
+enable_traffic: true
+num_emergency_vehicles: 12

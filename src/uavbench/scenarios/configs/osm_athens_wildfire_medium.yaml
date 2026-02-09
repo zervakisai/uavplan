@@ -1,0 +1,28 @@
+# Scenario 1: Athens Wildfire WUI — Medium
+# Application: Forest fire monitoring, evacuation routing
+# Tile: Penteli (wildfire-urban interface, forest-dominated)
+# Challenge: More ignition points, stronger wind, lower ceiling
+name: "osm_athens_wildfire_medium"
+domain: "urban"
+difficulty: "medium"
+
+map_source: "osm"
+osm_tile_id: "penteli"
+map_size: 500
+max_altitude: 8
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 6
+min_start_goal_l1: 200
+
+wind: "none"
+traffic: "none"
+
+# Wildfire dynamics — moderate conditions
+enable_fire: true
+fire_ignition_points: 5
+wind_direction: 0.785
+wind_speed: 0.5

@@ -1,0 +1,22 @@
+# Scenario 6: Critical Infrastructure Patrol — Easy
+# Application: Infrastructure inspection, damage assessment
+# Tile: Downtown Athens (high amenity density — hospitals, schools)
+# Challenge: Navigate dense urban area, minimize risk_map exposure
+name: "osm_athens_infrastructure_easy"
+domain: "urban"
+difficulty: "easy"
+
+map_source: "osm"
+osm_tile_id: "downtown"
+map_size: 500
+max_altitude: 10
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 8
+min_start_goal_l1: 150
+
+wind: "none"
+traffic: "none"

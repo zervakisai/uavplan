@@ -1,0 +1,22 @@
+# Scenario 3: Port Security Patrol — Medium
+# Application: Port surveillance, critical infrastructure security
+# Tile: Piraeus (maritime/urban mix, tall structures up to 84m)
+# Challenge: Lower ceiling forces navigation between tall port structures
+name: "osm_athens_port_medium"
+domain: "urban"
+difficulty: "medium"
+
+map_source: "osm"
+osm_tile_id: "piraeus"
+map_size: 500
+max_altitude: 8
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 6
+min_start_goal_l1: 200
+
+wind: "none"
+traffic: "none"
