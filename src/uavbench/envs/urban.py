@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
@@ -7,6 +8,8 @@ import numpy as np
 from gymnasium import spaces
 
 from uavbench.envs.base import UAVBenchEnv
+from uavbench.dynamics.fire_spread import FireSpreadModel
+from uavbench.dynamics.traffic import TrafficModel
 from uavbench.scenarios.schema import ScenarioConfig, Domain, Difficulty
 
 
@@ -24,7 +27,7 @@ class UrbanEnv(UAVBenchEnv):
         super().__init__(config)
 
         self.map_size = config.map_size
-        self.max_altitude = 3
+        self.max_altitude = config.max_altitude
         self.max_building_height = 50.0
 
         # State: [x, y, z, gx, gy, gz, h(x,y)]
@@ -60,80 +63,52 @@ class UrbanEnv(UAVBenchEnv):
     # --------------- Domain-specific reset/step ----------------
 
     def _reset_impl(self, options: dict[str, Any] | None = None):
-        """Build a new Urban map + sample start/goal for a new episode.
-
-        Model (LEVELS-ONLY):
-          - z is discrete altitude levels: 0..max_altitude
-          - heightmap h(x,y) is also in levels: 0..max_altitude
-          - collision check can safely be: z <= h(x,y)
-        """
+        """Build or load a map + sample start/goal for a new episode."""
         options = options or {}
         cfg = self.config
-        H = W = int(self.map_size)
 
-        # ---------- 0) Basic guards (V&V / early failure) ----------
-        if H < 5:
-            raise ValueError("map_size must be >= 5 for meaningful Urban scenarios.")
-        if self.max_altitude < 1:
-            raise ValueError("max_altitude must be >= 1.")
+        # ---------- Build / load the map ----------
+        if cfg.map_source == "osm":
+            self._load_osm_tile(cfg.osm_tile_id)
+        else:
+            self._generate_synthetic_map(options)
 
-        # ---------- 1) Parameters / knobs ----------
-        # building density in [0,1]
-        building_density = float(getattr(cfg, "building_density", options.get("building_density", 0.30)))
-        building_density = float(np.clip(building_density, 0.0, 1.0))
+        H, W = self._heightmap.shape
 
-        # building height in LEVELS (0..max_altitude)
-        building_level = int(getattr(cfg, "building_level", options.get("building_level", self.max_altitude)))
-        building_level = int(np.clip(building_level, 0, self.max_altitude))
+        # ---------- Initialize dynamic layers ----------
+        self._fire_model: FireSpreadModel | None = None
+        self._traffic_model: TrafficModel | None = None
+        self._moving_target = None
+        self._intruder_model = None
+        self._dynamic_nfz = None
 
-        # choose safe altitude in LEVELS (0..max_altitude)
+        if cfg.enable_fire:
+            landuse = getattr(self, "_landuse_map", np.zeros((H, W), dtype=np.int8))
+            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
+            self._fire_model = FireSpreadModel(
+                landuse_map=landuse,
+                roads_mask=roads,
+                wind_dir=cfg.wind_direction,
+                wind_speed=cfg.wind_speed,
+                rng=self._rng,
+                n_ignition=cfg.fire_ignition_points,
+            )
+
+        if cfg.enable_traffic:
+            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
+            self._traffic_model = TrafficModel(
+                roads_mask=roads,
+                num_vehicles=cfg.num_emergency_vehicles,
+                rng=self._rng,
+            )
+
+        # ---------- Parameters for start/goal placement ----------
         safe_alt = int(getattr(cfg, "safe_altitude", options.get("safe_altitude", self.max_altitude)))
         safe_alt = int(np.clip(safe_alt, 0, self.max_altitude))
 
-        # Human drop-off start altitude: FIXED at level=1 (and clipped just in case)
-        start_alt = int(getattr(cfg, "start_altitude", options.get("start_altitude", 1)))
-        start_alt = int(np.clip(start_alt, 1, self.max_altitude))  # enforce >=1
-
-        # enforce start-goal distance (L1 / Manhattan)
         min_l1 = int(getattr(cfg, "min_start_goal_l1", options.get("min_start_goal_l1", max(2, H // 2))))
 
-        # difficulty adjustments
-        extra_density_medium = float(getattr(cfg, "extra_density_medium", options.get("extra_density_medium", 0.10)))
-        extra_density_hard = float(getattr(cfg, "extra_density_hard", options.get("extra_density_hard", 0.20)))
-
-        # hard no-fly circle radius
-        no_fly_radius = int(getattr(cfg, "no_fly_radius", options.get("no_fly_radius", max(1, H // 8))))
-
-        # ---------- 2) Build base heightmap ----------
-        # heightmap values are 0.0 for free cells, building_level (as float) for buildings
-        base_mask = (self._rng.random((H, W)) < building_density)
-        self._heightmap = np.zeros((H, W), dtype=np.float32)
-        self._heightmap[base_mask] = float(building_level)
-
-        # no-fly mask
-        self._no_fly_mask = np.zeros((H, W), dtype=bool)
-
-        # ---------- 3) Difficulty-specific tweaks ----------
-        # MEDIUM: add a little more buildings
-        if cfg.difficulty == Difficulty.MEDIUM:
-            extra_mask = (self._rng.random((H, W)) < extra_density_medium)
-            self._heightmap[extra_mask] = float(building_level)
-
-        # HARD: more buildings + central no-fly circle
-        elif cfg.difficulty == Difficulty.HARD:
-            extra_mask = (self._rng.random((H, W)) < extra_density_hard)
-            self._heightmap[extra_mask] = float(building_level)
-
-            cy, cx = H // 2, W // 2
-            yy, xx = np.ogrid[:H, :W]
-            circle = (yy - cy) ** 2 + (xx - cx) ** 2 <= no_fly_radius ** 2
-            self._no_fly_mask[circle] = True
-
-            # (Optional) ensure no-fly cells are not also "free" by definition.
-            # We keep heightmap as-is; no-fly is a separate constraint.
-
-        # ---------- 4) Collect free cells (avoid infinite loops) ----------
-        # free = no building + not no-fly
+        # ---------- Collect free cells ----------
         free_mask = (self._heightmap == 0.0) & (~self._no_fly_mask)
         free_cells = np.argwhere(free_mask)  # array of [y, x]
 
@@ -143,14 +118,13 @@ class UrbanEnv(UAVBenchEnv):
                 "Reduce building_density / no-fly constraints or increase map_size."
             )
 
-        # ---------- 5) Sample start ----------
+        # ---------- Sample start ----------
         si = int(self._rng.integers(0, free_cells.shape[0]))
         sy, sx = map(int, free_cells[si])
 
-        # ---------- 6) Sample goal with minimum L1 distance ----------
+        # ---------- Sample goal with minimum L1 distance ----------
         gx = gy = None
 
-        # Try a fixed number of attempts first (fast)
         for _ in range(200):
             gi = int(self._rng.integers(0, free_cells.shape[0]))
             ty, tx = map(int, free_cells[gi])
@@ -161,37 +135,149 @@ class UrbanEnv(UAVBenchEnv):
                 gx, gy = tx, ty
                 break
 
-        # Fallback: choose farthest free cell (guaranteed)
+        # Fallback: choose farthest free cell
         if gx is None:
             dists = np.abs(free_cells[:, 1] - sx) + np.abs(free_cells[:, 0] - sy)
             idx = int(np.argmax(dists))
             gy, gx = map(int, free_cells[idx])
 
-        # ---------- 7) Set internal state ----------
-        # Start at human-drop-off level=1
+        # ---------- Set internal state ----------
         self._agent_pos = np.array([sx, sy, safe_alt], dtype=np.int32)
-
-        # Option B (typical): goal at "cruise" altitude (lets policy learn altitude change)
         self._goal_pos = np.array([gx, gy, safe_alt], dtype=np.int32)
 
-        # IMPORTANT: do NOT touch self._step_count here (base reset handles it)
+        # ---------- Late-init dynamics that need start/goal ----------
+        if cfg.enable_moving_target:
+            from uavbench.dynamics.moving_target import MovingTargetModel
+            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
+            # Spawn target on a road cell far from UAV start
+            road_yx = np.argwhere(roads)
+            if len(road_yx) > 2:
+                dists = np.abs(road_yx[:, 1] - sx) + np.abs(road_yx[:, 0] - sy)
+                far_idx = int(np.argmax(dists))
+                spawn_x, spawn_y = int(road_yx[far_idx, 1]), int(road_yx[far_idx, 0])
+            else:
+                spawn_x, spawn_y = H // 4, W // 4
+            self._moving_target = MovingTargetModel(
+                roads_mask=roads,
+                start_pos=(spawn_x, spawn_y),
+                goal_pos=(gx, gy),
+                speed=cfg.target_speed,
+                buffer_radius=cfg.target_buffer_radius,
+                rng=self._rng,
+            )
 
-        # ---------- 8) Build observation + info ----------
+        if cfg.enable_intruders:
+            from uavbench.dynamics.intruder import IntruderModel
+            self._intruder_model = IntruderModel(
+                map_shape=(H, W),
+                num_intruders=cfg.num_intruders,
+                spawn_zone=cfg.intruder_spawn_zone,
+                target_area=(gx, gy),
+                speed=cfg.intruder_speed,
+                rng=self._rng,
+            )
+
+        if cfg.enable_dynamic_nfz:
+            from uavbench.dynamics.dynamic_nfz import DynamicNFZModel
+            self._dynamic_nfz = DynamicNFZModel(
+                map_shape=(H, W),
+                uav_start=(sx, sy),
+                uav_goal=(gx, gy),
+                num_zones=cfg.num_nfz_zones,
+                expansion_rate=cfg.nfz_expansion_rate,
+                max_radius=cfg.nfz_max_radius,
+                rng=self._rng,
+            )
+
+        # ---------- Build observation + info ----------
         obs = self._build_observation()
 
         info: dict[str, Any] = {
             "scenario_name": getattr(cfg, "name", "unknown"),
             "domain": getattr(cfg.domain, "value", str(cfg.domain)),
             "difficulty": getattr(cfg.difficulty, "value", str(cfg.difficulty)),
-            "building_density": float(building_density),
-            "building_level": int(building_level),
-            "start_altitude": int(start_alt),
+            "map_source": cfg.map_source,
             "safe_altitude": int(safe_alt),
             "min_start_goal_l1": int(min_l1),
             "free_cells": int(free_cells.shape[0]),
-            "no_fly_radius": int(no_fly_radius) if cfg.difficulty == Difficulty.HARD else 0,
+            "map_shape": (H, W),
         }
         return obs, info
+
+    # --------------- Map generation / loading ----------------
+
+    def _generate_synthetic_map(self, options: dict[str, Any]) -> None:
+        """Generate a synthetic heightmap with random buildings (original behavior)."""
+        cfg = self.config
+        H = W = int(self.map_size)
+
+        if H < 5:
+            raise ValueError("map_size must be >= 5 for meaningful Urban scenarios.")
+        if self.max_altitude < 1:
+            raise ValueError("max_altitude must be >= 1.")
+
+        building_density = float(getattr(cfg, "building_density", options.get("building_density", 0.30)))
+        building_density = float(np.clip(building_density, 0.0, 1.0))
+
+        building_level = int(getattr(cfg, "building_level", options.get("building_level", self.max_altitude)))
+        building_level = int(np.clip(building_level, 0, self.max_altitude))
+
+        extra_density_medium = float(getattr(cfg, "extra_density_medium", options.get("extra_density_medium", 0.10)))
+        extra_density_hard = float(getattr(cfg, "extra_density_hard", options.get("extra_density_hard", 0.20)))
+        no_fly_radius = int(getattr(cfg, "no_fly_radius", options.get("no_fly_radius", max(1, H // 8))))
+
+        # Build base heightmap
+        base_mask = (self._rng.random((H, W)) < building_density)
+        self._heightmap = np.zeros((H, W), dtype=np.float32)
+        self._heightmap[base_mask] = float(building_level)
+        self._no_fly_mask = np.zeros((H, W), dtype=bool)
+
+        # Difficulty-specific tweaks
+        if cfg.difficulty == Difficulty.MEDIUM:
+            extra_mask = (self._rng.random((H, W)) < extra_density_medium)
+            self._heightmap[extra_mask] = float(building_level)
+
+        elif cfg.difficulty == Difficulty.HARD:
+            extra_mask = (self._rng.random((H, W)) < extra_density_hard)
+            self._heightmap[extra_mask] = float(building_level)
+
+            cy, cx = H // 2, W // 2
+            yy, xx = np.ogrid[:H, :W]
+            circle = (yy - cy) ** 2 + (xx - cx) ** 2 <= no_fly_radius ** 2
+            self._no_fly_mask[circle] = True
+
+    def _load_osm_tile(self, tile_id: str) -> None:
+        """Load a pre-rasterized OSM tile from data/maps/{tile_id}.npz.
+
+        Converts meter-based heightmap to altitude levels (10m per level)
+        and stores extra layers for future use.
+        """
+        npz_path = Path("data/maps") / f"{tile_id}.npz"
+        if not npz_path.exists():
+            raise FileNotFoundError(
+                f"OSM tile not found: {npz_path}. "
+                f"Run: python -m tools.osm_pipeline.fetch --tile {tile_id} && "
+                f"python -m tools.osm_pipeline.rasterize --tile {tile_id}"
+            )
+
+        data = np.load(str(npz_path))
+
+        # Convert meters → altitude levels (10m per level, clamped to max_altitude)
+        meters_per_level = 10.0
+        raw_m = data["heightmap"]
+        self._heightmap = np.clip(
+            np.ceil(raw_m / meters_per_level), 0, self.max_altitude
+        ).astype(np.float32)
+
+        self._no_fly_mask = data["nfz_mask"].astype(bool)
+
+        # Update map_size to match tile dimensions
+        self.map_size = self._heightmap.shape[0]
+
+        # Store extra layers for future phases (dynamics, visualization)
+        self._roads_mask = data["roads_mask"].astype(bool)
+        self._landuse_map = data["landuse_map"]
+        self._risk_map = data["risk_map"]
 
 
     def _step_impl(self, action: int):
@@ -261,6 +347,58 @@ class UrbanEnv(UAVBenchEnv):
                 x=nx, y=ny, z=nz, height=terrain_h
             )
 
+        # Fire blocks movement (only when config flag is set)
+        attempted_fire_block = False
+        if (accepted and self.config.fire_blocks_movement
+                and self._fire_model is not None
+                and self._fire_model.fire_mask[ny, nx]):
+            accepted = False
+            attempted_fire_block = True
+            self.log_event("fire_block", x=nx, y=ny, z=nz)
+
+        # Traffic blocks movement (vehicle buffer zones reject movement)
+        attempted_traffic_block = False
+        if (accepted and self.config.traffic_blocks_movement
+                and self._traffic_model is not None):
+            for vy, vx in self._traffic_model.vehicle_positions:
+                dist = abs(nx - int(vx)) + abs(ny - int(vy))
+                if dist <= 5:
+                    accepted = False
+                    attempted_traffic_block = True
+                    self.log_event("traffic_block", x=nx, y=ny, z=nz,
+                                   vx=int(vx), vy=int(vy), dist=dist)
+                    break
+
+        # Moving target buffer blocks movement
+        attempted_target_block = False
+        if accepted and self._moving_target is not None:
+            tp = self._moving_target.current_position
+            dist = abs(nx - int(tp[0])) + abs(ny - int(tp[1]))
+            if dist <= self._moving_target.buffer_radius:
+                accepted = False
+                attempted_target_block = True
+                self.log_event("target_block", x=nx, y=ny, z=nz)
+
+        # Intruder buffer blocks movement
+        attempted_intruder_block = False
+        if accepted and self._intruder_model is not None:
+            for pos in self._intruder_model.active_positions:
+                dist = abs(nx - int(pos[0])) + abs(ny - int(pos[1]))
+                if dist <= self._intruder_model.buffer_radius:
+                    accepted = False
+                    attempted_intruder_block = True
+                    self.log_event("intruder_block", x=nx, y=ny, z=nz)
+                    break
+
+        # Dynamic NFZ blocks movement
+        attempted_nfz_block = False
+        if accepted and self._dynamic_nfz is not None:
+            nfz_mask = self._dynamic_nfz.get_nfz_mask()
+            if nfz_mask[ny, nx]:
+                accepted = False
+                attempted_nfz_block = True
+                self.log_event("dynamic_nfz_block", x=nx, y=ny, z=nz)
+
         if accepted:
             self._agent_pos = np.array([nx, ny, nz], dtype=np.int32)
 
@@ -270,6 +408,43 @@ class UrbanEnv(UAVBenchEnv):
         # ---------- 6) Distance AFTER the move ----------
         ax2, ay2, az2 = map(int, self._agent_pos)
         new_dist = float(abs(ax2 - gx) + abs(ay2 - gy) + w_z * abs(az2 - gz))
+
+        # ---------- 6b) Advance dynamic layers ----------
+        fire_exposure = False
+        traffic_proximity = False
+        fire_cells = 0
+        vehicles_near = 0
+
+        smoke_intensity = 0.0
+
+        if self._fire_model is not None:
+            self._fire_model.step(dt=1.0)
+            fire_cells = int(self._fire_model.fire_mask.sum())
+            if self._fire_model.fire_mask[ay2, ax2]:
+                fire_exposure = True
+                self.log_event("fire_exposure", x=ax2, y=ay2, z=az2)
+            # Smoke exposure check
+            smoke_intensity = float(self._fire_model.smoke_mask[ay2, ax2])
+            if smoke_intensity > 0.3:
+                self.log_event("smoke_exposure", x=ax2, y=ay2, z=az2,
+                               intensity=round(smoke_intensity, 3))
+
+        if self._traffic_model is not None:
+            self._traffic_model.step(dt=1.0)
+            H, W = self._heightmap.shape
+            traffic_buffer = self._traffic_model.get_occupancy_mask((H, W))
+            if traffic_buffer[ay2, ax2]:
+                traffic_proximity = True
+                vehicles_near = int(len(self._traffic_model.vehicle_positions))
+                self.log_event("traffic_proximity", x=ax2, y=ay2, z=az2)
+
+        # Step new dynamics
+        if self._moving_target is not None:
+            self._moving_target.step(dt=1.0)
+        if self._intruder_model is not None:
+            self._intruder_model.step(dt=1.0)
+        if self._dynamic_nfz is not None:
+            self._dynamic_nfz.step(dt=1.0)
 
         # ---------- 7) Reward (robust baseline) ----------
         # Step cost encourages shorter paths.
@@ -284,18 +459,37 @@ class UrbanEnv(UAVBenchEnv):
         elif attempted_building_collision:
             reward -= float(p_building)
 
+        # Collision termination penalty (UAV-ON standard)
+        collision = bool(
+            self.config.terminate_on_collision
+            and (attempted_building_collision or attempted_no_fly)
+        )
+        if collision:
+            reward -= 25.0
+            ctype = "collision_building" if attempted_building_collision else "collision_nfz"
+            self.log_event("collision_terminated", x=nx, y=ny, z=nz,
+                           collision_type=ctype)
+
+        # Dynamic layer penalties
+        if fire_exposure:
+            reward -= 20.0
+        if smoke_intensity > 0.3:
+            reward -= 5.0 * smoke_intensity
+        if traffic_proximity:
+            reward -= 5.0
+
         # Goal achievement
         reached = bool(np.array_equal(self._agent_pos, self._goal_pos))
         if reached:
             reward += float(r_goal)
 
         # ---------- 8) Termination / truncation ----------
-        terminated = reached
+        terminated = reached or collision
 
         # IMPORTANT: base.step() increments _step_count AFTER this returns.
         # So the next step index will be current + 1.
         next_step_idx = self._step_count + 1
-        truncated = bool((next_step_idx >= max_steps) and (not reached))
+        truncated = bool((next_step_idx >= max_steps) and (not terminated))
 
         # ---------- 9) Info ----------
         info: dict[str, Any] = {
@@ -307,16 +501,33 @@ class UrbanEnv(UAVBenchEnv):
             # Goal status
             "reached_goal": reached,
             "distance_to_goal": float(new_dist),
+            "collision_terminated": collision,
+            "termination_reason": (
+                ("collision_building" if attempted_building_collision else "collision_nfz")
+                if collision
+                else ("success" if reached else ("timeout" if truncated else "in_progress"))
+            ),
 
             # Safety / constraints
             "attempted_building_collision": attempted_building_collision,
             "attempted_no_fly": attempted_no_fly,
+            "attempted_fire_block": attempted_fire_block,
+            "attempted_traffic_block": attempted_traffic_block,
             "accepted_move": bool(accepted),
 
             # State for metrics (path length, energy proxy κ.λπ. τα χτίζεις έξω)
             "agent_pos": (int(ax2), int(ay2), int(az2)),
             "goal_pos": (int(gx), int(gy), int(gz)),
             "terrain_height": float(terrain_h),
+
+            # Dynamic layers
+            "fire_active": self._fire_model is not None,
+            "traffic_active": self._traffic_model is not None,
+            "fire_exposure": fire_exposure,
+            "smoke_intensity": smoke_intensity,
+            "traffic_proximity": traffic_proximity,
+            "fire_cells": fire_cells,
+            "vehicles_near": vehicles_near,
 
             # Optional debugging
             "step_index": int(self._step_count + 1),
@@ -367,3 +578,33 @@ class UrbanEnv(UAVBenchEnv):
         no_fly = np.array(self._no_fly_mask, copy=True)
 
         return heightmap, no_fly, (ax, ay), (gx, gy)
+
+    def get_dynamic_state(self) -> dict[str, Any]:
+        """Return all dynamic obstacle state for adaptive planners."""
+        H, W = self._heightmap.shape
+        state: dict[str, Any] = {
+            "fire_mask": None,
+            "burned_mask": None,
+            "smoke_mask": None,
+            "traffic_positions": None,
+            "moving_target_pos": None,
+            "moving_target_buffer": None,
+            "intruder_positions": None,
+            "intruder_buffer": None,
+            "dynamic_nfz_mask": None,
+        }
+        if self._fire_model is not None:
+            state["fire_mask"] = self._fire_model.fire_mask.copy()
+            state["burned_mask"] = self._fire_model.burned_mask.copy()
+            state["smoke_mask"] = self._fire_model.smoke_mask.copy()
+        if self._traffic_model is not None:
+            state["traffic_positions"] = self._traffic_model.vehicle_positions.copy()
+        if self._moving_target is not None:
+            state["moving_target_pos"] = self._moving_target.current_position
+            state["moving_target_buffer"] = self._moving_target.get_buffer_mask((H, W))
+        if self._intruder_model is not None:
+            state["intruder_positions"] = self._intruder_model.active_positions
+            state["intruder_buffer"] = self._intruder_model.get_buffer_mask((H, W))
+        if self._dynamic_nfz is not None:
+            state["dynamic_nfz_mask"] = self._dynamic_nfz.get_nfz_mask()
+        return state

@@ -1,0 +1,31 @@
+# Scenario 7: Border Surveillance — Hard
+# Application: Perimeter monitoring, area control (dual-use proxy)
+# Tile: Penteli (mixed terrain, suburban/wilderness)
+# Challenge: Maximum patrol distance, very low ceiling, fuel constraints
+name: "osm_athens_border_hard"
+domain: "urban"
+difficulty: "hard"
+
+map_source: "osm"
+osm_tile_id: "penteli"
+map_size: 500
+max_altitude: 6
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 5
+min_start_goal_l1: 400
+
+wind: "medium"
+traffic: "high"
+
+# Dynamic layers: many fast intruders + heavy traffic
+enable_intruders: true
+num_intruders: 6
+intruder_speed: 1.0
+intruder_spawn_zone: "north"
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 15

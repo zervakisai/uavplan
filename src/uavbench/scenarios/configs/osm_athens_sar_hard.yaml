@@ -1,0 +1,30 @@
+# Scenario 5: Search & Rescue — Hard
+# Application: Missing person search, wilderness rescue
+# Tile: Penteli (wilderness/urban interface, varied terrain)
+# Challenge: Very low ceiling with terrain obstacles, long-range search
+name: "osm_athens_sar_hard"
+domain: "urban"
+difficulty: "hard"
+
+map_source: "osm"
+osm_tile_id: "penteli"
+map_size: 500
+max_altitude: 6
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 5
+min_start_goal_l1: 250
+
+wind: "medium"
+traffic: "high"
+
+# Dynamic layers: fast moving target + heavy traffic
+enable_moving_target: true
+target_speed: 2.0
+target_buffer_radius: 12
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 18

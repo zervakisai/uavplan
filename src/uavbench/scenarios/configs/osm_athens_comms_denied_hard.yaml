@@ -1,0 +1,29 @@
+# Scenario 8: Communications-Denied Environment — Hard
+# Application: Contested airspace, electronic warfare (dual-use)
+# Tile: Downtown Athens (dense urban, complex radio propagation)
+# Challenge: Navigate with intermittent NFZ zones (simulated jamming)
+# Note: For future extension with dynamic NFZ zones
+name: "osm_athens_comms_denied_hard"
+domain: "urban"
+difficulty: "hard"
+
+map_source: "osm"
+osm_tile_id: "downtown"
+map_size: 500
+max_altitude: 6
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 5
+min_start_goal_l1: 300
+
+wind: "medium"
+traffic: "none"
+
+# Dynamic layers: expanding/contracting no-fly zones (jamming)
+enable_dynamic_nfz: true
+num_nfz_zones: 3
+nfz_expansion_rate: 0.8
+nfz_max_radius: 35

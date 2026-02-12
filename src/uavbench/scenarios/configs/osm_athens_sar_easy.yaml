@@ -1,0 +1,30 @@
+# Scenario 5: Search & Rescue — Easy
+# Application: Missing person search, wilderness rescue
+# Tile: Penteli (wilderness/urban interface, varied terrain)
+# Challenge: Navigate forested terrain to reach search area
+name: "osm_athens_sar_easy"
+domain: "urban"
+difficulty: "easy"
+
+map_source: "osm"
+osm_tile_id: "penteli"
+map_size: 500
+max_altitude: 10
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 8
+min_start_goal_l1: 150
+
+wind: "none"
+traffic: "low"
+
+# Dynamic layers: moving target (SAR) + emergency vehicles
+enable_moving_target: true
+target_speed: 1.0
+target_buffer_radius: 8
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 8
