@@ -14,3 +14,20 @@ dist/
 
 # Videos / artifacts
 videos/
+
+# OSM pipeline data (offline-generated, not committed)
+data/maps/*.npz
+data/maps/*.npy
+data/maps/*.tif
+data/maps/*.geojson
+data/maps/penteli/
+data/maps/downtown/
+data/maps/piraeus/
+
+# Pipeline intermediate artifacts
+tools/osm_pipeline/__pycache__/
+*.osm
+*.pbf
+
+# Editor backup files
+*.save

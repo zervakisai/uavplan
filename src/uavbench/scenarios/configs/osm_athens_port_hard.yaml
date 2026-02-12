@@ -1,0 +1,32 @@
+# Scenario 3: Port Security Patrol — Hard
+# Application: Port surveillance, critical infrastructure security
+# Tile: Piraeus (maritime/urban mix, tall structures up to 84m)
+# Challenge: Very low ceiling with tall structures, long patrol distance
+name: "osm_athens_port_hard"
+domain: "urban"
+difficulty: "hard"
+
+map_source: "osm"
+osm_tile_id: "piraeus"
+map_size: 500
+max_altitude: 6
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 5
+min_start_goal_l1: 250
+
+wind: "medium"
+traffic: "high"
+
+# Dynamic layers: intense port fire + heavy traffic
+enable_fire: true
+fire_blocks_movement: true
+fire_ignition_points: 7
+wind_direction: 2.36
+wind_speed: 0.8
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 18

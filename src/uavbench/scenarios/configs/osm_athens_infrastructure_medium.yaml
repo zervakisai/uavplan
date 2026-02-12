@@ -1,0 +1,32 @@
+# Scenario 6: Critical Infrastructure Patrol — Medium
+# Application: Infrastructure inspection, damage assessment
+# Tile: Downtown Athens (high amenity density — hospitals, schools)
+# Challenge: Lower ceiling in dense urban canyon, longer inspection route
+name: "osm_athens_infrastructure_medium"
+domain: "urban"
+difficulty: "medium"
+
+map_source: "osm"
+osm_tile_id: "downtown"
+map_size: 500
+max_altitude: 8
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 6
+min_start_goal_l1: 200
+
+wind: "low"
+traffic: "medium"
+
+# Dynamic layers: more fire sources + heavier traffic
+enable_fire: true
+fire_blocks_movement: true
+fire_ignition_points: 5
+wind_direction: 1.57
+wind_speed: 0.6
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 12
