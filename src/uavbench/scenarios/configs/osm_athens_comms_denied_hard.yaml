@@ -19,5 +19,11 @@ start_altitude: 2
 safe_altitude: 5
 min_start_goal_l1: 300
 
-wind: "none"
+wind: "medium"
 traffic: "none"
+
+# Dynamic layers: expanding/contracting no-fly zones (jamming)
+enable_dynamic_nfz: true
+num_nfz_zones: 3
+nfz_expansion_rate: 0.8
+nfz_max_radius: 35

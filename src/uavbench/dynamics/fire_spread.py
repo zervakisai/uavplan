@@ -85,6 +85,9 @@ class FireSpreadModel:
         # cos(0)=1 when aligned, cos(π)=-1 when opposed
         self._wind_modifier = 1.0 + 0.5 * self._wind_speed * np.cos(angle_diff)
 
+        # Smoke layer — float32 [H, W] in [0, 1]
+        self._smoke = np.zeros((H, W), dtype=np.float32)
+
         # Ignite
         self._ignite(n_ignition)
 
@@ -166,6 +169,43 @@ class FireSpreadModel:
             all_x = np.concatenate(new_fires_x)
             state[all_y, all_x] = BURNING
 
+        # Update smoke after fire spread
+        self._update_smoke()
+
+    def _update_smoke(self) -> None:
+        """Generate smoke from active fire + burned cells with wind advection.
+
+        Uses iterative box blur (pure numpy, no scipy) to approximate
+        gaussian spread.  Wind shifts the smoke directionally.
+        """
+        H, W = self._shape
+
+        # Smoke source: fire cells emit 1.0, burned-out emit 0.3
+        source = np.zeros((H, W), dtype=np.float32)
+        source[self._state == BURNING] = 1.0
+        source[self._state == BURNED_OUT] = 0.3
+
+        # Iterative 3×3 box blur (2 passes ≈ sigma ~2.5)
+        padded = source
+        for _ in range(2):
+            p = np.pad(padded, 1, mode="constant", constant_values=0)
+            padded = (
+                p[:-2, :-2] + p[:-2, 1:-1] + p[:-2, 2:]
+                + p[1:-1, :-2] + p[1:-1, 1:-1] + p[1:-1, 2:]
+                + p[2:, :-2] + p[2:, 1:-1] + p[2:, 2:]
+            ) / 9.0
+
+        # Wind advection — shift smoke in downwind direction
+        if self._wind_speed > 0:
+            shift_y = int(round(np.cos(self._wind_dir) * self._wind_speed * 3))
+            shift_x = int(round(np.sin(self._wind_dir) * self._wind_speed * 3))
+            if shift_y != 0 or shift_x != 0:
+                padded = np.roll(padded, shift_y, axis=0)
+                padded = np.roll(padded, shift_x, axis=1)
+
+        # Blend with previous smoke (persistence + decay)
+        self._smoke = np.clip(0.85 * self._smoke + 0.6 * padded, 0.0, 1.0)
+
     @property
     def fire_mask(self) -> np.ndarray:
         """[H, W] bool — cells currently on fire."""
@@ -175,6 +215,11 @@ class FireSpreadModel:
     def burned_mask(self) -> np.ndarray:
         """[H, W] bool — cells that have burned out."""
         return self._state == BURNED_OUT
+
+    @property
+    def smoke_mask(self) -> np.ndarray:
+        """[H, W] float32 — smoke intensity in [0, 1]."""
+        return self._smoke.copy()
 
     @property
     def total_affected(self) -> int:

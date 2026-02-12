@@ -18,5 +18,14 @@ start_altitude: 2
 safe_altitude: 6
 min_start_goal_l1: 300
 
-wind: "none"
-traffic: "none"
+wind: "low"
+traffic: "medium"
+
+# Dynamic layers: more intruders + heavier traffic
+enable_intruders: true
+num_intruders: 4
+intruder_speed: 0.8
+intruder_spawn_zone: "north"
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 10

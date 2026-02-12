@@ -18,5 +18,15 @@ start_altitude: 2
 safe_altitude: 6
 min_start_goal_l1: 200
 
-wind: "none"
-traffic: "none"
+wind: "low"
+traffic: "medium"
+
+# Dynamic layers: more fire sources + heavier traffic
+enable_fire: true
+fire_blocks_movement: true
+fire_ignition_points: 5
+wind_direction: 1.57
+wind_speed: 0.6
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 12

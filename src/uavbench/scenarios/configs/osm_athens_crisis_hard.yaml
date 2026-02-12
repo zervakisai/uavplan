@@ -24,7 +24,9 @@ traffic: "none"
 
 # Combined dynamics — fire + traffic
 enable_fire: true
+fire_blocks_movement: true
 enable_traffic: true
+traffic_blocks_movement: true
 fire_ignition_points: 5
 num_emergency_vehicles: 10
 wind_direction: 1.571    # 90 deg East wind

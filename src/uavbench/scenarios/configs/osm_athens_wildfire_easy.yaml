@@ -23,6 +23,7 @@ traffic: "none"
 
 # Wildfire dynamics — mild conditions
 enable_fire: true
+fire_blocks_movement: true
 fire_ignition_points: 3
 wind_direction: 0.785    # 45 deg NE, pushing toward urban fringe
 wind_speed: 0.3

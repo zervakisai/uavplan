@@ -103,18 +103,19 @@ class TrafficModel:
         return self._positions.copy()
 
     def get_occupancy_mask(
-        self, shape: tuple[int, int], buffer_radius: int = 3
+        self, shape: tuple[int, int], buffer_radius: int = 5
     ) -> np.ndarray:
-        """[H, W] bool — cells within buffer_radius of any vehicle."""
+        """[H, W] bool — cells within buffer_radius (Manhattan) of any vehicle."""
         mask = np.zeros(shape, dtype=bool)
         H, W = shape
 
         for i in range(len(self._positions)):
             py, px = self._positions[i]
-            y_lo = max(0, py - buffer_radius)
-            y_hi = min(H, py + buffer_radius + 1)
-            x_lo = max(0, px - buffer_radius)
-            x_hi = min(W, px + buffer_radius + 1)
-            mask[y_lo:y_hi, x_lo:x_hi] = True
+            for dy in range(-buffer_radius, buffer_radius + 1):
+                for dx in range(-buffer_radius, buffer_radius + 1):
+                    if abs(dy) + abs(dx) <= buffer_radius:
+                        ny, nx = int(py) + dy, int(px) + dx
+                        if 0 <= ny < H and 0 <= nx < W:
+                            mask[ny, nx] = True
 
         return mask

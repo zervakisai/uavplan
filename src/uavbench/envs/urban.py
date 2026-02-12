@@ -78,6 +78,9 @@ class UrbanEnv(UAVBenchEnv):
         # ---------- Initialize dynamic layers ----------
         self._fire_model: FireSpreadModel | None = None
         self._traffic_model: TrafficModel | None = None
+        self._moving_target = None
+        self._intruder_model = None
+        self._dynamic_nfz = None
 
         if cfg.enable_fire:
             landuse = getattr(self, "_landuse_map", np.zeros((H, W), dtype=np.int8))
@@ -141,6 +144,50 @@ class UrbanEnv(UAVBenchEnv):
         # ---------- Set internal state ----------
         self._agent_pos = np.array([sx, sy, safe_alt], dtype=np.int32)
         self._goal_pos = np.array([gx, gy, safe_alt], dtype=np.int32)
+
+        # ---------- Late-init dynamics that need start/goal ----------
+        if cfg.enable_moving_target:
+            from uavbench.dynamics.moving_target import MovingTargetModel
+            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
+            # Spawn target on a road cell far from UAV start
+            road_yx = np.argwhere(roads)
+            if len(road_yx) > 2:
+                dists = np.abs(road_yx[:, 1] - sx) + np.abs(road_yx[:, 0] - sy)
+                far_idx = int(np.argmax(dists))
+                spawn_x, spawn_y = int(road_yx[far_idx, 1]), int(road_yx[far_idx, 0])
+            else:
+                spawn_x, spawn_y = H // 4, W // 4
+            self._moving_target = MovingTargetModel(
+                roads_mask=roads,
+                start_pos=(spawn_x, spawn_y),
+                goal_pos=(gx, gy),
+                speed=cfg.target_speed,
+                buffer_radius=cfg.target_buffer_radius,
+                rng=self._rng,
+            )
+
+        if cfg.enable_intruders:
+            from uavbench.dynamics.intruder import IntruderModel
+            self._intruder_model = IntruderModel(
+                map_shape=(H, W),
+                num_intruders=cfg.num_intruders,
+                spawn_zone=cfg.intruder_spawn_zone,
+                target_area=(gx, gy),
+                speed=cfg.intruder_speed,
+                rng=self._rng,
+            )
+
+        if cfg.enable_dynamic_nfz:
+            from uavbench.dynamics.dynamic_nfz import DynamicNFZModel
+            self._dynamic_nfz = DynamicNFZModel(
+                map_shape=(H, W),
+                uav_start=(sx, sy),
+                uav_goal=(gx, gy),
+                num_zones=cfg.num_nfz_zones,
+                expansion_rate=cfg.nfz_expansion_rate,
+                max_radius=cfg.nfz_max_radius,
+                rng=self._rng,
+            )
 
         # ---------- Build observation + info ----------
         obs = self._build_observation()
@@ -300,6 +347,58 @@ class UrbanEnv(UAVBenchEnv):
                 x=nx, y=ny, z=nz, height=terrain_h
             )
 
+        # Fire blocks movement (only when config flag is set)
+        attempted_fire_block = False
+        if (accepted and self.config.fire_blocks_movement
+                and self._fire_model is not None
+                and self._fire_model.fire_mask[ny, nx]):
+            accepted = False
+            attempted_fire_block = True
+            self.log_event("fire_block", x=nx, y=ny, z=nz)
+
+        # Traffic blocks movement (vehicle buffer zones reject movement)
+        attempted_traffic_block = False
+        if (accepted and self.config.traffic_blocks_movement
+                and self._traffic_model is not None):
+            for vy, vx in self._traffic_model.vehicle_positions:
+                dist = abs(nx - int(vx)) + abs(ny - int(vy))
+                if dist <= 5:
+                    accepted = False
+                    attempted_traffic_block = True
+                    self.log_event("traffic_block", x=nx, y=ny, z=nz,
+                                   vx=int(vx), vy=int(vy), dist=dist)
+                    break
+
+        # Moving target buffer blocks movement
+        attempted_target_block = False
+        if accepted and self._moving_target is not None:
+            tp = self._moving_target.current_position
+            dist = abs(nx - int(tp[0])) + abs(ny - int(tp[1]))
+            if dist <= self._moving_target.buffer_radius:
+                accepted = False
+                attempted_target_block = True
+                self.log_event("target_block", x=nx, y=ny, z=nz)
+
+        # Intruder buffer blocks movement
+        attempted_intruder_block = False
+        if accepted and self._intruder_model is not None:
+            for pos in self._intruder_model.active_positions:
+                dist = abs(nx - int(pos[0])) + abs(ny - int(pos[1]))
+                if dist <= self._intruder_model.buffer_radius:
+                    accepted = False
+                    attempted_intruder_block = True
+                    self.log_event("intruder_block", x=nx, y=ny, z=nz)
+                    break
+
+        # Dynamic NFZ blocks movement
+        attempted_nfz_block = False
+        if accepted and self._dynamic_nfz is not None:
+            nfz_mask = self._dynamic_nfz.get_nfz_mask()
+            if nfz_mask[ny, nx]:
+                accepted = False
+                attempted_nfz_block = True
+                self.log_event("dynamic_nfz_block", x=nx, y=ny, z=nz)
+
         if accepted:
             self._agent_pos = np.array([nx, ny, nz], dtype=np.int32)
 
@@ -316,12 +415,19 @@ class UrbanEnv(UAVBenchEnv):
         fire_cells = 0
         vehicles_near = 0
 
+        smoke_intensity = 0.0
+
         if self._fire_model is not None:
             self._fire_model.step(dt=1.0)
             fire_cells = int(self._fire_model.fire_mask.sum())
             if self._fire_model.fire_mask[ay2, ax2]:
                 fire_exposure = True
                 self.log_event("fire_exposure", x=ax2, y=ay2, z=az2)
+            # Smoke exposure check
+            smoke_intensity = float(self._fire_model.smoke_mask[ay2, ax2])
+            if smoke_intensity > 0.3:
+                self.log_event("smoke_exposure", x=ax2, y=ay2, z=az2,
+                               intensity=round(smoke_intensity, 3))
 
         if self._traffic_model is not None:
             self._traffic_model.step(dt=1.0)
@@ -331,6 +437,14 @@ class UrbanEnv(UAVBenchEnv):
                 traffic_proximity = True
                 vehicles_near = int(len(self._traffic_model.vehicle_positions))
                 self.log_event("traffic_proximity", x=ax2, y=ay2, z=az2)
+
+        # Step new dynamics
+        if self._moving_target is not None:
+            self._moving_target.step(dt=1.0)
+        if self._intruder_model is not None:
+            self._intruder_model.step(dt=1.0)
+        if self._dynamic_nfz is not None:
+            self._dynamic_nfz.step(dt=1.0)
 
         # ---------- 7) Reward (robust baseline) ----------
         # Step cost encourages shorter paths.
@@ -345,9 +459,22 @@ class UrbanEnv(UAVBenchEnv):
         elif attempted_building_collision:
             reward -= float(p_building)
 
+        # Collision termination penalty (UAV-ON standard)
+        collision = bool(
+            self.config.terminate_on_collision
+            and (attempted_building_collision or attempted_no_fly)
+        )
+        if collision:
+            reward -= 25.0
+            ctype = "collision_building" if attempted_building_collision else "collision_nfz"
+            self.log_event("collision_terminated", x=nx, y=ny, z=nz,
+                           collision_type=ctype)
+
         # Dynamic layer penalties
         if fire_exposure:
             reward -= 20.0
+        if smoke_intensity > 0.3:
+            reward -= 5.0 * smoke_intensity
         if traffic_proximity:
             reward -= 5.0
 
@@ -357,12 +484,12 @@ class UrbanEnv(UAVBenchEnv):
             reward += float(r_goal)
 
         # ---------- 8) Termination / truncation ----------
-        terminated = reached
+        terminated = reached or collision
 
         # IMPORTANT: base.step() increments _step_count AFTER this returns.
         # So the next step index will be current + 1.
         next_step_idx = self._step_count + 1
-        truncated = bool((next_step_idx >= max_steps) and (not reached))
+        truncated = bool((next_step_idx >= max_steps) and (not terminated))
 
         # ---------- 9) Info ----------
         info: dict[str, Any] = {
@@ -374,10 +501,18 @@ class UrbanEnv(UAVBenchEnv):
             # Goal status
             "reached_goal": reached,
             "distance_to_goal": float(new_dist),
+            "collision_terminated": collision,
+            "termination_reason": (
+                ("collision_building" if attempted_building_collision else "collision_nfz")
+                if collision
+                else ("success" if reached else ("timeout" if truncated else "in_progress"))
+            ),
 
             # Safety / constraints
             "attempted_building_collision": attempted_building_collision,
             "attempted_no_fly": attempted_no_fly,
+            "attempted_fire_block": attempted_fire_block,
+            "attempted_traffic_block": attempted_traffic_block,
             "accepted_move": bool(accepted),
 
             # State for metrics (path length, energy proxy κ.λπ. τα χτίζεις έξω)
@@ -389,6 +524,7 @@ class UrbanEnv(UAVBenchEnv):
             "fire_active": self._fire_model is not None,
             "traffic_active": self._traffic_model is not None,
             "fire_exposure": fire_exposure,
+            "smoke_intensity": smoke_intensity,
             "traffic_proximity": traffic_proximity,
             "fire_cells": fire_cells,
             "vehicles_near": vehicles_near,
@@ -442,3 +578,33 @@ class UrbanEnv(UAVBenchEnv):
         no_fly = np.array(self._no_fly_mask, copy=True)
 
         return heightmap, no_fly, (ax, ay), (gx, gy)
+
+    def get_dynamic_state(self) -> dict[str, Any]:
+        """Return all dynamic obstacle state for adaptive planners."""
+        H, W = self._heightmap.shape
+        state: dict[str, Any] = {
+            "fire_mask": None,
+            "burned_mask": None,
+            "smoke_mask": None,
+            "traffic_positions": None,
+            "moving_target_pos": None,
+            "moving_target_buffer": None,
+            "intruder_positions": None,
+            "intruder_buffer": None,
+            "dynamic_nfz_mask": None,
+        }
+        if self._fire_model is not None:
+            state["fire_mask"] = self._fire_model.fire_mask.copy()
+            state["burned_mask"] = self._fire_model.burned_mask.copy()
+            state["smoke_mask"] = self._fire_model.smoke_mask.copy()
+        if self._traffic_model is not None:
+            state["traffic_positions"] = self._traffic_model.vehicle_positions.copy()
+        if self._moving_target is not None:
+            state["moving_target_pos"] = self._moving_target.current_position
+            state["moving_target_buffer"] = self._moving_target.get_buffer_mask((H, W))
+        if self._intruder_model is not None:
+            state["intruder_positions"] = self._intruder_model.active_positions
+            state["intruder_buffer"] = self._intruder_model.get_buffer_mask((H, W))
+        if self._dynamic_nfz is not None:
+            state["dynamic_nfz_mask"] = self._dynamic_nfz.get_nfz_mask()
+        return state

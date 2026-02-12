@@ -1,0 +1,33 @@
+# Dual-use: Downtown Athens urban fire + traffic — Hard
+# Application: Major urban emergency, multi-agency response
+# Challenge: Severe fire + heavy traffic in dense urban core, very low ceiling
+name: "osm_athens_dual_downtown_hard"
+domain: "urban"
+difficulty: "hard"
+
+map_source: "osm"
+osm_tile_id: "downtown"
+map_size: 500
+max_altitude: 6
+
+building_density: 0.0
+building_level: 0
+
+start_altitude: 2
+safe_altitude: 5
+min_start_goal_l1: 300
+
+wind: "none"
+traffic: "none"
+
+# Fire dynamics — severe urban fire
+enable_fire: true
+fire_blocks_movement: true
+fire_ignition_points: 6
+wind_direction: 0.785
+wind_speed: 0.6
+
+# Traffic dynamics — heavy congestion
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 15

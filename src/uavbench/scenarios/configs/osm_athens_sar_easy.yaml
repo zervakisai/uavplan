@@ -19,4 +19,12 @@ safe_altitude: 8
 min_start_goal_l1: 150
 
 wind: "none"
-traffic: "none"
+traffic: "low"
+
+# Dynamic layers: moving target (SAR) + emergency vehicles
+enable_moving_target: true
+target_speed: 1.0
+target_buffer_radius: 8
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 8
