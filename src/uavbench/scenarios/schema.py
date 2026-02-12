@@ -30,12 +30,33 @@ class Traffic(str, Enum):
     HIGH = "high"
 
 
+class MissionType(str, Enum):
+    """Mission category for scenario semantics and metric aggregation."""
+    POINT_TO_POINT = "point_to_point"
+    WILDFIRE_WUI = "wildfire_wui"
+    EMERGENCY_RESPONSE = "emergency_response"
+    PORT_SECURITY = "port_security"
+    SEARCH_RESCUE = "search_rescue"
+    INFRASTRUCTURE_PATROL = "infrastructure_patrol"
+    BORDER_SURVEILLANCE = "border_surveillance"
+    COMMS_DENIED = "comms_denied"
+    CRISIS_DUAL = "crisis_dual"
+
+
+class Regime(str, Enum):
+    """Evaluation regime: naturalistic (minimal dynamics) vs stress test (maximum dynamics)."""
+    NATURALISTIC = "naturalistic"
+    STRESS_TEST = "stress_test"
+
+
 @dataclass(frozen=True, slots=True)
 class ScenarioConfig:
     # Identity
     name: str
     domain: Domain
     difficulty: Difficulty
+    mission_type: MissionType = MissionType.POINT_TO_POINT
+    regime: Regime = Regime.NATURALISTIC
 
     # Disturbances
     wind: Wind = Wind.NONE
@@ -97,6 +118,10 @@ class ScenarioConfig:
     # Collision termination policy (UAV-ON standard)
     terminate_on_collision: bool = True
 
+    # V&V Certificates (computed at scenario load/reset; read-only metadata)
+    solvability_cert_ok: bool = False  # At least 2 disjoint corridors exist at t=0
+    forced_replan_ok: bool = False     # Initial A* path will be blocked by step 50
+
     # Debug
     debug: bool = False
 
@@ -147,3 +172,8 @@ class ScenarioConfig:
             raise ValueError("intruder_spawn_zone must be north/south/east/west")
         if self.enable_dynamic_nfz and self.num_nfz_zones < 1:
             raise ValueError("enable_dynamic_nfz requires num_nfz_zones >= 1")
+        # Stress test regime requires at least one dynamic layer
+        if self.regime == Regime.STRESS_TEST:
+            has_dynamics = self.enable_fire or self.enable_traffic or self.enable_moving_target or self.enable_intruders or self.enable_dynamic_nfz
+            if not has_dynamics:
+                raise ValueError("regime=stress_test requires at least one dynamic layer enabled")

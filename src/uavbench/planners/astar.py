@@ -1,24 +1,24 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from heapq import heappop, heappush
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+from uavbench.planners.base import BasePlanner, PlannerConfig, PlanResult
 
 GridPos = Tuple[int, int]  # (x, y)
 
 
-@dataclass(frozen=True)
-class AStarConfig:
-    allow_diagonal: bool = False
-    # If True, treat heightmap>0 as obstacle (ground planner).
-    block_buildings: bool = True
-    # Optional cap to prevent pathological cases
+@dataclass
+class AStarConfig(PlannerConfig):
+    """A* specific config."""
     max_expansions: int = 200_000
 
 
-class AStarPlanner:
+class AStarPlanner(BasePlanner):
     """A* grid planner on (x,y).
 
     Uses:
@@ -27,33 +27,54 @@ class AStarPlanner:
     """
 
     def __init__(self, heightmap: np.ndarray, no_fly: np.ndarray, config: Optional[AStarConfig] = None):
-        if heightmap.ndim != 2:
-            raise ValueError("heightmap must be 2D array [H,W]")
-        if no_fly.ndim != 2:
-            raise ValueError("no_fly must be 2D array [H,W]")
-        if heightmap.shape != no_fly.shape:
-            raise ValueError("heightmap and no_fly must have the same shape")
-
-        self.heightmap = heightmap
-        self.no_fly = no_fly.astype(bool, copy=False)
-        self.cfg = config or AStarConfig()
-
-        self.H, self.W = self.heightmap.shape
+        super().__init__(heightmap, no_fly, config or AStarConfig())
+        self.cfg: AStarConfig = self.cfg  # Type hint
 
     # ---------- Public API ----------
 
-    def plan(self, start: GridPos, goal: GridPos) -> List[GridPos]:
-        """Return path as list of (x,y) from start to goal (inclusive). Empty list if no path."""
+    def plan(
+        self,
+        start: GridPos,
+        goal: GridPos,
+        cost_map: Optional[np.ndarray] = None,
+    ) -> PlanResult:
+        """Plan a path from start to goal.
+        
+        Returns PlanResult with path, success, compute_time_ms, and expansions count.
+        """
+        start_time = time.monotonic()
+
         self._validate_pos(start, "start")
         self._validate_pos(goal, "goal")
 
         if start == goal:
-            return [start]
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            return PlanResult(
+                path=[start],
+                success=True,
+                compute_time_ms=elapsed_ms,
+                expansions=0,
+                reason="start == goal"
+            )
 
         if self._is_blocked(start):
-            return []
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            return PlanResult(
+                path=[],
+                success=False,
+                compute_time_ms=elapsed_ms,
+                expansions=0,
+                reason="start position blocked"
+            )
         if self._is_blocked(goal):
-            return []
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            return PlanResult(
+                path=[],
+                success=False,
+                compute_time_ms=elapsed_ms,
+                expansions=0,
+                reason="goal position blocked"
+            )
 
         # open set: heap of (f, tie, node)
         open_heap: List[Tuple[float, int, GridPos]] = []
@@ -69,19 +90,44 @@ class AStarPlanner:
         expansions = 0
 
         while open_heap:
+            # Early timeout check
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            if elapsed_ms > self.cfg.max_planning_time_ms:
+                return PlanResult(
+                    path=[],
+                    success=False,
+                    compute_time_ms=elapsed_ms,
+                    expansions=expansions,
+                    reason=f"timeout ({self.cfg.max_planning_time_ms}ms exceeded)"
+                )
+
             _, _, current = heappop(open_heap)
 
             if current in closed:
                 continue
 
             if current == goal:
-                return self._reconstruct_path(came_from, current)
+                elapsed_ms = (time.monotonic() - start_time) * 1000
+                path = self._reconstruct_path(came_from, current)
+                return PlanResult(
+                    path=path,
+                    success=True,
+                    compute_time_ms=elapsed_ms,
+                    expansions=expansions,
+                    reason="goal found"
+                )
 
             closed.add(current)
             expansions += 1
             if expansions > self.cfg.max_expansions:
-                # V&V: fail safe by returning "no solution" rather than hanging
-                return []
+                elapsed_ms = (time.monotonic() - start_time) * 1000
+                return PlanResult(
+                    path=[],
+                    success=False,
+                    compute_time_ms=elapsed_ms,
+                    expansions=expansions,
+                    reason=f"expansion limit ({self.cfg.max_expansions}) exceeded"
+                )
 
             for nbr in self._neighbors(current):
                 if nbr in closed:
@@ -89,7 +135,13 @@ class AStarPlanner:
                 if self._is_blocked(nbr):
                     continue
 
-                tentative_g = g_score[current] + self._move_cost(current, nbr)
+                # Use cost_map if provided, otherwise uniform cost
+                if cost_map is not None and 0 <= nbr[0] < self.W and 0 <= nbr[1] < self.H:
+                    nbr_cost = float(cost_map[nbr[1], nbr[0]])
+                else:
+                    nbr_cost = self._move_cost(current, nbr)
+
+                tentative_g = g_score[current] + nbr_cost
 
                 # If new path to nbr is better, record it
                 if tentative_g < g_score.get(nbr, float("inf")):
@@ -99,41 +151,19 @@ class AStarPlanner:
                     tie += 1
                     heappush(open_heap, (f, tie, nbr))
 
-        return []  # no path
+        elapsed_ms = (time.monotonic() - start_time) * 1000
+        return PlanResult(
+            path=[],
+            success=False,
+            compute_time_ms=elapsed_ms,
+            expansions=expansions,
+            reason="no path found"
+        )
 
     # ---------- Core helpers ----------
 
-    def _validate_pos(self, pos: GridPos, name: str) -> None:
-        x, y = pos
-        if not (0 <= x < self.W and 0 <= y < self.H):
-            raise ValueError(f"{name} out of bounds: {pos} for grid W={self.W}, H={self.H}")
-
-    def _is_blocked(self, pos: GridPos) -> bool:
-        x, y = pos
-        if self.no_fly[y, x]:
-            return True
-        if self.cfg.block_buildings and float(self.heightmap[y, x]) > 0.0:
-            return True
-        return False
-
-    def _neighbors(self, pos: GridPos) -> List[GridPos]:
-        x, y = pos
-        if self.cfg.allow_diagonal:
-            deltas = [
-                (-1, 0), (1, 0), (0, -1), (0, 1),
-                (-1, -1), (-1, 1), (1, -1), (1, 1),
-            ]
-        else:
-            deltas = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-
-        out: List[GridPos] = []
-        for dx, dy in deltas:
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < self.W and 0 <= ny < self.H:
-                out.append((nx, ny))
-        return out
-
     def _move_cost(self, a: GridPos, b: GridPos) -> float:
+        """Cost to move from a to b."""
         ax, ay = a
         bx, by = b
         # 4-neighborhood -> cost 1
@@ -142,21 +172,12 @@ class AStarPlanner:
             return 2 ** 0.5
         return 1.0
 
-    def _heuristic(self, a: GridPos, b: GridPos) -> float:
-        ax, ay = a
-        bx, by = b
-        dx = abs(ax - bx)
-        dy = abs(ay - by)
-        if self.cfg.allow_diagonal:
-            # Octile distance (admissible for 8-neighborhood with diag cost sqrt(2))
-            return (dx + dy) + (2 ** 0.5 - 2) * min(dx, dy)
-        # Manhattan distance (admissible for 4-neighborhood)
-        return float(dx + dy)
-
     def _reconstruct_path(self, came_from: Dict[GridPos, GridPos], current: GridPos) -> List[GridPos]:
+        """Reconstruct path from start to current."""
         path = [current]
         while current in came_from:
             current = came_from[current]
             path.append(current)
         path.reverse()
         return path
+
