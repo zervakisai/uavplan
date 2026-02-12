@@ -23,4 +23,5 @@ traffic: "none"
 
 # Emergency traffic dynamics — light traffic
 enable_traffic: true
+traffic_blocks_movement: true
 num_emergency_vehicles: 5

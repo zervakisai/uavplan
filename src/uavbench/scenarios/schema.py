@@ -74,6 +74,28 @@ class ScenarioConfig:
     num_emergency_vehicles: int = 5
     wind_direction: float = 0.0         # radians, 0 = North
     wind_speed: float = 0.5             # [0, 1]
+    fire_blocks_movement: bool = False  # When True, burning cells reject movement
+    traffic_blocks_movement: bool = False  # When True, vehicle buffer zones reject movement
+
+    # Moving target (SAR scenarios)
+    enable_moving_target: bool = False
+    target_speed: float = 1.0
+    target_buffer_radius: int = 8
+
+    # Intruders (border patrol scenarios)
+    enable_intruders: bool = False
+    num_intruders: int = 2
+    intruder_speed: float = 0.5
+    intruder_spawn_zone: str = "north"
+
+    # Dynamic NFZ (comms-denied / airspace scenarios)
+    enable_dynamic_nfz: bool = False
+    num_nfz_zones: int = 3
+    nfz_expansion_rate: float = 0.8
+    nfz_max_radius: int = 35
+
+    # Collision termination policy (UAV-ON standard)
+    terminate_on_collision: bool = True
 
     # Debug
     debug: bool = False
@@ -115,3 +137,13 @@ class ScenarioConfig:
             raise ValueError("wind_speed must be in [0, 1]")
         if self.enable_fire and self.map_source != "osm":
             raise ValueError("enable_fire requires map_source='osm' (needs landuse data)")
+        if self.fire_blocks_movement and not self.enable_fire:
+            raise ValueError("fire_blocks_movement requires enable_fire=True")
+        if self.traffic_blocks_movement and not self.enable_traffic:
+            raise ValueError("traffic_blocks_movement requires enable_traffic=True")
+        if self.enable_intruders and self.num_intruders < 1:
+            raise ValueError("enable_intruders requires num_intruders >= 1")
+        if self.enable_intruders and self.intruder_spawn_zone not in ("north", "south", "east", "west"):
+            raise ValueError("intruder_spawn_zone must be north/south/east/west")
+        if self.enable_dynamic_nfz and self.num_nfz_zones < 1:
+            raise ValueError("enable_dynamic_nfz requires num_nfz_zones >= 1")

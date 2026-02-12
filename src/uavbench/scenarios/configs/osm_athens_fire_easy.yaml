@@ -27,6 +27,7 @@ traffic: "none"
 
 # Dynamic layers — wildfire
 enable_fire: true
+fire_blocks_movement: true
 fire_ignition_points: 3
 wind_direction: 0.0       # radians, 0 = North (fire spreads southward)
 wind_speed: 0.6

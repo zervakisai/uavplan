@@ -23,4 +23,9 @@ min_start_goal_l1: 100
 
 # Disturbances
 wind: "none"
-traffic: "none"
+traffic: "low"
+
+# Dynamic layers: light traffic
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 6

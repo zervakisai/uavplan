@@ -18,5 +18,15 @@ start_altitude: 2
 safe_altitude: 5
 min_start_goal_l1: 250
 
-wind: "none"
-traffic: "none"
+wind: "medium"
+traffic: "high"
+
+# Dynamic layers: intense port fire + heavy traffic
+enable_fire: true
+fire_blocks_movement: true
+fire_ignition_points: 7
+wind_direction: 2.36
+wind_speed: 0.8
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 18

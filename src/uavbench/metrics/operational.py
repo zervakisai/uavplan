@@ -93,6 +93,8 @@ def compute_feasibility_metrics(
     path: list[tuple[int, int]],
     success: bool,
     constraint_violations: int,
+    *,
+    termination_reason: str = "unknown",
 ) -> dict[str, float]:
     """Feasibility and path quality metrics.
 
@@ -131,6 +133,7 @@ def compute_feasibility_metrics(
         "success": 1.0 if success else 0.0,
         "constraint_violation_rate": viol_rate,
         "path_smoothness": smoothness,
+        "collision_terminated": 1.0 if termination_reason.startswith("collision") else 0.0,
     }
 
 
@@ -144,8 +147,8 @@ def compute_all_metrics(trial_result: dict[str, Any]) -> dict[str, float]:
     path = trial_result.get("path") or []
     heightmap = trial_result.get("heightmap")
     no_fly = trial_result.get("no_fly")
-    start = trial_result.get("start", (0, 0))
-    goal = trial_result.get("goal", (0, 0))
+    start = trial_result.get("start") or (0, 0)
+    goal = trial_result.get("goal") or (0, 0)
     success = trial_result.get("success", False)
     violations = trial_result.get("constraint_violations", 0)
     planning_time = trial_result.get("planning_time", 0.0)
@@ -163,6 +166,8 @@ def compute_all_metrics(trial_result: dict[str, Any]) -> dict[str, float]:
         out.update(compute_safety_metrics(path, heightmap, no_fly, risk_map=risk_map))
 
     out.update(compute_efficiency_metrics(path, start, goal, planning_time))
-    out.update(compute_feasibility_metrics(path, success, violations))
+    termination_reason = trial_result.get("termination_reason", "unknown")
+    out.update(compute_feasibility_metrics(path, success, violations,
+                                           termination_reason=termination_reason))
 
     return out

@@ -27,4 +27,5 @@ traffic: "none"
 
 # Dynamic layers — emergency traffic
 enable_traffic: true
+traffic_blocks_movement: true
 num_emergency_vehicles: 5

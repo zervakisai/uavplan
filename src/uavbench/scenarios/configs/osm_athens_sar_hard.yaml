@@ -18,5 +18,13 @@ start_altitude: 2
 safe_altitude: 5
 min_start_goal_l1: 250
 
-wind: "none"
-traffic: "none"
+wind: "medium"
+traffic: "high"
+
+# Dynamic layers: fast moving target + heavy traffic
+enable_moving_target: true
+target_speed: 2.0
+target_buffer_radius: 12
+enable_traffic: true
+traffic_blocks_movement: true
+num_emergency_vehicles: 18
