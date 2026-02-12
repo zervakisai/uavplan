@@ -18,9 +18,11 @@ def load_scenario(path: Path) -> ScenarioConfig:
     domain = Domain(str(data["domain"]))
     difficulty = Difficulty(str(data["difficulty"]))
 
-    # Optional enums
-    wind = Wind(str(data.get("wind", Wind.NONE.value)))
-    traffic = Traffic(str(data.get("traffic", Traffic.NONE.value)))
+    # Optional enums (support both 'wind'/'traffic' and 'wind_level'/'traffic_level')
+    wind_key = "wind_level" if "wind_level" in data else "wind"
+    traffic_key = "traffic_level" if "traffic_level" in data else "traffic"
+    wind = Wind(str(data.get(wind_key, Wind.NONE.value)))
+    traffic = Traffic(str(data.get(traffic_key, Traffic.NONE.value)))
 
     # Build config (explicit mapping keeps it stable & V&V friendly)
     cfg = ScenarioConfig(

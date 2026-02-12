@@ -4,7 +4,7 @@ domain: urban
 difficulty: easy
 mission_type: point_to_point
 regime: naturalistic
-map_size: 100
+map_size: 25
 altitude_levels: 10
 building_density: 0.2
 tile_name: synthetic_urban_easy
@@ -21,5 +21,5 @@ enable_traffic: false
 wind_level: none
 wind_direction: 0.0
 wind_speed: 0.5
-fire_ignition_points: 0
+fire_ignition_points: 1
 num_emergency_vehicles: 0

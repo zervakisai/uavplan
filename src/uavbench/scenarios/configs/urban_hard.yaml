@@ -17,9 +17,10 @@ goal:
 - 75
 - 1
 enable_fire: false
-enable_traffic: false
-wind_level: low
+enable_traffic: true
+wind_level: high
+traffic_level: high
 wind_direction: 0.0
 wind_speed: 0.5
-fire_ignition_points: 0
+fire_ignition_points: 1
 num_emergency_vehicles: 0
