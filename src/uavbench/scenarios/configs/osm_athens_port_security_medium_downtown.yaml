@@ -1,0 +1,25 @@
+scenario_id: osm_athens_port_security_medium_downtown
+domain: urban
+difficulty: medium
+mission_type: port_security
+regime: stress_test
+map_size: 256
+altitude_levels: 10
+building_density: 0.35
+tile_name: Downtown
+start:
+- 64
+- 64
+- 1
+goal:
+- 192
+- 192
+- 1
+enable_fire: false
+enable_traffic: false
+wind_level: high
+wind_direction:
+- 1
+- 0
+fire_initial_cells: 0
+fire_spread_rate: 0.0
