@@ -21,11 +21,12 @@ def main():
     print("UAVBench Benchmark Demo")
     print("=" * 80)
     
+    # Use actual scenario IDs from the registry
     config = BenchmarkConfig(
         scenario_ids=[
             "urban_easy",
-            "osm_athens_wildfire_easy",
-            "osm_athens_emergency_easy",
+            "osm_athens_wildfire_wui_easy_penteli",
+            "osm_athens_emergency_response_easy_downtown",
         ],
         planner_ids=[
             "astar",

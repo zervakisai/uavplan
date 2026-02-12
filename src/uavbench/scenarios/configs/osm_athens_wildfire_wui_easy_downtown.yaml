@@ -1,3 +1,4 @@
+name: osm_athens_wildfire_wui_easy_downtown
 scenario_id: osm_athens_wildfire_wui_easy_downtown
 domain: urban
 difficulty: easy
@@ -18,8 +19,7 @@ goal:
 enable_fire: true
 enable_traffic: false
 wind_level: low
-wind_direction:
-- 1
-- 0
-fire_initial_cells: 5
-fire_spread_rate: 0.1
+wind_direction: 0.0
+wind_speed: 0.5
+fire_ignition_points: 5
+num_emergency_vehicles: 0
