@@ -1,3 +1,4 @@
+name: osm_athens_search_rescue_medium_penteli
 scenario_id: osm_athens_search_rescue_medium_penteli
 domain: urban
 difficulty: medium
@@ -18,8 +19,7 @@ goal:
 enable_fire: false
 enable_traffic: false
 wind_level: low
-wind_direction:
-- 1
-- 0
-fire_initial_cells: 0
-fire_spread_rate: 0.0
+wind_direction: 0.0
+wind_speed: 0.5
+fire_ignition_points: 0
+num_emergency_vehicles: 0

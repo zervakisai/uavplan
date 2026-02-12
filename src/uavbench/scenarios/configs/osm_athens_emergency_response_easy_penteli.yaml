@@ -1,3 +1,4 @@
+name: osm_athens_emergency_response_easy_penteli
 scenario_id: osm_athens_emergency_response_easy_penteli
 domain: urban
 difficulty: easy
@@ -18,8 +19,7 @@ goal:
 enable_fire: false
 enable_traffic: true
 wind_level: medium
-wind_direction:
-- 1
-- 0
-fire_initial_cells: 0
-fire_spread_rate: 0.0
+wind_direction: 0.0
+wind_speed: 0.5
+fire_ignition_points: 0
+num_emergency_vehicles: 3

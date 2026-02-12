@@ -1,7 +1,7 @@
 scenario_id,planner_id,num_seeds,success_count,success_rate,path_length_mean,path_length_std,path_length_min,path_length_max,path_length_ci_lower,path_length_ci_upper,planning_time_mean_ms,planning_time_std_ms,replans_mean,replans_std,collision_mean,collision_rate,nfz_violation_mean,nfz_violation_rate,fire_exposure_mean,traffic_proximity_mean,intruder_proximity_mean,regret_length_mean,regret_length_std,regret_risk_mean,regret_risk_std,oracle_planner_id
-urban_easy,astar,2,2,1.0,28.5,5.5,23.0,34.0,23.0,34.0,0.34854147816076875,0.12812454951927066,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-urban_easy,theta_star,2,2,1.0,10.0,4.0,6.0,14.0,6.0,14.0,0.3899169387295842,0.03441702574491501,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-osm_athens_wildfire_easy,astar,2,1,0.5,442.0,0.0,442.0,442.0,442.0,442.0,115.42962503153831,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-osm_athens_wildfire_easy,theta_star,2,2,1.0,63.5,11.5,52.0,75.0,52.0,75.0,21.274979517329484,5.554895440582186,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-osm_athens_emergency_easy,astar,2,2,1.0,382.5,134.5,248.0,517.0,248.0,517.0,28.355978953186423,6.260688009206206,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-osm_athens_emergency_easy,theta_star,2,2,1.0,57.5,11.5,46.0,69.0,46.0,69.0,14.754895470105112,7.686062483116984,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+urban_easy,astar,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+urban_easy,theta_star,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+osm_athens_wildfire_wui_easy_penteli,astar,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+osm_athens_wildfire_wui_easy_penteli,theta_star,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+osm_athens_emergency_response_easy_downtown,astar,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+osm_athens_emergency_response_easy_downtown,theta_star,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar

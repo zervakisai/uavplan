@@ -544,6 +544,7 @@ def generate_yaml_content(template: ScenarioTemplate, scenario_id: str) -> Dict:
     difficulty_lower = template.difficulty.lower()
     
     return {
+        "name": scenario_id,  # ← Added name field
         "scenario_id": scenario_id,
         "domain": "urban",  # All are urban for now
         "difficulty": difficulty_lower,
@@ -558,9 +559,10 @@ def generate_yaml_content(template: ScenarioTemplate, scenario_id: str) -> Dict:
         "enable_fire": template.enable_fire,
         "enable_traffic": template.enable_traffic,
         "wind_level": final_wind,
-        "wind_direction": [1, 0],
-        "fire_initial_cells": 5 if template.enable_fire else 0,
-        "fire_spread_rate": 0.1 if template.enable_fire else 0.0,
+        "wind_direction": 0.0,  # Radians (0 = North)
+        "wind_speed": 0.5,
+        "fire_ignition_points": 5 if template.enable_fire else 0,
+        "num_emergency_vehicles": 3 if template.enable_traffic else 0,
     }
 
 
