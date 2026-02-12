@@ -5,6 +5,8 @@
 name: "osm_athens_wildfire_easy"
 domain: "urban"
 difficulty: "easy"
+mission_type: "wildfire_wui"
+regime: "naturalistic"
 
 map_source: "osm"
 osm_tile_id: "penteli"
