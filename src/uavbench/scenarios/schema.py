@@ -154,8 +154,8 @@ class ScenarioConfig:
             raise ValueError("map_source must be 'synthetic' or 'osm'")
         if self.map_source == "osm" and self.osm_tile_id is None:
             raise ValueError("osm_tile_id is required when map_source is 'osm'")
-        if self.fire_ignition_points < 1:
-            raise ValueError("fire_ignition_points must be >= 1")
+        if self.enable_fire and self.fire_ignition_points < 1:
+            raise ValueError("fire_ignition_points must be >= 1 when enable_fire=True")
         if self.num_emergency_vehicles < 0:
             raise ValueError("num_emergency_vehicles must be >= 0")
         if not (0.0 <= self.wind_speed <= 1.0):
