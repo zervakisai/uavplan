@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -425,8 +427,70 @@ def main() -> None:
         action="store_true",
         help="Include fire/traffic dynamics overlays in visualizations (requires OSM tile).",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="results",
+        help="Directory for optional benchmark artifacts/reports.",
+    )
+    parser.add_argument(
+        "--save-json",
+        action="store_true",
+        help="Save per-run summary JSON into --output-dir.",
+    )
+    parser.add_argument(
+        "--save-csv",
+        action="store_true",
+        help="Save per-run summary CSV into --output-dir.",
+    )
+    parser.add_argument(
+        "--max-episode-steps",
+        type=int,
+        default=0,
+        help="Optional cap on dynamic episode steps (0 keeps scenario default).",
+    )
+    parser.add_argument(
+        "--oracle-horizon",
+        type=int,
+        default=0,
+        help="Reserved for oracle-regret protocol compatibility.",
+    )
+    parser.add_argument(
+        "--oracle-planner",
+        type=str,
+        default="oracle",
+        help="Reserved oracle planner identifier for metadata/reporting.",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Tag run as deterministic in saved metadata.",
+    )
+    parser.add_argument(
+        "--list-scenarios",
+        action="store_true",
+        help="Print scenario registry and exit.",
+    )
+    parser.add_argument(
+        "--list-planners",
+        action="store_true",
+        help="Print available planners and exit.",
+    )
+    parser.add_argument(
+        "--strict-scenario-validation",
+        action="store_true",
+        help="Fail immediately when scenario validation fails.",
+    )
 
     args = parser.parse_args()
+
+    if args.list_scenarios:
+        from uavbench.scenarios.registry import print_scenario_registry
+        print_scenario_registry()
+        return
+    if args.list_planners:
+        print("Available planners:", ", ".join(sorted(PLANNERS.keys())))
+        return
 
     scenario_ids = [s.strip() for s in args.scenarios.split(",") if s.strip()]
     planner_ids = [p.strip() for p in args.planners.split(",") if p.strip()]
@@ -496,6 +560,31 @@ def main() -> None:
                 else:
                     print(f"{k:>24}: {v:.3f}" if isinstance(v, float) else f"{k:>24}: {v}")
             print("------------------------------")
+
+            # Optional artifact export
+            if args.save_json or args.save_csv:
+                out_dir = Path(args.output_dir)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                base_name = f"{scenario_id}_{planner_id}"
+                if args.save_json:
+                    json_path = out_dir / f"{base_name}_summary.json"
+                    json_path.write_text(json.dumps({
+                        "scenario": scenario_id,
+                        "planner": planner_id,
+                        "trials": args.trials,
+                        "seed_base": args.seed_base,
+                        "deterministic": bool(args.deterministic),
+                        "oracle_horizon": int(args.oracle_horizon),
+                        "oracle_planner": args.oracle_planner,
+                        "metrics": metrics,
+                    }, indent=2), encoding="utf-8")
+                if args.save_csv:
+                    csv_path = out_dir / f"{base_name}_summary.csv"
+                    with csv_path.open("w", newline="", encoding="utf-8") as f:
+                        writer = csv.writer(f)
+                        writer.writerow(["metric", "value"])
+                        for k, v in sorted(metrics.items()):
+                            writer.writerow([k, v])
 
             # AFTER TRIALS: visualization (play / save-videos)
             successful = [r for r in per_trial if r.get("success", False)]
