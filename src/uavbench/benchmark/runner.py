@@ -10,7 +10,9 @@ This module orchestrates full benchmark runs:
 
 from __future__ import annotations
 
+import json
 import logging
+import platform
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -299,6 +301,23 @@ class BenchmarkRunner:
             csv_path = output_dir / "aggregates.csv"
             save_aggregate_metrics_csv(list(aggregates.values()), csv_path)
             logger.info(f"Saved aggregate metrics: {csv_path}")
+
+        # Save reproducibility metadata
+        metadata_path = output_dir / "run_metadata.json"
+        metadata = {
+            "scenario_ids": self.config.scenario_ids,
+            "planner_ids": self.config.planner_ids,
+            "seeds": self.config.seeds,
+            "deterministic": self.config.deterministic,
+            "oracle_horizon": self.config.oracle_horizon,
+            "oracle_planner_id": self.config.oracle_planner_id,
+            "max_episode_steps": self.config.max_episode_steps,
+            "python_version": platform.python_version(),
+            "num_episode_records": len(all_episode_list),
+            "num_aggregate_rows": len(aggregates),
+        }
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        logger.info(f"Saved run metadata: {metadata_path}")
 
 
 def _waypoint_to_action(current: tuple[int, int], next_pos: tuple[int, int]) -> int:
