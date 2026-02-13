@@ -55,7 +55,11 @@ class EpisodeMetrics:
     regret_length: Optional[float]  # (planner path - oracle path) / oracle path
     regret_risk: Optional[float]  # (planner risk - oracle risk) / (oracle risk + eps)
     regret_time: Optional[float]  # (planner steps - oracle steps)
-    
+
+    # Advanced dynamics (best-paper protocol)
+    risk_integral_tls: float = 0.0  # combined threat-load score integral
+    stability_index: float = 0.0  # normalized heading-change magnitude
+
     # Metadata
     notes: str = ""
 
@@ -183,7 +187,22 @@ def compute_episode_metrics(
     if oracle_risk is not None:
         eps = 1e-6
         regret_risk = (fire_exposure - oracle_risk) / (oracle_risk + eps)
-    
+
+    # Risk integral (TLS proxy): aggregate dynamic threat exposures
+    risk_integral_tls = float(fire_exposure + smoke_exposure + traffic_proximity_time + intruder_proximity_time)
+
+    # Stability index: normalized cumulative heading changes across path
+    stability_index = 0.0
+    if path and len(path) >= 3:
+        changes = 0
+        prev = (path[1][0] - path[0][0], path[1][1] - path[0][1])
+        for i in range(1, len(path) - 1):
+            cur = (path[i+1][0] - path[i][0], path[i+1][1] - path[i][1])
+            if cur != prev:
+                changes += 1
+            prev = cur
+        stability_index = float(changes / max(1, len(path) - 2))
+
     return EpisodeMetrics(
         scenario_id=scenario_id,
         planner_id=planner_id,
@@ -207,6 +226,8 @@ def compute_episode_metrics(
         regret_length=regret_length,
         regret_risk=regret_risk,
         regret_time=regret_time,
+        risk_integral_tls=risk_integral_tls,
+        stability_index=stability_index,
     )
 
 
