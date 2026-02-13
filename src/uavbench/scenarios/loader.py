@@ -24,6 +24,13 @@ def load_scenario(path: Path) -> ScenarioConfig:
     wind = Wind(str(data.get(wind_key, Wind.NONE.value)))
     traffic = Traffic(str(data.get(traffic_key, Traffic.NONE.value)))
 
+    scenario_id = str(data.get("scenario_id", name))
+    tile_name = data.get("tile_name")
+
+    # Backward-compatibility: infer OSM metadata from older configs.
+    map_source = str(data.get("map_source", "osm" if scenario_id.startswith("osm_") else "synthetic"))
+    osm_tile_id = data.get("osm_tile_id") or tile_name
+
     # Build config (explicit mapping keeps it stable & V&V friendly)
     cfg = ScenarioConfig(
         name=name,
@@ -43,8 +50,8 @@ def load_scenario(path: Path) -> ScenarioConfig:
         no_fly_radius=int(data.get("no_fly_radius", 3)),
         downtown_window=int(data.get("downtown_window", 7)),
         spawn_clearance=int(data.get("spawn_clearance", 1)),
-        map_source=str(data.get("map_source", "synthetic")),
-        osm_tile_id=data.get("osm_tile_id"),
+        map_source=map_source,
+        osm_tile_id=osm_tile_id,
         enable_fire=bool(data.get("enable_fire", False)),
         enable_traffic=bool(data.get("enable_traffic", False)),
         fire_ignition_points=int(data.get("fire_ignition_points", 3)),
