@@ -61,9 +61,10 @@ def run_planner_once(
 
     planner = PLANNERS[planner_id](heightmap, no_fly)
     t0 = time.perf_counter()
-    path = planner.plan(start_xy, goal_xy)  # [] if no path
+    plan_result = planner.plan(start_xy, goal_xy)  # Returns PlanResult object
     planning_time = time.perf_counter() - t0
 
+    path = plan_result.path  # Extract path from PlanResult
     has_path = bool(path)
     violations = 0
 
@@ -88,8 +89,8 @@ def run_planner_once(
     success = bool(has_path and violations == 0)
 
     return {
-        "scenario": scenario_id,
-        "planner": planner_id,
+        "scenario_id": scenario_id,
+        "planner_id": planner_id,
         "seed": int(seed),
         "success": success,
         "constraint_violations": int(violations),
