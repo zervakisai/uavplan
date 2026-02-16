@@ -1,0 +1,5 @@
+track,planner,n_seeds,mean_success,std_success,ci95_low,ci95_high,mean_replans,mean_risk_exposure
+static,astar,1,1.0,0.0,1.0,1.0,0.0,0.0
+static,dstar_lite,1,1.0,0.0,1.0,1.0,0.0,0.0
+dynamic,astar,1,0.0,0.0,0.0,0.0,0.0,0.0
+dynamic,dstar_lite,1,0.0,0.0,0.0,0.0,5.857143,0.0

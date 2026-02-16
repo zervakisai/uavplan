@@ -1,14 +1,16 @@
 """Tests for UAV-ON collision termination."""
 
+from typing import Any
+
 import numpy as np
 
 from uavbench.envs.urban import UrbanEnv
 from uavbench.scenarios.schema import ScenarioConfig, Domain, Difficulty
 
 
-def _make_cfg(**overrides) -> ScenarioConfig:
+def _make_cfg(**overrides: Any) -> ScenarioConfig:
     """Create a minimal synthetic ScenarioConfig for testing."""
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         name="test_collision",
         domain=Domain.URBAN,
         difficulty=Difficulty.EASY,

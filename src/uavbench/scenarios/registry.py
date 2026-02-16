@@ -12,9 +12,9 @@ All 34 scenarios are loaded dynamically from YAML config files.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional
 from pathlib import Path
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from uavbench.scenarios.schema import MissionType, Regime
 
@@ -25,6 +25,7 @@ class ScenarioMetadata:
     scenario_id: str
     mission_type: MissionType
     regime: Regime
+    paper_track: Literal["static", "dynamic"]
     tile: Optional[str]
     has_fire: bool
     has_traffic: bool
@@ -54,6 +55,9 @@ def _load_all_scenarios() -> dict[str, ScenarioMetadata]:
         mission_type_str = config.get("mission_type", "POINT_TO_POINT")
         regime_str = config.get("regime", "NATURALISTIC")
         difficulty = config.get("difficulty", "EASY").upper()
+        regime_str_norm = str(regime_str).lower()
+        paper_track_raw = str(config.get("paper_track", "dynamic" if regime_str_norm == "stress_test" else "static")).lower()
+        paper_track: Literal["static", "dynamic"] = "dynamic" if paper_track_raw == "dynamic" else "static"
         
         try:
             mission_type = MissionType(mission_type_str)
@@ -78,6 +82,7 @@ def _load_all_scenarios() -> dict[str, ScenarioMetadata]:
             scenario_id=scenario_id,
             mission_type=mission_type,
             regime=regime,
+            paper_track=paper_track,
             tile=tile,
             has_fire=enable_fire,
             has_traffic=enable_traffic,
@@ -110,6 +115,17 @@ def list_scenarios_by_regime(regime: Regime) -> list[str]:
     return sorted([
         sid for sid, meta in SCENARIO_REGISTRY.items()
         if meta.regime == regime
+    ])
+
+
+def list_scenarios_by_track(track: str) -> list[str]:
+    """Get scenarios filtered by paper track ("static" or "dynamic")."""
+    track = track.strip().lower()
+    if track not in {"static", "dynamic"}:
+        raise ValueError("track must be 'static' or 'dynamic'")
+    return sorted([
+        sid for sid, meta in SCENARIO_REGISTRY.items()
+        if meta.paper_track == track
     ])
 
 
@@ -196,7 +212,7 @@ def print_scenario_registry() -> None:
             traffic_count += 1
     
     # Print scenarios in order
-    print(f"{'#':>3} | {'Scenario ID':<55} | {'Mission Type':<25} | {'Difficulty':<8} | {'Regime':<15} | {'Dynamics':<20}")
+    print(f"{'#':>3} | {'Scenario ID':<55} | {'Mission Type':<25} | {'Difficulty':<8} | {'Regime':<15} | {'Track':<8} | {'Dynamics':<20}")
     print("-" * 140)
     
     for i, scenario_id in enumerate(list_scenarios(), 1):
@@ -211,7 +227,7 @@ def print_scenario_registry() -> None:
         
         print(
             f"{i:3d} | {scenario_id:<55} | {meta.mission_type.value:<25} | "
-            f"{meta.difficulty:<8} | {meta.regime.value:<15} | {dynamics_str:<20}"
+            f"{meta.difficulty:<8} | {meta.regime.value:<15} | {meta.paper_track:<8} | {dynamics_str:<20}"
         )
     
     print()

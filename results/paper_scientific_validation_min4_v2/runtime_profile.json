@@ -1,0 +1,27 @@
+{
+  "cpu_model": "arm",
+  "machine": "arm64",
+  "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
+  "python": "3.14.2",
+  "wall_clock_seconds": 56.31723124999553,
+  "seeds": [
+    0
+  ],
+  "stats_planners": [
+    "astar",
+    "theta_star",
+    "jps",
+    "adaptive_astar",
+    "dstar_lite",
+    "lpa_star",
+    "hybrid_dstar_teb_lite",
+    "risk_mpc"
+  ],
+  "stress_planners": [
+    "astar",
+    "dstar_lite",
+    "hybrid_dstar_teb_lite",
+    "risk_mpc"
+  ],
+  "episode_horizon": 20
+}

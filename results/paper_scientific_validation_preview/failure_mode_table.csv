@@ -1,0 +1,2 @@
+failure_mode,scenario,planner,seed,success,total_replans,risk_exposure_integral,time_to_recover_after_break,replan_steps,termination_reason
+static_corridor_collapse,osm_athens_crisis_dual_hard_downtown,astar,0,False,0,0.0003852732927029082,nan,[],timeout

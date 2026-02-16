@@ -1,0 +1,15 @@
+track,planner,baseline,cohen_d_success,mann_whitney_pvalue
+static,adaptive_astar,astar,0.0,1.0
+static,dstar_lite,astar,0.0,1.0
+static,hybrid_dstar_teb_lite,astar,0.0,1.0
+static,jps,astar,-800000.0,1.0
+static,lpa_star,astar,0.0,1.0
+static,risk_mpc,astar,0.0,1.0
+static,theta_star,astar,0.0,1.0
+dynamic,adaptive_astar,astar,500000.0,1.0
+dynamic,dstar_lite,astar,714285.714286,1.0
+dynamic,hybrid_dstar_teb_lite,astar,642857.142857,1.0
+dynamic,jps,astar,-71428.571429,1.0
+dynamic,lpa_star,astar,642857.142857,1.0
+dynamic,risk_mpc,astar,785714.285714,1.0
+dynamic,theta_star,astar,0.0,1.0

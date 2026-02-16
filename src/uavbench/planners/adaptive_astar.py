@@ -6,12 +6,14 @@ immediately when the current path is blocked by fire or traffic.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
 
 import numpy as np
 
 from .astar import AStarPlanner
+from .base import PlanResult
 
 GridPos = Tuple[int, int]
 
@@ -52,7 +54,7 @@ class AdaptiveAStarPlanner:
         self._replan_events: List[dict[str, Any]] = []
         self._total_replans: int = 0
 
-    def plan(self, start: GridPos, goal: GridPos) -> List[GridPos]:
+    def plan(self, start: GridPos, goal: GridPos) -> PlanResult:
         """Initial plan (same interface as AStarPlanner)."""
         self._goal = goal
         self._steps_since_replan = 0
@@ -60,8 +62,19 @@ class AdaptiveAStarPlanner:
         self._total_replans = 0
 
         planner = AStarPlanner(self.heightmap, self.no_fly)
-        self._current_path = planner.plan(start, goal)
-        return list(self._current_path)
+        t0 = time.monotonic()
+        plan_result = planner.plan(start, goal)
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        self._current_path = list(plan_result.path)
+
+        return PlanResult(
+            path=list(plan_result.path),
+            success=plan_result.success,
+            compute_time_ms=elapsed_ms,
+            expansions=plan_result.expansions,
+            replans=self._total_replans,
+            reason=plan_result.reason,
+        )
 
     def should_replan(
         self,
@@ -70,6 +83,7 @@ class AdaptiveAStarPlanner:
         traffic_positions: Optional[np.ndarray] = None,
         smoke_mask: Optional[np.ndarray] = None,
         extra_obstacles: Optional[np.ndarray] = None,
+        risk_cost_map: Optional[np.ndarray] = None,
     ) -> Tuple[bool, str]:
         """Determine if replanning is needed.
 
@@ -102,6 +116,7 @@ class AdaptiveAStarPlanner:
         reason: str = "unknown",
         smoke_mask: Optional[np.ndarray] = None,
         extra_obstacles: Optional[np.ndarray] = None,
+        risk_cost_map: Optional[np.ndarray] = None,
     ) -> List[GridPos]:
         """Execute replanning from current position.
 
@@ -138,7 +153,8 @@ class AdaptiveAStarPlanner:
 
         start_2d: GridPos = (int(current_pos[0]), int(current_pos[1]))
         planner = AStarPlanner(self.heightmap, obstacles)
-        new_path = planner.plan(start_2d, goal)
+        plan_result = planner.plan(start_2d, goal)
+        new_path = list(plan_result.path) if plan_result.success else []
 
         # Log event
         self._replan_events.append({
@@ -146,6 +162,7 @@ class AdaptiveAStarPlanner:
             "position": (int(current_pos[0]), int(current_pos[1]), int(current_pos[2])),
             "reason": reason,
             "new_path_length": len(new_path),
+            "success": plan_result.success,
         })
         self._total_replans += 1
         self._steps_since_replan = 0

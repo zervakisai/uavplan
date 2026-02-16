@@ -1,0 +1,13 @@
+{
+  "claims": {
+    "static_collapse_vs_adaptive_gap": false,
+    "risk_planner_tradeoff_present": true,
+    "statistical_separation_significant": false,
+    "effect_sizes_strong": false,
+    "ranking_stable": true,
+    "feasibility_novelty_validated": false,
+    "ablation_supports_necessity": false
+  },
+  "score": 2,
+  "verdict": "Not ready"
+}

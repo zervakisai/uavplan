@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from pathlib import Path
 
-from uavbench.planners import AStarPlanner, ThetaStarPlanner, JPSPlanner, PLANNERS
+from uavbench.planners import AStarPlanner, ThetaStarPlanner, PLANNERS
 from uavbench.scenarios.registry import (
     SCENARIO_REGISTRY, list_scenarios, list_scenarios_by_regime, 
     list_scenarios_with_dynamics, print_scenario_registry

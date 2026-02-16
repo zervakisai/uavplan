@@ -1,0 +1,39 @@
+{
+  "seeds": [
+    0
+  ],
+  "stats_planners": [
+    "astar",
+    "theta_star",
+    "jps",
+    "adaptive_astar",
+    "dstar_lite",
+    "lpa_star",
+    "hybrid_dstar_teb_lite",
+    "risk_mpc"
+  ],
+  "stress_planners": [
+    "astar"
+  ],
+  "stress_scenario": "osm_athens_crisis_dual_hard_downtown",
+  "episode_horizon": 10,
+  "runtime_profile": {
+    "cpu_model": "Apple Silicon (arm64)",
+    "machine": "arm64",
+    "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.2"
+  },
+  "wall_clock_seconds": 8.38562929094769,
+  "files": [
+    "FINAL_SCIENTIFIC_REPORT.md",
+    "figures/figure1_interaction_diagram.png",
+    "figures/figure2_stress_intensity_curves.png",
+    "literature_positioning_matrix.csv",
+    "literature_positioning_matrix.md",
+    "reviewer2_verdict.json",
+    "stress_intensity_curve.csv",
+    "stress_intensity_raw.csv",
+    "stress_story_audit.csv",
+    "stress_story_narrative.json"
+  ]
+}

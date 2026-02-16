@@ -1,3 +1,5 @@
+"""Hybrid global+local planners for dynamic UAV navigation."""
+
 from __future__ import annotations
 
 import time
@@ -8,7 +10,11 @@ import numpy as np
 
 from uavbench.planners.astar import AStarPlanner, AStarConfig
 from uavbench.planners.base import PlanResult
+from uavbench.planners.dstar_lite import DStarLitePlanner, DStarLiteConfig
 from uavbench.planners.dwa import DWAPlanner
+
+
+# ── HybridGlobalLocalPlanner (A* + DWA) ─────────────────────────────────────
 
 
 @dataclass
@@ -42,3 +48,49 @@ class HybridGlobalLocalPlanner(AStarPlanner):
                           compute_time_ms=(time.monotonic()-t0)*1000,
                           expansions=global_res.expansions + local_res.expansions,
                           reason="hybrid_global_local")
+
+
+# ── HybridDStarDWAPlanner (D*Lite + DWA cadence) ────────────────────────────
+
+
+@dataclass(frozen=True)
+class HybridDStarDWAConfig(DStarLiteConfig):
+    """Global incremental with strongly reactive local behavior."""
+    base_interval: int = 3
+    lookahead_steps: int = 5
+    traffic_buffer: int = 6
+
+
+class HybridDStarDWAPlanner(DStarLitePlanner):
+    """Hybrid planner: D* Lite global corridor + DWA-like reactive cadence."""
+
+    def __init__(
+        self,
+        heightmap: np.ndarray,
+        no_fly: np.ndarray,
+        config: Optional[HybridDStarDWAConfig] = None,
+    ) -> None:
+        super().__init__(heightmap, no_fly, config or HybridDStarDWAConfig())
+
+
+# ── HybridDStarTEBLitePlanner (D*Lite + TEB-lite cadence) ───────────────────
+
+
+@dataclass(frozen=True)
+class HybridDStarTEBLiteConfig(DStarLiteConfig):
+    """Global incremental with smoother local refinements."""
+    base_interval: int = 4
+    lookahead_steps: int = 7
+    smoke_threshold: float = 0.2
+
+
+class HybridDStarTEBLitePlanner(DStarLitePlanner):
+    """Hybrid planner: D* Lite global corridor + TEB-lite reactive cadence."""
+
+    def __init__(
+        self,
+        heightmap: np.ndarray,
+        no_fly: np.ndarray,
+        config: Optional[HybridDStarTEBLiteConfig] = None,
+    ) -> None:
+        super().__init__(heightmap, no_fly, config or HybridDStarTEBLiteConfig())

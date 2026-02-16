@@ -1,0 +1,6 @@
+{
+  "astar_collapses_fast": false,
+  "dstar_moderate_degradation": false,
+  "hybrid_graceful_degradation": false,
+  "risk_tradeoff_stable": true
+}

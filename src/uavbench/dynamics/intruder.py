@@ -60,18 +60,20 @@ class IntruderModel:
 
         for i in range(n):
             if zone == "north":
-                positions[i] = [self._rng.integers(margin, self.width - margin), margin]
+                positions[i, 0] = float(self._rng.integers(margin, self.width - margin))
+                positions[i, 1] = float(margin)
             elif zone == "south":
-                positions[i] = [self._rng.integers(margin, self.width - margin),
-                                self.height - margin]
+                positions[i, 0] = float(self._rng.integers(margin, self.width - margin))
+                positions[i, 1] = float(self.height - margin)
             elif zone == "east":
-                positions[i] = [self.width - margin,
-                                self._rng.integers(margin, self.height - margin)]
+                positions[i, 0] = float(self.width - margin)
+                positions[i, 1] = float(self._rng.integers(margin, self.height - margin))
             elif zone == "west":
-                positions[i] = [margin,
-                                self._rng.integers(margin, self.height - margin)]
+                positions[i, 0] = float(margin)
+                positions[i, 1] = float(self._rng.integers(margin, self.height - margin))
             else:
-                positions[i] = [self._rng.integers(margin, self.width - margin), margin]
+                positions[i, 0] = float(self._rng.integers(margin, self.width - margin))
+                positions[i, 1] = float(margin)
 
         return positions
 

@@ -1,0 +1,3 @@
+variant,episodes,reachability_failure_count,corridor_fallback_count,infeasible_episode_count,permanent_infeasible_rate
+default,112,0,0,0,0.0
+no_guardrail,112,0,0,0,0.0

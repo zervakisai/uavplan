@@ -49,8 +49,10 @@ class TrafficModel:
         indices = self._rng.choice(len(self._road_pixels), size=n)
         return self._road_pixels[indices].copy()
 
-    def step(self, dt: float = 1.0) -> None:
+    def step(self, dt: float = 1.0, fire_mask: np.ndarray | None = None) -> None:
         """Move each vehicle one pixel toward its target."""
+        self._fire_avoidance_events = 0
+
         if len(self._positions) == 0:
             return
 
@@ -84,6 +86,9 @@ class TrafficModel:
                 ny = int(py + ay)
                 nx = int(px + ax)
                 if 0 <= ny < H and 0 <= nx < W and self._roads[ny, nx]:
+                    if fire_mask is not None and fire_mask[ny, nx]:
+                        self._fire_avoidance_events += 1
+                        continue  # skip this direction
                     self._positions[i] = [ny, nx]
                     moved = True
                     break
@@ -94,6 +99,9 @@ class TrafficModel:
                     ny = int(py + ay)
                     nx = int(px + ax)
                     if 0 <= ny < H and 0 <= nx < W and self._roads[ny, nx]:
+                        if fire_mask is not None and fire_mask[ny, nx]:
+                            self._fire_avoidance_events += 1
+                            continue  # skip this direction
                         self._positions[i] = [ny, nx]
                         break
 
@@ -101,6 +109,10 @@ class TrafficModel:
     def vehicle_positions(self) -> np.ndarray:
         """[N, 2] int — (y, x) pixel positions of all vehicles."""
         return self._positions.copy()
+
+    @property
+    def fire_avoidance_events(self) -> int:
+        return getattr(self, "_fire_avoidance_events", 0)
 
     def get_occupancy_mask(
         self, shape: tuple[int, int], buffer_radius: int = 5
