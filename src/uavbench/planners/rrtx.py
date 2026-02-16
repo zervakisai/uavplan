@@ -9,7 +9,7 @@ from uavbench.planners.base import PlanResult
 from uavbench.planners.dstar_lite import DStarLitePlanner, DStarLiteConfig
 
 
-@dataclass
+@dataclass(frozen=True)
 class RRTXConfig(DStarLiteConfig):
     """Dynamic sampling-repair baseline config."""
 
@@ -21,7 +21,7 @@ class RRTXPlanner(DStarLitePlanner):
         super().__init__(heightmap, no_fly, config or RRTXConfig())
 
     def plan(self, start, goal, cost_map=None) -> PlanResult:
-        res = super().plan(start, goal, cost_map)
+        res = super().plan(start, goal)
         if not res.reason:
             res.reason = "rrtx_plan"
         return res
