@@ -21,14 +21,15 @@ from typing import Any, Optional
 import numpy as np
 
 from uavbench.envs.urban import UrbanEnv
+from uavbench.cli.benchmark import run_dynamic_episode, run_planner_once
 from uavbench.metrics.comprehensive import (
     EpisodeMetrics, AggregateMetrics, compute_episode_metrics,
     aggregate_episode_metrics, save_episode_metrics_jsonl, save_aggregate_metrics_csv,
     print_aggregate_metrics_table
 )
-from uavbench.planners import PLANNERS, BasePlanner
+from uavbench.planners import PLANNERS
+from uavbench.planners.astar import AStarPlanner
 from uavbench.scenarios.loader import load_scenario
-from uavbench.scenarios.registry import list_scenarios
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +74,11 @@ class BenchmarkRunner:
         else:
             logging.basicConfig(level=logging.INFO)
     
-    def run(self) -> dict[str, list[AggregateMetrics]]:
+    def run(self) -> dict[str, AggregateMetrics]:
         """Run full benchmark suite.
         
         Returns:
-            Dict mapping (scenario_id, planner_id) -> list of AggregateMetrics
+            Dict mapping "scenario_id/planner_id" -> AggregateMetrics
         """
         all_episodes: dict[tuple[str, str], list[EpisodeMetrics]] = {}
         
@@ -132,8 +133,8 @@ class BenchmarkRunner:
                                 replans=0,
                                 first_replan_step=None,
                                 blocked_path_events=0,
-                                collision_count=0.0,
-                                nfz_violations=0.0,
+                                collision_count=0,
+                                nfz_violations=0,
                                 fire_exposure=0.0,
                                 traffic_proximity_time=0.0,
                                 intruder_proximity_time=0.0,
@@ -161,83 +162,50 @@ class BenchmarkRunner:
     
     def _run_episode(self, scenario_id: str, planner_id: str, seed: int) -> EpisodeMetrics:
         """Run a single episode and return metrics."""
-        # Load scenario and environment
         cfg = load_scenario(Path(f"src/uavbench/scenarios/configs/{scenario_id}.yaml"))
-        env = UrbanEnv(cfg)
-        
-        # Reset with seed
-        obs, info = env.reset(seed=seed)
-        
-        # Export planner inputs
-        heightmap, no_fly, start_xy, goal_xy = env.export_planner_inputs()
-        
-        # Initialize planner
         if planner_id not in PLANNERS:
             raise ValueError(f"Unknown planner '{planner_id}'")
-        
-        planner_cls = PLANNERS[planner_id]
-        planner = planner_cls(heightmap, no_fly)
-        
-        # Plan
-        plan_start_time = time.monotonic()
-        plan_result = planner.plan(start_xy, goal_xy)
-        planning_time_ms = (time.monotonic() - plan_start_time) * 1000
-        
-        if not plan_result.success:
-            # Planning failed
-            return EpisodeMetrics(
-                scenario_id=scenario_id,
-                planner_id=planner_id,
-                seed=seed,
-                episode_step=0,
-                success=False,
-                termination_reason=f"planning_failed: {plan_result.reason}",
-                path_length=0.0,
-                path_length_any_angle=None,
-                planning_time_ms=planning_time_ms,
-                total_time_ms=0.0,
-                replans=0,
-                first_replan_step=None,
-                blocked_path_events=0,
-                collision_count=0.0,
-                nfz_violations=0.0,
-                fire_exposure=0.0,
-                traffic_proximity_time=0.0,
-                intruder_proximity_time=0.0,
-                smoke_exposure=0.0,
-                regret_length=None,
-                regret_risk=None,
-                regret_time=None,
-                notes=plan_result.reason,
-            )
-        
-        # Execute path by stepping env
-        episode_start_time = time.monotonic()
-        path = [start_xy]
-        collisions = 0
-        nfz_violations = 0
-        
-        for step_idx in range(min(len(plan_result.path) - 1, self.config.max_episode_steps)):
-            current_pos = plan_result.path[step_idx]
-            next_pos = plan_result.path[step_idx + 1]
-            
-            # Convert waypoint to action
-            action = _waypoint_to_action(current_pos, next_pos)
-            
-            obs, reward, terminated, truncated, info = env.step(action)
-            path.append(next_pos)
-            
-            # Track collisions
-            if terminated and "collision" in info.get("event_type", "").lower():
-                collisions += 1
-            
-            # Check if goal reached
-            if next_pos == goal_xy:
-                break
-        
-        episode_duration_ms = (time.monotonic() - episode_start_time) * 1000
-        success = path[-1] == goal_xy
-        
+
+        use_dynamic = (
+            cfg.paper_track == "dynamic"
+            or int(cfg.force_replan_count) > 0
+            or cfg.fire_blocks_movement
+            or cfg.traffic_blocks_movement
+            or cfg.enable_moving_target
+            or cfg.enable_intruders
+            or cfg.enable_dynamic_nfz
+        )
+        if use_dynamic:
+            res = run_dynamic_episode(scenario_id, planner_id, seed=seed, protocol_variant="default")
+            path = list(res.get("path") or [res.get("start")])
+            start_xy = tuple(res.get("start", (0, 0)))
+            goal_xy = tuple(res.get("goal", (0, 0)))
+            heightmap = np.asarray(res.get("heightmap"))
+            no_fly = np.asarray(res.get("no_fly"))
+            planning_time_ms = float(res.get("planning_time_ms", float(res.get("planning_time", 0.0) * 1000.0)))
+            episode_duration_ms = float(res.get("episode_steps", 0)) * 1.0
+            collisions = 1 if bool(res.get("collision_terminated", False)) else 0
+            nfz_violations = int(res.get("constraint_violations", 0))
+            termination_reason = str(res.get("termination_reason", "unknown"))
+            success = bool(res.get("success", False))
+            replans = int(res.get("total_replans", 0))
+            env_events = list(res.get("events", []))
+        else:
+            res = run_planner_once(scenario_id, planner_id, seed=seed)
+            path = list(res.get("path") or [res.get("start")])
+            start_xy = tuple(res.get("start", (0, 0)))
+            goal_xy = tuple(res.get("goal", (0, 0)))
+            heightmap = np.asarray(res.get("heightmap"))
+            no_fly = np.asarray(res.get("no_fly"))
+            planning_time_ms = float(res.get("planning_time_ms", float(res.get("planning_time", 0.0) * 1000.0)))
+            episode_duration_ms = planning_time_ms
+            collisions = 0
+            nfz_violations = int(res.get("constraint_violations", 0))
+            termination_reason = "success" if bool(res.get("success", False)) else "static_validation_failed"
+            success = bool(res.get("success", False))
+            replans = 0
+            env_events = []
+
         return compute_episode_metrics(
             scenario_id=scenario_id,
             planner_id=planner_id,
@@ -250,12 +218,12 @@ class BenchmarkRunner:
             no_fly=no_fly,
             planning_time_ms=planning_time_ms,
             episode_duration_ms=episode_duration_ms,
-            replans=plan_result.replans,
+            replans=replans,
             first_replan_step=None,
-            env_events=env.events,
+            env_events=env_events,
             collisions=collisions,
             nfz_violations=nfz_violations,
-            termination_reason="success" if success else "timeout_or_blocked",
+            termination_reason=termination_reason,
         )
     
     def _aggregate_all_episodes(
@@ -335,6 +303,33 @@ def _waypoint_to_action(current: tuple[int, int], next_pos: tuple[int, int]) -> 
         return 3  # right
     else:
         return 0  # fallback
+
+
+def _expand_execution_path(
+    path: list[tuple[int, int]],
+    heightmap: Any,
+    no_fly: Any,
+) -> list[tuple[int, int]]:
+    """Expand sparse/any-angle waypoints into 4-connected executable steps."""
+    if len(path) < 2:
+        return list(path)
+
+    expanded: list[tuple[int, int]] = [path[0]]
+    segment_planner = AStarPlanner(heightmap, no_fly)
+    for waypoint in path[1:]:
+        prev = expanded[-1]
+        dx = abs(waypoint[0] - prev[0])
+        dy = abs(waypoint[1] - prev[1])
+        if dx + dy == 1:
+            expanded.append(waypoint)
+            continue
+        seg = segment_planner.plan(prev, waypoint)
+        if seg.success and len(seg.path) >= 2:
+            expanded.extend(seg.path[1:])
+        else:
+            # Keep original waypoint if local expansion unexpectedly fails.
+            expanded.append(waypoint)
+    return expanded
 
 
 def main():

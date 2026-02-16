@@ -4,6 +4,7 @@ domain: urban
 difficulty: hard
 mission_type: infrastructure_patrol
 regime: stress_test
+paper_track: dynamic
 map_size: 256
 altitude_levels: 10
 building_density: 0.55
@@ -16,10 +17,26 @@ goal:
 - 192
 - 192
 - 1
+fixed_start_xy:
+- 64
+- 64
+fixed_goal_xy:
+- 192
+- 192
 enable_fire: false
 enable_traffic: true
+enable_dynamic_nfz: true
+fire_blocks_movement: false
+traffic_blocks_movement: true
 wind_level: high
 wind_direction: 0.0
 wind_speed: 0.5
 fire_ignition_points: 0
-num_emergency_vehicles: 3
+num_emergency_vehicles: 10
+num_nfz_zones: 4
+nfz_expansion_rate: 1.0
+nfz_max_radius: 45
+force_replan_count: 2
+event_t1: 12
+event_t2: 28
+emergency_corridor_enabled: true

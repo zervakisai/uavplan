@@ -1,0 +1,36 @@
+{
+  "seeds": [
+    0,
+    1
+  ],
+  "stats_planners": [
+    "astar",
+    "dstar_lite",
+    "hybrid_dstar_teb_lite",
+    "risk_mpc"
+  ],
+  "stress_planners": [
+    "astar",
+    "dstar_lite",
+    "hybrid_dstar_teb_lite",
+    "risk_mpc"
+  ],
+  "stress_scenario": "osm_athens_crisis_dual_hard_downtown",
+  "files": [
+    "FINAL_SCIENTIFIC_REPORT.md",
+    "ablation_delta_table.tex",
+    "ablation_deltas.csv",
+    "ablation_raw.csv",
+    "ablation_summary.csv",
+    "feasibility_proof.csv",
+    "figures/figure1_interaction_diagram.png",
+    "figures/figure2_stress_intensity_curves.png",
+    "figures/figure4_ablation_contribution.png",
+    "interaction_contribution_plot.png",
+    "literature_positioning_matrix.csv",
+    "literature_positioning_matrix.md",
+    "reviewer2_verdict.json",
+    "stress_intensity_curve.csv",
+    "stress_intensity_raw.csv"
+  ]
+}

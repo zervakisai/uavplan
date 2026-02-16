@@ -1,0 +1,11 @@
+alpha,planner,n,success_mean,success_ci95,replans_mean,risk_exposure_mean,guardrail_activation_mean,guardrail_activation_rate_mean,corridor_fallback_rate_mean,relaxation_magnitude_mean,time_to_recover_mean,replan_latency_mean,dynamic_hits_mean,interdiction_hit_rate_reference_mean,trigger_path_invalidation_mean,trigger_forced_event_mean,trigger_cadence_mean
+0.0,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+0.1111111111111111,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+0.2222222222222222,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+0.3333333333333333,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+0.4444444444444444,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+0.5555555555555556,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+0.6666666666666666,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+0.7777777777777777,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+0.8888888888888888,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0
+1.0,astar,1,0.0,0.0,0.0,3.213638826457619e-09,0.0,0.0,0.0,0.0,nan,nan,0.0,0.0,0.0,0.0,0.0

@@ -1,7 +1,7 @@
 scenario_id,planner_id,num_seeds,success_count,success_rate,path_length_mean,path_length_std,path_length_min,path_length_max,path_length_ci_lower,path_length_ci_upper,planning_time_mean_ms,planning_time_std_ms,replans_mean,replans_std,collision_mean,collision_rate,nfz_violation_mean,nfz_violation_rate,fire_exposure_mean,traffic_proximity_mean,intruder_proximity_mean,regret_length_mean,regret_length_std,regret_risk_mean,regret_risk_std,oracle_planner_id
-urban_easy,astar,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-urban_easy,theta_star,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-osm_athens_wildfire_wui_easy_penteli,astar,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-osm_athens_wildfire_wui_easy_penteli,theta_star,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-osm_athens_emergency_response_easy_downtown,astar,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-osm_athens_emergency_response_easy_downtown,theta_star,2,0,0.0,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+urban_easy,astar,2,2,1.0,32.5,1.5,31.0,34.0,31.0,34.0,0.4642709391191602,0.08789601270109415,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+urban_easy,theta_star,2,2,1.0,12.0,1.0,11.0,13.0,11.0,13.0,0.36408304003998637,0.01687504118308425,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+osm_athens_wildfire_wui_easy_penteli,astar,2,2,1.0,257.0,0.0,257.0,257.0,257.0,257.0,27.44429197628051,0.4104999825358391,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+osm_athens_wildfire_wui_easy_penteli,theta_star,2,2,1.0,27.0,0.0,27.0,27.0,27.0,27.0,6.930395553354174,0.10264554293826222,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+osm_athens_emergency_response_easy_downtown,astar,2,2,1.0,257.0,0.0,257.0,257.0,257.0,257.0,11.397833470255136,0.06149953696876764,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+osm_athens_emergency_response_easy_downtown,theta_star,2,2,1.0,41.0,0.0,41.0,41.0,41.0,41.0,5.7626874768175185,0.03806251334026456,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar

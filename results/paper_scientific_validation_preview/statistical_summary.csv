@@ -1,0 +1,9 @@
+track,planner,n_seeds,mean_success,std_success,ci95_low,ci95_high,mean_replans,mean_risk_exposure
+static,astar,3,1.0,0.0,1.0,1.0,0.0,0.0
+static,dstar_lite,3,1.0,0.0,1.0,1.0,0.0,0.0
+static,hybrid_dstar_teb_lite,3,1.0,0.0,1.0,1.0,0.0,0.0
+static,risk_mpc,3,1.0,0.0,1.0,1.0,0.0,0.0
+dynamic,astar,3,0.02381,0.041239,-0.022857,0.070476,0.0,0.000702
+dynamic,dstar_lite,3,0.02381,0.041239,-0.022857,0.070476,7.52381,0.00025
+dynamic,hybrid_dstar_teb_lite,3,0.02381,0.041239,-0.022857,0.070476,8.190476,0.000199
+dynamic,risk_mpc,3,0.02381,0.041239,-0.022857,0.070476,11.309524,8.8e-05

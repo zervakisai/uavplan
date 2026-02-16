@@ -1,0 +1,5 @@
+planner,success_at_alpha0,success_at_alpha1,degradation_slope,monotonic_nonincreasing
+astar,0.0,0.0,0.0,True
+dstar_lite,0.0,0.0,0.0,True
+hybrid_dstar_teb_lite,0.0,0.0,0.0,True
+risk_mpc,0.0,0.0,0.0,True
