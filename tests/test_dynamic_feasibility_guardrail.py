@@ -4,7 +4,7 @@ from uavbench.cli.benchmark import scenario_path
 
 
 def test_guardrail_relaxes_disconnected_dynamic_state():
-    cfg = load_scenario(scenario_path("osm_athens_comms_denied_hard_downtown"))
+    cfg = load_scenario(scenario_path("gov_civil_protection_hard"))
     env = UrbanEnv(cfg)
     env.reset(seed=0)
 

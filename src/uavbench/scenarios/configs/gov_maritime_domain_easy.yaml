@@ -4,7 +4,7 @@ domain: urban
 difficulty: easy
 mission_type: maritime_domain
 regime: naturalistic
-paper_track: dynamic
+paper_track: static
 description: "ΛΣ-ΕΛΑΚΤ — Coastal Patrol + Distress Event (Easy: 4 waypoints, 1 event)"
 map_size: 64
 altitude_levels: 5

@@ -4,7 +4,7 @@ domain: urban
 difficulty: easy
 mission_type: critical_infrastructure
 regime: naturalistic
-paper_track: dynamic
+paper_track: static
 description: "ΥΠΕΘΑ/ISR-support — Inspection Tour + Dynamic Restrictions (Easy: 4 sites, low updates)"
 map_size: 64
 altitude_levels: 5
