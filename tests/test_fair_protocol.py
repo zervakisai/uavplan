@@ -7,7 +7,7 @@ from uavbench.scenarios.schema import InterdictionReferencePlanner
 
 
 def test_loader_protocol_defaults_present():
-    cfg = load_scenario(scenario_path("osm_athens_border_surveillance_easy"))
+    cfg = load_scenario(scenario_path("gov_civil_protection_easy"))
     assert cfg.interdiction_reference_planner == InterdictionReferencePlanner.THETA_STAR
     assert cfg.plan_budget_static_ms > 0.0
     assert cfg.plan_budget_dynamic_ms > 0.0
@@ -16,7 +16,7 @@ def test_loader_protocol_defaults_present():
 
 
 def test_reference_planner_is_logged_for_interdiction():
-    cfg = load_scenario(scenario_path("osm_athens_comms_denied_hard_downtown"))
+    cfg = load_scenario(scenario_path("gov_civil_protection_hard"))
     cfg = replace(
         cfg,
         interdiction_reference_planner=InterdictionReferencePlanner.ASTAR,

@@ -33,14 +33,6 @@ class Traffic(str, Enum):
 class MissionType(str, Enum):
     """Mission category for scenario semantics and metric aggregation."""
     POINT_TO_POINT = "point_to_point"
-    WILDFIRE_WUI = "wildfire_wui"
-    EMERGENCY_RESPONSE = "emergency_response"
-    PORT_SECURITY = "port_security"
-    SEARCH_RESCUE = "search_rescue"
-    INFRASTRUCTURE_PATROL = "infrastructure_patrol"
-    BORDER_SURVEILLANCE = "border_surveillance"
-    COMMS_DENIED = "comms_denied"
-    CRISIS_DUAL = "crisis_dual"
     # Government-ready mission bank (3 missions × 3 difficulties)
     CIVIL_PROTECTION = "civil_protection"
     MARITIME_DOMAIN = "maritime_domain"

@@ -1,10 +1,18 @@
 from uavbench.envs.urban import UrbanEnv
 from uavbench.scenarios.loader import load_scenario
 from uavbench.cli.benchmark import scenario_path
+from dataclasses import replace
 
 
 def test_forced_interdictions_trigger_events():
-    cfg = load_scenario(scenario_path("osm_athens_comms_denied_hard_downtown"))
+    cfg = load_scenario(scenario_path("gov_civil_protection_hard"))
+    # Inject forced replan fields to test interdiction scheduling
+    cfg = replace(
+        cfg,
+        force_replan_count=2,
+        event_t1=12,
+        event_t2=28,
+    )
     env = UrbanEnv(cfg)
     env.reset(seed=0)
 

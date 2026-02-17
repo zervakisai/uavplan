@@ -8,7 +8,7 @@ from uavbench.envs.urban import UrbanEnv
 
 
 def test_urban_env_reset_step():
-    cfg = load_scenario(Path("src/uavbench/scenarios/configs/urban_easy.yaml"))
+    cfg = load_scenario(Path("src/uavbench/scenarios/configs/gov_civil_protection_easy.yaml"))
     env = UrbanEnv(cfg)
     obs, info = env.reset(seed=0)
     assert env.observation_space.contains(obs)
@@ -20,7 +20,7 @@ def test_urban_env_reset_step():
         assert env.observation_space.contains(obs)
 
 def test_urban_env_logs_trajectory():
-    cfg = load_scenario(Path("src/uavbench/scenarios/configs/urban_easy.yaml"))
+    cfg = load_scenario(Path("src/uavbench/scenarios/configs/gov_civil_protection_easy.yaml"))
     env = UrbanEnv(cfg)
     obs, info = env.reset(seed=0)
     for _ in range(3):

@@ -24,11 +24,7 @@ class TestScenarioRegistry:
     def test_list_scenarios(self):
         """Test scenario listing functions."""
         all_scen = list_scenarios()
-        assert len(all_scen) >= 34, f"Expected >= 34 scenarios, got {len(all_scen)}"
-        assert len(all_scen) > 0
-        # Check that wildfire scenario exists (check for any wildfire scenario)
-        wildfire_scen = [s for s in all_scen if "wildfire" in s]
-        assert len(wildfire_scen) > 0, "No wildfire scenarios found"
+        assert len(all_scen) == 9, f"Expected 9 scenarios, got {len(all_scen)}"
         # Check that government mission bank scenarios exist
         gov_scen = [s for s in all_scen if s.startswith("gov_")]
         assert len(gov_scen) == 9, f"Expected 9 gov mission scenarios, got {len(gov_scen)}"
@@ -37,22 +33,17 @@ class TestScenarioRegistry:
         assert len(naturalistic) + len(stress) == len(all_scen)
         
         dynamic_scen = list_scenarios_with_dynamics()
-        assert len(dynamic_scen) > 0
+        # Gov scenarios don't use legacy fire/traffic dynamics
+        assert isinstance(dynamic_scen, list)
     
     def test_scenario_metadata(self):
         """Test individual scenario metadata."""
-        # Use actual scenario ID with full name
-        scenario_id = None
-        for sid in list_scenarios():
-            if "wildfire" in sid and "easy" in sid:
-                scenario_id = sid
-                break
-        
-        assert scenario_id is not None, "No suitable wildfire scenario found"
+        # Use a gov scenario
+        scenario_id = "gov_civil_protection_easy"
+        assert scenario_id in SCENARIO_REGISTRY, f"Scenario {scenario_id} not found"
         meta = SCENARIO_REGISTRY[scenario_id]
-        assert meta.mission_type == MissionType.WILDFIRE_WUI
+        assert meta.mission_type == MissionType.CIVIL_PROTECTION
         assert meta.regime == Regime.NATURALISTIC
-        assert meta.has_fire == True
 
 
 class TestPlanners:

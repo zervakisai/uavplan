@@ -3,23 +3,21 @@ from pathlib import Path
 from uavbench.scenarios.loader import load_scenario
 
 
-def test_urban_hard_levels():
-    cfg = load_scenario(Path("src/uavbench/scenarios/configs/urban_hard.yaml"))
-    assert cfg.wind.value == "high"
-    assert cfg.traffic.value == "high"
+def test_gov_civil_protection_hard():
+    cfg = load_scenario(Path("src/uavbench/scenarios/configs/gov_civil_protection_hard.yaml"))
+    assert cfg.difficulty.value == "hard"
+    assert cfg.domain.value == "urban"
 
 
-
-def test_urban_medium_no_fly():
-    cfg = load_scenario(Path("src/uavbench/scenarios/configs/urban_medium.yaml"))
-    # Updated schema uses no_fly_radius and dynamic_nfz instead of no_fly_zones list
+def test_gov_maritime_domain_medium():
+    cfg = load_scenario(Path("src/uavbench/scenarios/configs/gov_maritime_domain_medium.yaml"))
     assert cfg.difficulty.value == "medium"
     assert cfg.no_fly_radius >= 0
 
-def test_load_urban_easy():
-    cfg = load_scenario(Path("src/uavbench/scenarios/configs/urban_easy.yaml"))
+
+def test_load_gov_civil_protection_easy():
+    cfg = load_scenario(Path("src/uavbench/scenarios/configs/gov_civil_protection_easy.yaml"))
     assert cfg.domain.value == "urban"
     assert cfg.difficulty.value == "easy"
-    # OSM-based scenarios use 500x500 or 25x25 depending on config; accept either
-    assert cfg.map_size in (25, 50, 500)
+    assert cfg.map_size == 64
 

@@ -22,15 +22,15 @@ from uavbench.scenarios.schema import MissionType, Regime
 class TestScenarioPath:
     """Test scenario path resolution."""
 
-    def test_scenario_path_urban_easy(self):
-        """Scenario path for urban_easy exists."""
-        path = scenario_path("urban_easy")
+    def test_scenario_path_gov_civil_protection_easy(self):
+        """Scenario path for gov_civil_protection_easy exists."""
+        path = scenario_path("gov_civil_protection_easy")
         assert path.exists(), f"Scenario file not found: {path}"
         assert path.suffix == ".yaml"
 
-    def test_scenario_path_osm_scenarios(self):
-        """OSM-based scenarios resolve correctly."""
-        for scenario_id in list(SCENARIO_REGISTRY.keys())[:5]:  # Test first 5
+    def test_scenario_path_gov_scenarios(self):
+        """Gov mission scenarios resolve correctly."""
+        for scenario_id in list(SCENARIO_REGISTRY.keys()):
             path = scenario_path(scenario_id)
             assert path.exists(), f"Scenario {scenario_id} not found at {path}"
 
@@ -62,9 +62,9 @@ class TestWaypointAction:
 class TestRunPlannerOnce:
     """Test single planner run (static planning)."""
 
-    def test_run_astar_urban_easy(self):
-        """A* planner runs on urban_easy scenario."""
-        result = run_planner_once("urban_easy", "astar", seed=0)
+    def test_run_astar_gov_easy(self):
+        """A* planner runs on gov_civil_protection_easy scenario."""
+        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
 
         # Check result structure
         assert isinstance(result, dict), "Result should be dict"
@@ -76,16 +76,16 @@ class TestRunPlannerOnce:
         assert "planning_time" in result
 
         # Check values
-        assert result["scenario_id"] == "urban_easy"
+        assert result["scenario_id"] == "gov_civil_protection_easy"
         assert result["planner_id"] == "astar"
         assert result["seed"] == 0
         assert isinstance(result["success"], bool)
         assert result["path_length"] >= 0
         assert result["planning_time"] >= 0
 
-    def test_run_theta_star_urban_easy(self):
-        """Theta* planner runs on urban_easy scenario."""
-        result = run_planner_once("urban_easy", "theta_star", seed=0)
+    def test_run_theta_star_gov_easy(self):
+        """Theta* planner runs on gov_civil_protection_easy scenario."""
+        result = run_planner_once("gov_civil_protection_easy", "theta_star", seed=0)
 
         assert result["planner_id"] == "theta_star"
         assert "success" in result
@@ -93,8 +93,8 @@ class TestRunPlannerOnce:
 
     def test_deterministic_seed(self):
         """Same seed produces consistent results."""
-        result1 = run_planner_once("urban_easy", "astar", seed=42)
-        result2 = run_planner_once("urban_easy", "astar", seed=42)
+        result1 = run_planner_once("gov_civil_protection_easy", "astar", seed=42)
+        result2 = run_planner_once("gov_civil_protection_easy", "astar", seed=42)
 
         # Should get same path length with same seed
         assert result1["path_length"] == result2["path_length"]
@@ -102,8 +102,8 @@ class TestRunPlannerOnce:
 
     def test_different_seeds_may_differ(self):
         """Different seeds can produce different results."""
-        result1 = run_planner_once("urban_easy", "astar", seed=0)
-        result2 = run_planner_once("urban_easy", "astar", seed=1)
+        result1 = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
+        result2 = run_planner_once("gov_civil_protection_easy", "astar", seed=1)
 
         # May differ (not guaranteed, but likely for stochastic environments)
         # At minimum, both should complete successfully
@@ -116,7 +116,7 @@ class TestMetricsComputation:
 
     def test_compute_all_metrics_successful(self):
         """Compute metrics for successful run."""
-        result = run_planner_once("urban_easy", "astar", seed=0)
+        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
 
         metrics = compute_all_metrics(result)
 
@@ -126,7 +126,7 @@ class TestMetricsComputation:
 
     def test_metrics_contain_expected_keys(self):
         """Metrics include standard path quality measures."""
-        result = run_planner_once("urban_easy", "astar", seed=0)
+        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
         metrics = compute_all_metrics(result)
 
         # Standard metrics documented in API
@@ -141,7 +141,7 @@ class TestAggregation:
 
     def test_aggregate_single_result(self):
         """Aggregate single result."""
-        result = run_planner_once("urban_easy", "astar", seed=0)
+        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
         agg = aggregate([result])
 
         assert isinstance(agg, dict)
@@ -150,7 +150,7 @@ class TestAggregation:
     def test_aggregate_multiple_results(self):
         """Aggregate multiple results."""
         results = [
-            run_planner_once("urban_easy", "astar", seed=i)
+            run_planner_once("gov_civil_protection_easy", "astar", seed=i)
             for i in range(3)
         ]
 
@@ -172,7 +172,7 @@ class TestScenarioRegistry:
     def test_registry_has_scenarios(self):
         """Registry contains scenarios."""
         assert len(SCENARIO_REGISTRY) > 0
-        assert len(SCENARIO_REGISTRY) >= 30, "Should have 30+ scenarios"
+        assert len(SCENARIO_REGISTRY) == 9, f"Should have 9 scenarios, got {len(SCENARIO_REGISTRY)}"
 
     def test_all_scenarios_have_required_fields(self):
         """All scenarios have required metadata fields."""
@@ -184,13 +184,13 @@ class TestScenarioRegistry:
 
     def test_list_by_mission_type(self):
         """List scenarios by mission type."""
-        wildfire_scenarios = list_scenarios_by_mission(MissionType.WILDFIRE_WUI)
-        assert len(wildfire_scenarios) > 0, "Should have wildfire scenarios"
+        civil_protection = list_scenarios_by_mission(MissionType.CIVIL_PROTECTION)
+        assert len(civil_protection) == 3, "Should have 3 civil protection scenarios"
 
-        # All should have WILDFIRE_WUI mission type
-        for scenario_id in wildfire_scenarios:
+        # All should have CIVIL_PROTECTION mission type
+        for scenario_id in civil_protection:
             metadata = SCENARIO_REGISTRY[scenario_id]
-            assert metadata.mission_type == MissionType.WILDFIRE_WUI
+            assert metadata.mission_type == MissionType.CIVIL_PROTECTION
 
     def test_list_by_regime(self):
         """List scenarios by regime."""
@@ -201,13 +201,13 @@ class TestScenarioRegistry:
         assert len(stress_test) > 0, "Should have stress-test scenarios"
 
     def test_mission_types_coverage(self):
-        """All documented mission types are represented."""
+        """All gov mission types are represented."""
         all_mission_types = set()
         for metadata in SCENARIO_REGISTRY.values():
             all_mission_types.add(metadata.mission_type)
 
-        # Should have multiple mission types (documented: ~9)
-        assert len(all_mission_types) >= 5, f"Should have 5+ mission types, got {len(all_mission_types)}"
+        # Should have 3 mission types (civil_protection, maritime_domain, critical_infrastructure)
+        assert len(all_mission_types) == 3, f"Should have 3 mission types, got {len(all_mission_types)}"
 
     def test_difficulties_coverage(self):
         """All difficulty levels represented."""
@@ -235,15 +235,15 @@ class TestScenarioRegistry:
 class TestScenarioFiltering:
     """Test scenario filtering capabilities."""
 
-    def test_filter_by_mission_wildfire(self):
-        """Filter scenarios by wildfire mission."""
-        wildfire = list_scenarios_by_mission(MissionType.WILDFIRE_WUI)
-        assert len(wildfire) > 0
+    def test_filter_by_mission_civil_protection(self):
+        """Filter scenarios by civil protection mission."""
+        civil = list_scenarios_by_mission(MissionType.CIVIL_PROTECTION)
+        assert len(civil) == 3
 
-    def test_filter_by_mission_emergency(self):
-        """Filter scenarios by emergency mission."""
-        emergency = list_scenarios_by_mission(MissionType.EMERGENCY_RESPONSE)
-        assert len(emergency) > 0
+    def test_filter_by_mission_maritime(self):
+        """Filter scenarios by maritime domain mission."""
+        maritime = list_scenarios_by_mission(MissionType.MARITIME_DOMAIN)
+        assert len(maritime) == 3
 
     def test_filter_by_regime_naturalistic(self):
         """Filter naturalistic scenarios."""
@@ -261,7 +261,7 @@ class TestBenchmarkIntegration:
 
     def test_run_mini_benchmark(self):
         """Run mini benchmark: 2 scenarios × 2 planners × 1 seed."""
-        scenarios = ["urban_easy", "urban_medium"]
+        scenarios = ["gov_civil_protection_easy", "gov_maritime_domain_easy"]
         planners = ["astar", "theta_star"]
         seeds = [0]
 
@@ -281,8 +281,8 @@ class TestBenchmarkIntegration:
         results_theta = []
 
         for seed in range(3):
-            r_a = run_planner_once("urban_easy", "astar", seed=seed)
-            r_t = run_planner_once("urban_easy", "theta_star", seed=seed)
+            r_a = run_planner_once("gov_civil_protection_easy", "astar", seed=seed)
+            r_t = run_planner_once("gov_civil_protection_easy", "theta_star", seed=seed)
             results_astar.append(r_a)
             results_theta.append(r_t)
 
@@ -299,7 +299,7 @@ class TestBenchmarkIntegration:
         results = []
         for seed in range(2):
             for planner in ["astar", "theta_star"]:
-                r = run_planner_once("urban_easy", planner, seed=seed)
+                r = run_planner_once("gov_civil_protection_easy", planner, seed=seed)
                 results.append(r)
 
         # Aggregate
@@ -323,11 +323,11 @@ class TestPlannerRegistry:
         assert "theta_star" in PLANNERS
 
     def test_run_all_available_planners(self):
-        """Run all available planners on urban_easy."""
+        """Run all available planners on gov_civil_protection_easy."""
         from uavbench.planners import PLANNERS
 
         for planner_id in list(PLANNERS.keys())[:3]:  # Test first 3 planners
-            result = run_planner_once("urban_easy", planner_id, seed=0)
+            result = run_planner_once("gov_civil_protection_easy", planner_id, seed=0)
             assert result["planner_id"] == planner_id
             assert "path_length" in result
 
@@ -337,13 +337,13 @@ class TestMetricsComprehensiveness:
 
     def test_result_contains_planning_time(self):
         """Result includes planning time."""
-        result = run_planner_once("urban_easy", "astar", seed=0)
+        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
         assert "planning_time" in result
         assert result["planning_time"] >= 0
 
     def test_metrics_include_success_rate(self):
         """Aggregation includes success rate."""
-        results = [run_planner_once("urban_easy", "astar", seed=i) for i in range(2)]
+        results = [run_planner_once("gov_civil_protection_easy", "astar", seed=i) for i in range(2)]
         agg = aggregate(results)
 
         # Check success computation
@@ -357,8 +357,8 @@ class TestResultConsistency:
 
     def test_result_keys_consistent_across_planners(self):
         """All planner results have same keys."""
-        result_a = run_planner_once("urban_easy", "astar", seed=0)
-        result_t = run_planner_once("urban_easy", "theta_star", seed=0)
+        result_a = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
+        result_t = run_planner_once("gov_civil_protection_easy", "theta_star", seed=0)
 
         keys_a = set(result_a.keys())
         keys_t = set(result_t.keys())
@@ -370,7 +370,7 @@ class TestResultConsistency:
 
     def test_result_values_are_serializable(self):
         """Results can be serialized to JSON (excluding numpy arrays and config)."""
-        result = run_planner_once("urban_easy", "astar", seed=0)
+        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
 
         # Create JSON-serializable version (exclude heightmap, no_fly, config)
         serializable = {
