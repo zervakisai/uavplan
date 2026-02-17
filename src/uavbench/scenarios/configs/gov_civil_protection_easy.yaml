@@ -1,0 +1,38 @@
+name: gov_civil_protection_easy
+scenario_id: gov_civil_protection_easy
+domain: urban
+difficulty: easy
+mission_type: civil_protection
+regime: naturalistic
+paper_track: dynamic
+description: "ΓΓ Πολιτικής Προστασίας — Wildfire SA + Evacuation Corridor (Easy: 4 tasks, low injection)"
+map_size: 64
+altitude_levels: 5
+building_density: 0.25
+tile_name: synthetic
+map_source: synthetic
+
+fixed_start_xy: [8, 8]
+fixed_goal_xy: [56, 56]
+
+enable_fire: false
+enable_traffic: false
+enable_dynamic_nfz: false
+fire_blocks_movement: false
+traffic_blocks_movement: false
+wind_level: low
+wind_speed: 0.2
+fire_ignition_points: 0
+num_emergency_vehicles: 3
+force_replan_count: 0
+emergency_corridor_enabled: true
+
+extra:
+  mission_bank: civil_protection
+  num_tasks: 4
+  injection_rate: low
+  dynamics_intensity: static
+  time_budget: 350
+  energy_budget: 1.0
+  comms_dropout_prob: 0.0
+  comms_latency_steps: 0

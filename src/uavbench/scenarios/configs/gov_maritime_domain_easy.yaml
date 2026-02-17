@@ -1,0 +1,38 @@
+name: gov_maritime_domain_easy
+scenario_id: gov_maritime_domain_easy
+domain: urban
+difficulty: easy
+mission_type: maritime_domain
+regime: naturalistic
+paper_track: dynamic
+description: "ΛΣ-ΕΛΑΚΤ — Coastal Patrol + Distress Event (Easy: 4 waypoints, 1 event)"
+map_size: 64
+altitude_levels: 5
+building_density: 0.15
+tile_name: synthetic
+map_source: synthetic
+
+fixed_start_xy: [32, 8]
+fixed_goal_xy: [32, 56]
+
+enable_fire: false
+enable_traffic: false
+enable_dynamic_nfz: false
+fire_blocks_movement: false
+traffic_blocks_movement: false
+wind_level: low
+wind_speed: 0.2
+fire_ignition_points: 0
+num_emergency_vehicles: 2
+force_replan_count: 0
+emergency_corridor_enabled: true
+
+extra:
+  mission_bank: maritime_domain
+  num_tasks: 4
+  injection_rate: low
+  dynamics_intensity: static
+  time_budget: 400
+  energy_budget: 1.0
+  comms_dropout_prob: 0.0
+  comms_latency_steps: 0

@@ -723,8 +723,8 @@ def _stress_story_audit(stress_agg_rows: list[dict[str, Any]], out_dir: Path) ->
     narrative = {
         "astar_collapses_fast": bool(lookup.get("astar", {}).get("degradation_slope", 0.0) < -0.4),
         "dstar_moderate_degradation": bool(lookup.get("dstar_lite", {}).get("degradation_slope", 0.0) < -0.15),
-        "hybrid_graceful_degradation": bool(lookup.get("hybrid_dstar_teb_lite", {}).get("degradation_slope", 0.0) > lookup.get("astar", {}).get("degradation_slope", -999)),
-        "risk_tradeoff_stable": bool(lookup.get("risk_mpc", {}).get("success_at_alpha1", 0.0) >= 0.5 * lookup.get("risk_mpc", {}).get("success_at_alpha0", 0.0)),
+        "mppi_graceful_degradation": bool(lookup.get("mppi", {}).get("degradation_slope", 0.0) > lookup.get("astar", {}).get("degradation_slope", -999)),
+        "dwa_tradeoff_stable": bool(lookup.get("dwa", {}).get("success_at_alpha1", 0.0) >= 0.5 * lookup.get("dwa", {}).get("success_at_alpha0", 0.0)),
     }
     _write_csv(rows, out_dir / "stress_story_audit.csv")
     (out_dir / "stress_story_narrative.json").write_text(json.dumps(narrative, indent=2), encoding="utf-8")
@@ -1072,7 +1072,7 @@ def _fairness_audit(dynamic_scenarios: list[str], out_dir: Path, episode_horizon
     # 4b) Replanning trigger contract consistency
     trigger_ok = True
     trigger_details: dict[str, Any] = {}
-    planners_check = ["dstar_lite", "hybrid_dstar_teb_lite", "risk_mpc"]
+    planners_check = ["dstar_lite", "ad_star", "mppi"]
     for sid in scenarios:
         per_planner: dict[str, Any] = {}
         for planner in planners_check:
@@ -1175,8 +1175,8 @@ def _failure_mode_taxonomy(
             cases["static_corridor_collapse"] = r
             break
 
-    # Incremental oscillation (LPA* / D* Lite)
-    for planner in ("lpa_star", "dstar_lite"):
+    # Incremental oscillation (D* Lite / AD*)
+    for planner in ("dstar_lite", "ad_star"):
         for seed in seeds:
             r = run_dynamic_episode(
                 stress_scenario,
@@ -1191,31 +1191,31 @@ def _failure_mode_taxonomy(
         if "incremental_oscillation" in cases:
             break
 
-    # Hybrid recovery
+    # MPPI recovery
     for seed in seeds:
         r = run_dynamic_episode(
             stress_scenario,
-            "hybrid_dstar_teb_lite",
+            "mppi",
             seed=seed,
             stress_alpha=0.8,
             episode_horizon_steps=episode_horizon,
         )
         if r.get("success", False) and int(r.get("forced_replans_triggered", 0)) >= 1:
-            cases["hybrid_recovery"] = r
+            cases["mppi_recovery"] = r
             break
 
-    # Risk over-conservatism
+    # DWA over-conservatism
     for seed in seeds:
         rr = run_dynamic_episode(
             stress_scenario,
-            "risk_mpc",
+            "dwa",
             seed=seed,
             stress_alpha=0.8,
             episode_horizon_steps=episode_horizon,
         )
         hh = run_dynamic_episode(
             stress_scenario,
-            "hybrid_dstar_teb_lite",
+            "mppi",
             seed=seed,
             stress_alpha=0.8,
             episode_horizon_steps=episode_horizon,
@@ -1226,7 +1226,7 @@ def _failure_mode_taxonomy(
             and float(rr.get("path_length", 0.0)) > 1.2 * float(hh.get("path_length", 1.0))
             and float(rr.get("risk_exposure_integral", 0.0)) <= 1.05 * float(hh.get("risk_exposure_integral", 1e-6))
         ):
-            cases["risk_over_conservatism"] = rr
+            cases["dwa_over_conservatism"] = rr
             break
 
     # Guardrail dependency
@@ -1299,7 +1299,7 @@ def _failure_comparison_figure(
     fig, axes = plt.subplots(1, 2, figsize=(10.5, 5))
     for ax, case, title in (
         (axes[0], case_a, "A* collapse"),
-        (axes[1], case_b, "Hybrid recovery"),
+        (axes[1], case_b, "MPPI recovery"),
     ):
         h = np.asarray(case.get("heightmap"))
         nfz = np.asarray(case.get("no_fly"))
@@ -1355,10 +1355,10 @@ def _reviewer2_verdict(
     dyn_stats = [r for r in summary_rows if r["track"] == "dynamic"]
     by_planner = {r["planner"]: r for r in dyn_stats}
     astar = by_planner.get("astar", {"mean_success": 0.0})
-    hybrid = by_planner.get("hybrid_dstar_teb_lite", {"mean_success": 0.0})
-    risk = by_planner.get("risk_mpc", {"mean_success": 0.0})
+    mppi = by_planner.get("mppi", {"mean_success": 0.0})
+    dwa = by_planner.get("dwa", {"mean_success": 0.0})
 
-    dyn_effect = [r for r in effect_rows if r["track"] == "dynamic" and r["planner"] in {"dstar_lite", "hybrid_dstar_teb_lite", "risk_mpc"}]
+    dyn_effect = [r for r in effect_rows if r["track"] == "dynamic" and r["planner"] in {"dstar_lite", "ad_star", "mppi"}]
     significant = all(float(r["mann_whitney_pvalue"]) < 0.05 for r in dyn_effect) if dyn_effect else False
     strong_effect = all(abs(float(r["cohen_d_success"])) >= 0.5 for r in dyn_effect) if dyn_effect else False
 
@@ -1377,8 +1377,8 @@ def _reviewer2_verdict(
     ablation_signal = _safe_mean([float(r["delta_success"]) for r in ablation_deltas if r["variant"] in {"no_interactions", "no_forced_breaks", "no_guardrail"}]) < 0.0
 
     claims = {
-        "static_collapse_vs_adaptive_gap": float(astar["mean_success"]) + 0.1 < float(hybrid["mean_success"]),
-        "risk_planner_tradeoff_present": float(risk["mean_success"]) >= float(astar["mean_success"]),
+        "static_collapse_vs_adaptive_gap": float(astar["mean_success"]) + 0.1 < float(mppi["mean_success"]),
+        "sampling_planner_tradeoff_present": float(mppi["mean_success"]) >= float(astar["mean_success"]),
         "statistical_separation_significant": significant,
         "effect_sizes_strong": strong_effect,
         "ranking_stable": rank_stable,
@@ -1725,12 +1725,12 @@ def main() -> None:
     parser.add_argument(
         "--stats-planners",
         type=str,
-        default="astar,theta_star,adaptive_astar,dstar_lite,lpa_star,hybrid_dstar_teb_lite,risk_mpc,event_triggered,risk_gradient,stability_aware",
+        default="astar,theta_star,dstar_lite,ad_star,dwa,mppi",
     )
     parser.add_argument(
         "--stress-planners",
         type=str,
-        default="astar,dstar_lite,hybrid_dstar_teb_lite,risk_mpc,event_triggered,risk_gradient,stability_aware,oracle",
+        default="astar,theta_star,dstar_lite,ad_star,dwa,mppi",
     )
     parser.add_argument(
         "--stress-scenario",
@@ -1851,7 +1851,7 @@ def main() -> None:
         failure_rows, cases = _failure_mode_taxonomy(args.stress_scenario, out, episode_horizon)
         _failure_comparison_figure(
             cases.get("static_corridor_collapse"),
-            cases.get("hybrid_recovery"),
+            cases.get("mppi_recovery"),
             out / "figures" / "figure3_failure_comparison.png",
         )
 

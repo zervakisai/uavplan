@@ -1,0 +1,43 @@
+name: gov_critical_infrastructure_medium
+scenario_id: gov_critical_infrastructure_medium
+domain: urban
+difficulty: medium
+mission_type: critical_infrastructure
+regime: stress_test
+paper_track: dynamic
+description: "ΥΠΕΘΑ/ISR-support — Inspection Tour + Dynamic Restrictions (Medium: 6 sites, tighter windows)"
+map_size: 64
+altitude_levels: 5
+building_density: 0.40
+tile_name: synthetic
+map_source: synthetic
+
+fixed_start_xy: [8, 8]
+fixed_goal_xy: [56, 56]
+
+enable_fire: false
+enable_traffic: true
+enable_dynamic_nfz: true
+fire_blocks_movement: false
+traffic_blocks_movement: false
+wind_level: medium
+wind_speed: 0.3
+fire_ignition_points: 0
+num_emergency_vehicles: 4
+num_nfz_zones: 2
+nfz_expansion_rate: 0.5
+nfz_max_radius: 15
+force_replan_count: 1
+event_t1: 25
+event_t2: 55
+emergency_corridor_enabled: true
+
+extra:
+  mission_bank: critical_infrastructure
+  num_tasks: 6
+  injection_rate: medium
+  dynamics_intensity: moderate
+  time_budget: 260
+  energy_budget: 0.85
+  comms_dropout_prob: 0.05
+  comms_latency_steps: 2

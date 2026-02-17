@@ -930,7 +930,7 @@ def main() -> None:
         "--planners",
         type=str,
         default="astar",
-        help="Comma-separated list of planner IDs to run (e.g. astar,adaptive_astar).",
+        help="Comma-separated list of planner IDs to run (e.g. astar,dstar_lite,mppi).",
     )
     parser.add_argument(
         "--metrics",

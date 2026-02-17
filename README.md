@@ -6,7 +6,7 @@ Operationally-realistic 2D UAV navigation benchmark with deterministic tracks fo
 
 - 34 scenarios total
 - 2 paper tracks: `static` (control), `dynamic` (forced-replan stress)
-- 13 planners (static, adaptive, incremental, hybrid, risk-aware)
+- 6 planners (global optimal, any-angle, incremental, anytime, reactive, sampling-based MPC)
 - deterministic seeding and reproducible evaluation flow
 - fair protocol invariants (shared snapshot, budget, cadence, checker)
 - formal feasibility guardrail logs
@@ -55,7 +55,7 @@ Dynamic stress comparison:
 ```bash
 .venv/bin/python -m uavbench.cli.benchmark \
   --scenarios osm_athens_comms_denied_hard_downtown \
-  --planners astar,theta_star,adaptive_astar,dstar_lite,risk_mpc \
+  --planners astar,theta_star,dstar_lite,ad_star,dwa,mppi \
   --trials 1 \
   --paper-protocol \
   --protocol-variant default \

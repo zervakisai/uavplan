@@ -40,7 +40,7 @@ What to say:
 ```bash
 .venv/bin/python -m uavbench.cli.benchmark \
   --track static \
-  --planners astar,theta_star,jps \
+  --planners astar,theta_star \
   --trials 1 \
   --paper-protocol \
   --fail-fast
@@ -54,7 +54,7 @@ What to say:
 ```bash
 .venv/bin/python -m uavbench.cli.benchmark \
   --scenarios osm_athens_comms_denied_hard_downtown \
-  --planners astar,dstar_lite,hybrid_dstar_teb_lite,risk_mpc \
+  --planners astar,dstar_lite,ad_star,dwa,mppi \
   --trials 1 \
   --paper-protocol \
   --protocol-variant default \
@@ -101,7 +101,7 @@ Open:
 - `/Users/konstantinos/Dev/uavbench/results/paper_scientific_validation_full/seed_stability_audit.csv`
 
 What to say:
-- "Static planners collapse faster with α; adaptive/hybrid degrade more gracefully."
+- "Static planners collapse faster with α; incremental/sampling planners degrade more gracefully."
 - "Effect sizes and significance quantify separation; seed stability checks ranking robustness."
 
 ## 8) Runtime reproducibility (30s)

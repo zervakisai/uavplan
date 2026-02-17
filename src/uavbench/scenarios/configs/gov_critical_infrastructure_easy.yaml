@@ -1,0 +1,38 @@
+name: gov_critical_infrastructure_easy
+scenario_id: gov_critical_infrastructure_easy
+domain: urban
+difficulty: easy
+mission_type: critical_infrastructure
+regime: naturalistic
+paper_track: dynamic
+description: "ΥΠΕΘΑ/ISR-support — Inspection Tour + Dynamic Restrictions (Easy: 4 sites, low updates)"
+map_size: 64
+altitude_levels: 5
+building_density: 0.35
+tile_name: synthetic
+map_source: synthetic
+
+fixed_start_xy: [8, 8]
+fixed_goal_xy: [56, 56]
+
+enable_fire: false
+enable_traffic: false
+enable_dynamic_nfz: false
+fire_blocks_movement: false
+traffic_blocks_movement: false
+wind_level: none
+wind_speed: 0.1
+fire_ignition_points: 0
+num_emergency_vehicles: 2
+force_replan_count: 0
+emergency_corridor_enabled: true
+
+extra:
+  mission_bank: critical_infrastructure
+  num_tasks: 4
+  injection_rate: low
+  dynamics_intensity: static
+  time_budget: 300
+  energy_budget: 1.0
+  comms_dropout_prob: 0.0
+  comms_latency_steps: 0

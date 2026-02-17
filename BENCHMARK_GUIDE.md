@@ -99,7 +99,7 @@ Loader fallback when `paper_track` is omitted:
 ### 6.3 Planner-agnostic interdiction fairness
 
 - reference corridor is computed once at reset using:
-  - `interdiction_reference_planner: astar|theta_star|jps`
+  - `interdiction_reference_planner: astar|theta_star`
 - breakpoints are scheduled on that reference corridor (not on per-planner path)
 - fairness metric:
   - `interdiction_hit_rate_reference`
@@ -151,10 +151,12 @@ Logged proof fields:
 
 ## 7. Planner Set
 
-- controls: `astar`, `theta_star`, `jps`
-- adaptive baseline: `adaptive_astar`
-- incremental/anytime: `dstar_lite`, `lpa_star`, `ad_star`, `ara_star`
-- operational stack: `hybrid_dstar_dwa`, `hybrid_dstar_teb_lite`, `risk_mpc`
+- global optimal: `astar`
+- any-angle: `theta_star`
+- incremental: `dstar_lite`
+- anytime incremental: `ad_star`
+- reactive: `dwa`
+- sampling-based MPC: `mppi`
 
 ## 8. Interaction Metrics (Paper)
 
@@ -197,7 +199,7 @@ PY
 ```bash
 .venv/bin/python -m uavbench.cli.benchmark \
   --track static \
-  --planners astar,theta_star,jps \
+  --planners astar,theta_star \
   --trials 1 \
   --paper-protocol \
   --fail-fast
@@ -208,7 +210,7 @@ PY
 ```bash
 .venv/bin/python -m uavbench.cli.benchmark \
   --scenarios osm_athens_comms_denied_hard_downtown \
-  --planners astar,theta_star,dstar_lite,hybrid_dstar_teb_lite,risk_mpc \
+  --planners astar,theta_star,dstar_lite,ad_star,dwa,mppi \
   --trials 1 \
   --paper-protocol \
   --protocol-variant default \
@@ -220,7 +222,7 @@ PY
 ```bash
 .venv/bin/python -m uavbench.cli.benchmark \
   --scenarios osm_athens_comms_denied_hard_downtown \
-  --planners astar,dstar_lite,hybrid_dstar_teb_lite,risk_mpc \
+  --planners astar,dstar_lite,ad_star,mppi \
   --trials 1 \
   --paper-protocol \
   --protocol-variant no_interactions
@@ -229,7 +231,7 @@ PY
 ```bash
 .venv/bin/python -m uavbench.cli.benchmark \
   --scenarios osm_athens_comms_denied_hard_downtown \
-  --planners astar,dstar_lite,hybrid_dstar_teb_lite,risk_mpc \
+  --planners astar,dstar_lite,ad_star,mppi \
   --trials 1 \
   --paper-protocol \
   --protocol-variant no_forced_breaks

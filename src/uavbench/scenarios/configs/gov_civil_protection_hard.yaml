@@ -1,0 +1,43 @@
+name: gov_civil_protection_hard
+scenario_id: gov_civil_protection_hard
+domain: urban
+difficulty: hard
+mission_type: civil_protection
+regime: stress_test
+paper_track: dynamic
+description: "ΓΓ Πολιτικής Προστασίας — Wildfire SA + Evacuation Corridor (Hard: 8 tasks, severe dynamics, comms dropouts)"
+map_size: 64
+altitude_levels: 5
+building_density: 0.45
+tile_name: synthetic
+map_source: synthetic
+
+fixed_start_xy: [8, 8]
+fixed_goal_xy: [56, 56]
+
+enable_fire: false
+enable_traffic: true
+enable_dynamic_nfz: true
+fire_blocks_movement: false
+traffic_blocks_movement: true
+wind_level: high
+wind_speed: 0.7
+fire_ignition_points: 0
+num_emergency_vehicles: 8
+num_nfz_zones: 4
+nfz_expansion_rate: 1.0
+nfz_max_radius: 30
+force_replan_count: 2
+event_t1: 20
+event_t2: 45
+emergency_corridor_enabled: true
+
+extra:
+  mission_bank: civil_protection
+  num_tasks: 8
+  injection_rate: high
+  dynamics_intensity: severe
+  time_budget: 250
+  energy_budget: 0.70
+  comms_dropout_prob: 0.15
+  comms_latency_steps: 4

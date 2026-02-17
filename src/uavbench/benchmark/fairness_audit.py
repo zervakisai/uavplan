@@ -224,7 +224,7 @@ def run_full_audit(
     dynamic_scenarios = [s for s in scenarios if _is_dynamic(s)]
     if dynamic_scenarios:
         print("[Fairness] Checking interdiction hit rate variance...")
-        adaptive_planners = [p for p in planners if p not in ("astar", "theta_star", "jps")]
+        adaptive_planners = [p for p in planners if p not in ("astar", "theta_star")]
         if adaptive_planners:
             for scenario_id in dynamic_scenarios[:2]:
                 r = audit_interdiction_hit_rate(scenario_id, adaptive_planners[:4], seeds[:2])
