@@ -41,6 +41,10 @@ class MissionType(str, Enum):
     BORDER_SURVEILLANCE = "border_surveillance"
     COMMS_DENIED = "comms_denied"
     CRISIS_DUAL = "crisis_dual"
+    # Government-ready mission bank (3 missions × 3 difficulties)
+    CIVIL_PROTECTION = "civil_protection"
+    MARITIME_DOMAIN = "maritime_domain"
+    CRITICAL_INFRASTRUCTURE = "critical_infrastructure"
 
 
 class Regime(str, Enum):

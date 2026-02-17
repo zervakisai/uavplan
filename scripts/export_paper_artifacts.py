@@ -359,19 +359,14 @@ def main() -> None:
     static_scenarios = list_scenarios_by_track("static")
     dynamic_scenarios = list_scenarios_by_track("dynamic")
 
-    static_planners = ["astar", "theta_star", "jps", "adaptive_astar"]
+    static_planners = ["astar", "theta_star"]
     dynamic_planners = [
         "astar",
         "theta_star",
-        "jps",
-        "adaptive_astar",
         "dstar_lite",
-        "lpa_star",
         "ad_star",
-        "ara_star",
-        "hybrid_dstar_dwa",
-        "hybrid_dstar_teb_lite",
-        "risk_mpc",
+        "dwa",
+        "mppi",
     ]
 
     static_dir = output_root / "static_run"

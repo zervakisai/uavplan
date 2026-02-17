@@ -77,7 +77,7 @@ def _apply_adjustments(
         p = _scenario_path(sid)
         data = _load_yaml(p)
         base_sr = 0.5 * (baseline[(sid, "astar")] + baseline[(sid, "theta_star")])
-        ad_sr = adaptive[(sid, "adaptive_astar")]
+        ad_sr = adaptive[(sid, "dstar_lite")]
         if base_sr > 0.05:
             data["num_nfz_zones"] = min(7, int(data.get("num_nfz_zones", 4)) + 1)
             data["nfz_expansion_rate"] = min(1.6, float(data.get("nfz_expansion_rate", 1.0)) + 0.1)
@@ -110,14 +110,14 @@ def main() -> None:
     rows: list[dict[str, Any]] = []
     for it in range(1, args.max_iters + 1):
         baseline = _evaluate(list_scenarios(), ["astar", "theta_star"], seeds)
-        adaptive = _evaluate(dynamic_scenarios, ["adaptive_astar"], seeds)
+        adaptive = _evaluate(dynamic_scenarios, ["dstar_lite"], seeds)
 
         static_ok = all(baseline[(sid, "astar")] == 1.0 and baseline[(sid, "theta_star")] == 1.0 for sid in static_scenarios)
         dyn_base = [
             0.5 * (baseline[(sid, "astar")] + baseline[(sid, "theta_star")])
             for sid in dynamic_scenarios
         ]
-        dyn_ad = [adaptive[(sid, "adaptive_astar")] for sid in dynamic_scenarios]
+        dyn_ad = [adaptive[(sid, "dstar_lite")] for sid in dynamic_scenarios]
         dyn_base_mean = sum(dyn_base) / max(len(dyn_base), 1)
         dyn_ad_mean = sum(dyn_ad) / max(len(dyn_ad), 1)
 

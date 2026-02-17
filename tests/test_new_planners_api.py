@@ -9,17 +9,7 @@ def test_new_planners_return_planresult():
     start = (0, 0)
     goal = (19, 19)
 
-    planner_ids = [
-        "dstar_lite",
-        "lpa_star",
-        "ad_star",
-        "ara_star",
-        "local_dwa",
-        "local_teb_lite",
-        "hybrid_dstar_dwa",
-        "hybrid_dstar_teb_lite",
-        "risk_mpc",
-    ]
+    planner_ids = ["dstar_lite", "ad_star", "dwa", "mppi"]
 
     for pid in planner_ids:
         planner = PLANNERS[pid](heightmap, no_fly)

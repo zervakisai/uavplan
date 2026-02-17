@@ -66,17 +66,17 @@ HYPOTHESES = [
         "id": "H3",
         "claim": "Behaviorally distinct adaptive planners produce statistically different replan trigger distributions.",
         "metric": "total_replans",
-        "comparison": ("event_triggered", "risk_gradient"),
+        "comparison": ("dstar_lite", "mppi"),
         "direction": "different",
         "falsifiable": "Falsified if Cohen's d < 0.5 between any two adaptive planner pairs.",
     },
     {
         "id": "H4",
-        "claim": "Oracle regret meaningfully differentiates planner quality.",
-        "metric": "regret_length",
+        "claim": "Path length spread meaningfully differentiates planner quality.",
+        "metric": "path_length",
         "comparison": ("best_planner", "worst_planner"),
         "direction": "greater",
-        "falsifiable": "Falsified if normalized regret range < 0.1 across planners.",
+        "falsifiable": "Falsified if normalized path length range < 0.1 across planners.",
     },
     {
         "id": "H5",
@@ -96,11 +96,11 @@ HYPOTHESES = [
     },
     {
         "id": "H7",
-        "claim": "Stability-aware planner reduces replan storm oscillation compared to adaptive A*.",
+        "claim": "MPPI planner reduces replan storm oscillation compared to DWA.",
         "metric": "total_replans",
-        "comparison": ("stability_aware", "adaptive_astar"),
+        "comparison": ("mppi", "dwa"),
         "direction": "less",
-        "falsifiable": "Falsified if stability_aware shows >= replans as adaptive_astar.",
+        "falsifiable": "Falsified if mppi shows >= replans as dwa.",
     },
 ]
 
@@ -125,10 +125,9 @@ def generate_validation_report(
         by_planner.setdefault(pid, []).append(r)
 
     # Define planner groups
-    static_planners = {"astar", "theta_star", "jps"}
-    adaptive_planners = {"adaptive_astar", "dstar_lite", "lpa_star", "ad_star",
-                         "ara_star", "event_triggered", "risk_gradient", "stability_aware"}
-    risk_aware_planners = {"risk_mpc", "risk_gradient"}
+    static_planners = {"astar", "theta_star"}
+    adaptive_planners = {"dstar_lite", "ad_star", "dwa", "mppi"}
+    risk_aware_planners = {"mppi"}
 
     static_group = [r for pid in static_planners for r in by_planner.get(pid, [])]
     adaptive_group = [r for pid in adaptive_planners for r in by_planner.get(pid, [])]

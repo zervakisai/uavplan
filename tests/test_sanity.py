@@ -24,12 +24,14 @@ class TestScenarioRegistry:
     def test_list_scenarios(self):
         """Test scenario listing functions."""
         all_scen = list_scenarios()
-        assert len(all_scen) == 34, f"Expected 34 scenarios, got {len(all_scen)}"
+        assert len(all_scen) >= 34, f"Expected >= 34 scenarios, got {len(all_scen)}"
         assert len(all_scen) > 0
         # Check that wildfire scenario exists (check for any wildfire scenario)
         wildfire_scen = [s for s in all_scen if "wildfire" in s]
         assert len(wildfire_scen) > 0, "No wildfire scenarios found"
-        
+        # Check that government mission bank scenarios exist
+        gov_scen = [s for s in all_scen if s.startswith("gov_")]
+        assert len(gov_scen) == 9, f"Expected 9 gov mission scenarios, got {len(gov_scen)}"
         naturalistic = list_scenarios_by_regime(Regime.NATURALISTIC)
         stress = list_scenarios_by_regime(Regime.STRESS_TEST)
         assert len(naturalistic) + len(stress) == len(all_scen)

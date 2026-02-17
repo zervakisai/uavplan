@@ -1,0 +1,43 @@
+name: gov_maritime_domain_medium
+scenario_id: gov_maritime_domain_medium
+domain: urban
+difficulty: medium
+mission_type: maritime_domain
+regime: stress_test
+paper_track: dynamic
+description: "ΛΣ-ΕΛΑΚΤ — Coastal Patrol + Distress Events (Medium: 6 waypoints, 1-2 events, hazard updates)"
+map_size: 64
+altitude_levels: 5
+building_density: 0.20
+tile_name: synthetic
+map_source: synthetic
+
+fixed_start_xy: [32, 8]
+fixed_goal_xy: [32, 56]
+
+enable_fire: false
+enable_traffic: true
+enable_dynamic_nfz: true
+fire_blocks_movement: false
+traffic_blocks_movement: false
+wind_level: medium
+wind_speed: 0.4
+fire_ignition_points: 0
+num_emergency_vehicles: 4
+num_nfz_zones: 2
+nfz_expansion_rate: 0.5
+nfz_max_radius: 18
+force_replan_count: 1
+event_t1: 40
+event_t2: 80
+emergency_corridor_enabled: true
+
+extra:
+  mission_bank: maritime_domain
+  num_tasks: 6
+  injection_rate: medium
+  dynamics_intensity: moderate
+  time_budget: 350
+  energy_budget: 0.85
+  comms_dropout_prob: 0.05
+  comms_latency_steps: 2

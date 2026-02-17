@@ -29,7 +29,7 @@ This protocol defines a fair, deterministic, operationally-realistic 2D benchmar
 
 Interdictions are scheduled against a **reference corridor** at reset time, not against each planner’s own path.
 
-- Reference planner: `interdiction_reference_planner` (`astar|theta_star|jps`)
+- Reference planner: `interdiction_reference_planner` (`astar|theta_star`)
 - Cut points: 30% and 65% along reference corridor
 - Event times: `event_t1`, `event_t2`
 - Required logs:
@@ -118,9 +118,12 @@ After each dynamic update:
 
 ## 7) Planner Buckets
 
-- Static controls: `astar`, `theta_star`, `jps`
-- Incremental/anytime: `dstar_lite`, `lpa_star`, `ad_star`, `ara_star`, `adaptive_astar`
-- Operational stack: `hybrid_dstar_dwa`, `hybrid_dstar_teb_lite`, `risk_mpc`
+- Global optimal: `astar`
+- Any-angle: `theta_star`
+- Incremental: `dstar_lite`
+- Anytime incremental: `ad_star`
+- Reactive: `dwa`
+- Sampling-based MPC: `mppi`
 
 ## 8) Ablation Protocols
 
@@ -150,7 +153,7 @@ cd /Users/konstantinos/Dev/uavbench
 ```bash
 .venv/bin/python -m uavbench.cli.benchmark \
   --track dynamic \
-  --planners astar,theta_star,dstar_lite,hybrid_dstar_teb_lite,risk_mpc \
+  --planners astar,theta_star,dstar_lite,ad_star,dwa,mppi \
   --trials 1 \
   --paper-protocol \
   --protocol-variant default \

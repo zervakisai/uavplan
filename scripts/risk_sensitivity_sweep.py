@@ -220,7 +220,7 @@ def main() -> None:
     parser.add_argument(
         "--planners",
         type=str,
-        default="adaptive_astar,dstar_lite,risk_mpc,event_triggered,risk_gradient,stability_aware",
+        default="dstar_lite,ad_star,dwa,mppi",
         help="Comma-separated planner IDs",
     )
     args = parser.parse_args()
