@@ -1,8 +1,18 @@
-"""Model Predictive Path Integral (MPPI) planner.
+"""Grid-discretized Model Predictive Path Integral (MPPI) planner.
 
 Sampling-based MPC that rolls out N stochastic trajectories,
 weights them by exponentiated negative cost, and executes
 the best first action.  Falls back to A* on local minima.
+
+IMPORTANT: The weighted-average first displacement is discretized to 4
+cardinal directions (right/up/left/down) for compatibility with the
+4-connected grid environment.  This collapses the continuous control
+output of canonical MPPI into discrete grid moves.
+
+Canonical reference (sampling/weighting IS implemented; continuous control
+output is NOT — discretized to 4 cardinal moves):
+    Williams, G., Aldrich, A., & Theodorou, E. A. (2017).
+    Model Predictive Path Integral Control. ICRA.
 """
 
 from __future__ import annotations
@@ -39,8 +49,13 @@ class MPPIConfig(PlannerConfig):
     max_steps: int = 2000
 
 
-class MPPIPlanner(BasePlanner):
-    """Sampling-based MPC planner (MPPI)."""
+class GridMPPIPlanner(BasePlanner):
+    """Grid-discretized MPPI planner (4-cardinal output).
+
+    Implements the MPPI sampling/weighting algorithm (Williams et al. 2017)
+    but discretizes the weighted-average displacement to 4 cardinal directions.
+    Falls back to A* after repeated stuck steps.
+    """
 
     def __init__(
         self,
@@ -203,3 +218,9 @@ class MPPIPlanner(BasePlanner):
         new_x = cur[0] + delta[0]
         new_y = cur[1] + delta[1]
         return (int(new_x), int(new_y))
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible alias
+# ---------------------------------------------------------------------------
+MPPIPlanner = GridMPPIPlanner

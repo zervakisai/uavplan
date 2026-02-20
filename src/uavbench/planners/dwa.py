@@ -1,3 +1,25 @@
+"""Greedy local search planner with A* fallback.
+
+.. deprecated:: 1.0
+    This planner is not part of the paper benchmark suite and will be
+    removed in v2.0.  It is kept for one release cycle for backward
+    compatibility.  Use one of the 6 paper-suite planners instead
+    (see ``PAPER_PLANNERS``).
+
+A reactive planner that greedily picks the best immediate neighbor at each
+step, scored by heuristic distance to goal + risk + revisit penalty.  Falls
+back to A* when stuck in local minima.
+
+This is NOT a canonical Dynamic Window Approach (DWA).  Canonical DWA
+requires velocity-space sampling, acceleration-limited dynamic windows,
+and trajectory simulation over sampled (v, ω) pairs.  This planner
+operates on a discrete grid with 1-step greedy moves.
+
+Canonical reference (NOT implemented here):
+    Fox, D., Burgard, W., & Thrun, S. (1997). The dynamic window approach
+    to collision avoidance. IEEE Robotics & Automation Magazine, 4(1).
+"""
+
 from __future__ import annotations
 
 import time
@@ -11,12 +33,22 @@ from uavbench.planners.base import BasePlanner, PlannerConfig, PlanResult
 
 
 @dataclass
-class DWAConfig(PlannerConfig):
+class GreedyLocalConfig(PlannerConfig):
     max_steps: int = 2000
 
 
-class DWAPlanner(BasePlanner):
-    """Reactive local planner baseline (DWA-style greedy rollout)."""
+# Backward-compatible alias
+DWAConfig = GreedyLocalConfig
+
+
+class GreedyLocalPlanner(BasePlanner):
+    """Greedy 1-step local search with A* fallback.
+
+    At each step, picks the neighbor minimizing heuristic(pos, goal) + risk
+    + revisit_penalty.  Falls back to full A* if no goal-reaching greedy
+    path is found.  This is a simplified reactive baseline, not canonical DWA
+    (Fox, Burgard & Thrun 1997, IO pedestrian velocity space sampling).
+    """
 
     def __init__(self, heightmap: np.ndarray, no_fly: np.ndarray, config: Optional[DWAConfig] = None):
         super().__init__(heightmap, no_fly, config or DWAConfig())
@@ -63,3 +95,7 @@ class DWAPlanner(BasePlanner):
                           compute_time_ms=(time.monotonic()-t0)*1000,
                           expansions=expansions,
                           reason="goal found" if ok else "local_minima")
+
+
+# Backward-compatible alias
+DWAPlanner = GreedyLocalPlanner

@@ -156,7 +156,7 @@ def compute_all_metrics(trial_result: dict[str, Any]) -> dict[str, float]:
     # Load risk_map from tile if OSM scenario
     risk_map = None
     if trial_result.get("map_source") == "osm" and trial_result.get("osm_tile_id"):
-        tile_path = Path("data/maps") / f"{trial_result['osm_tile_id']}.npz"
+        tile_path = Path(__file__).resolve().parents[3] / "data" / "maps" / f"{trial_result['osm_tile_id']}.npz"
         if tile_path.exists():
             risk_map = np.load(str(tile_path))["risk_map"]
 

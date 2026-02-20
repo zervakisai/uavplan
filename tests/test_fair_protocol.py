@@ -8,7 +8,8 @@ from uavbench.scenarios.schema import InterdictionReferencePlanner
 
 def test_loader_protocol_defaults_present():
     cfg = load_scenario(scenario_path("gov_civil_protection_easy"))
-    assert cfg.interdiction_reference_planner == InterdictionReferencePlanner.THETA_STAR
+    # All scenario YAMLs now explicitly set astar for fairness (P0 fix)
+    assert cfg.interdiction_reference_planner == InterdictionReferencePlanner.ASTAR
     assert cfg.plan_budget_static_ms > 0.0
     assert cfg.plan_budget_dynamic_ms > 0.0
     assert cfg.replan_every_steps >= 1
@@ -16,6 +17,12 @@ def test_loader_protocol_defaults_present():
 
 
 def test_reference_planner_is_logged_for_interdiction():
+    """Interdiction placement is now planner-agnostic (BFS shortest path).
+
+    The legacy interdiction_reference_planner config field is still accepted
+    but no longer affects placement.  The logged reference_planner should
+    always be 'bfs_shortest_path'.
+    """
     cfg = load_scenario(scenario_path("gov_civil_protection_hard"))
     cfg = replace(
         cfg,
@@ -28,4 +35,4 @@ def test_reference_planner_is_logged_for_interdiction():
     env.reset(seed=0)
     env._maybe_trigger_interdictions(8)  # type: ignore[attr-defined]
     ev = next(e for e in env.events if e["type"] == "path_interdiction_1")
-    assert ev["payload"]["reference_planner"] == "astar"
+    assert ev["payload"]["reference_planner"] == "bfs_shortest_path"

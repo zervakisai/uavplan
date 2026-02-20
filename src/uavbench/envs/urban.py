@@ -14,7 +14,6 @@ from uavbench.dynamics.interaction_engine import InteractionEngine
 from uavbench.dynamics.population_risk import PopulationRiskModel
 from uavbench.dynamics.traffic import TrafficModel
 from uavbench.planners.astar import AStarPlanner
-from uavbench.planners.theta_star import ThetaStarPlanner
 from uavbench.scenarios.schema import ScenarioConfig, Domain, Difficulty
 
 GridPos = tuple[int, int]
@@ -126,9 +125,18 @@ class UrbanEnv(UAVBenchEnv):
             )
 
         if cfg.enable_traffic:
-            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
+            mt_val = getattr(cfg.mission_type, "value", str(cfg.mission_type))
+            if "maritime" in mt_val:
+                # Maritime: vessels move on water cells, not roads
+                landuse = getattr(self, "_landuse_map", None)
+                if landuse is not None:
+                    movement_mask = (landuse == 4)  # water cells
+                else:
+                    movement_mask = np.zeros((H, W), dtype=bool)
+            else:
+                movement_mask = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
             self._traffic_model = TrafficModel(
-                roads_mask=roads,
+                roads_mask=movement_mask,
                 num_vehicles=cfg.num_emergency_vehicles,
                 rng=self._rng,
             )
@@ -325,16 +333,26 @@ class UrbanEnv(UAVBenchEnv):
             )
 
         if cfg.enable_dynamic_nfz:
-            from uavbench.dynamics.dynamic_nfz import DynamicNFZModel
-            self._dynamic_nfz = DynamicNFZModel(
-                map_shape=(H, W),
-                uav_start=(sx, sy),
-                uav_goal=(gx, gy),
-                num_zones=cfg.num_nfz_zones,
-                expansion_rate=cfg.nfz_expansion_rate,
-                max_radius=cfg.nfz_max_radius,
-                rng=self._rng,
-            )
+            restrictions_mode = getattr(cfg, "restrictions_mode", "incident")
+            if restrictions_mode == "disabled":
+                pass  # no dynamic restrictions
+            else:
+                from uavbench.dynamics.restriction_zones import MissionRestrictionModel
+                mt = getattr(cfg.mission_type, "value", str(cfg.mission_type))
+                self._dynamic_nfz = MissionRestrictionModel(
+                    map_shape=(H, W),
+                    mission_type=mt,
+                    roads_mask=getattr(self, "_roads_mask", None),
+                    heightmap=self._heightmap,
+                    num_zones=cfg.num_nfz_zones,
+                    max_coverage=getattr(cfg, "restrictions_max_coverage", 0.30),
+                    buffer_px=getattr(cfg, "restrictions_buffer_px", 15),
+                    event_t1=cfg.event_t1 or 30,
+                    event_t2=cfg.event_t2 or 80,
+                    current_vec=getattr(cfg, "maritime_current_vec", None) or (0.0, 0.3),
+                    incident_point=getattr(cfg, "incident_point", None),
+                    rng=self._rng,
+                )
 
         # ---------- Non-blocking risk layers + causal interaction engine ----------
         extra_cfg = cfg.extra or {}
@@ -388,7 +406,7 @@ class UrbanEnv(UAVBenchEnv):
         self.log_event(
             "paper_protocol_initialized",
             paper_track=cfg.paper_track,
-            interdiction_reference_planner=cfg.interdiction_reference_planner.value,
+            interdiction_placement="bfs_shortest_path",
             plan_budget_ms=(
                 cfg.plan_budget_dynamic_ms if cfg.paper_track == "dynamic" else cfg.plan_budget_static_ms
             ),
@@ -447,7 +465,8 @@ class UrbanEnv(UAVBenchEnv):
         Converts meter-based heightmap to altitude levels (10m per level)
         and stores extra layers for future use.
         """
-        npz_path = Path("data/maps") / f"{tile_id}.npz"
+        _project_root = Path(__file__).resolve().parents[3]
+        npz_path = _project_root / "data" / "maps" / f"{tile_id}.npz"
         if not npz_path.exists():
             raise FileNotFoundError(
                 f"OSM tile not found: {npz_path}. "
@@ -656,11 +675,11 @@ class UrbanEnv(UAVBenchEnv):
             self._moving_target.step(dt=1.0)
         if self._intruder_model is not None:
             self._intruder_model.step(dt=1.0)
+        fire_mask = self._fire_model.fire_mask if self._fire_model is not None else None
         if self._dynamic_nfz is not None:
-            self._dynamic_nfz.step(dt=1.0)
+            self._dynamic_nfz.step(dt=1.0, fire_mask=fire_mask)
 
         # Causal interactions update
-        fire_mask = self._fire_model.fire_mask if self._fire_model is not None else None
         traffic_positions = (
             self._traffic_model.vehicle_positions if self._traffic_model is not None else None
         )
@@ -908,7 +927,18 @@ class UrbanEnv(UAVBenchEnv):
         return obs, float(reward), terminated, truncated, info
 
     def _init_forced_interdictions(self, start_xy: GridPos, goal_xy: GridPos) -> None:
-        """Prepare deterministic 1-2 path interdictions for dynamic paper track."""
+        """Prepare deterministic 1-2 path interdictions for dynamic paper track.
+
+        Interdiction placement uses a planner-agnostic BFS shortest path
+        on the traversable grid (buildings + NFZ removed).  This is the
+        graph-theoretic shortest path — not tied to any named planner —
+        so interdiction placement is fair across all planner algorithms.
+
+        Legacy ``interdiction_reference_planner`` config is still accepted
+        for backward compatibility but is no longer used for placement.
+        """
+        from collections import deque
+
         cfg = self.config
         self._forced_interdictions = []
         self._reference_path = []
@@ -923,17 +953,47 @@ class UrbanEnv(UAVBenchEnv):
         if force_count == 0:
             return
 
-        ref_planner = cfg.interdiction_reference_planner.value
-        planner_cls: type[Any]
-        if ref_planner == "astar":
-            planner_cls = AStarPlanner
-        else:
-            planner_cls = ThetaStarPlanner
+        # ── Planner-agnostic BFS shortest path ──────────────────────
+        # Build traversability mask: cell is passable iff not building
+        # (height <= agent altitude 0) and not NFZ.
+        sz = self.map_size
+        passable = np.ones((sz, sz), dtype=bool)
+        passable[self._heightmap > 0] = False
+        passable[self._no_fly_mask] = False
 
-        planner = planner_cls(self._heightmap, self._no_fly_mask)
-        plan = planner.plan(start_xy, goal_xy)
-        if plan.success and len(plan.path) >= 6:
-            base_path = list(plan.path)
+        # BFS from start to goal (4-connected, deterministic N/E/S/W order)
+        sx, sy = start_xy
+        gx, gy = goal_xy
+        if not passable[sy, sx] or not passable[gy, gx]:
+            return  # start or goal not passable — cannot place interdictions
+
+        visited = np.zeros((sz, sz), dtype=bool)
+        parent: dict[tuple[int, int], tuple[int, int] | None] = {start_xy: None}
+        visited[sy, sx] = True
+        queue: deque[tuple[int, int]] = deque([start_xy])
+        found = False
+
+        while queue:
+            cx, cy = queue.popleft()
+            if (cx, cy) == goal_xy:
+                found = True
+                break
+            # Deterministic neighbor order: N(y-1), E(x+1), S(y+1), W(x-1)
+            for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
+                nx, ny = cx + dx, cy + dy
+                if 0 <= nx < sz and 0 <= ny < sz and not visited[ny, nx] and passable[ny, nx]:
+                    visited[ny, nx] = True
+                    parent[(nx, ny)] = (cx, cy)
+                    queue.append((nx, ny))
+
+        if found:
+            # Reconstruct path
+            base_path: list[GridPos] = []
+            cur: tuple[int, int] | None = goal_xy
+            while cur is not None:
+                base_path.append(cur)
+                cur = parent[cur]
+            base_path.reverse()
         else:
             # Deterministic fallback corridor to keep forced-replan protocol active.
             x0, y0 = start_xy
@@ -951,13 +1011,16 @@ class UrbanEnv(UAVBenchEnv):
             base_path = line_path
             self.log_event(
                 "interdiction_path_fallback",
-                reason="initial_plan_unavailable",
+                reason="bfs_path_unavailable",
                 path_length=len(base_path),
-                reference_planner=ref_planner,
             )
+
+        if len(base_path) < 6:
+            return
+
         self._reference_path = list(base_path)
         for x, y in base_path:
-            if 0 <= x < self.map_size and 0 <= y < self.map_size:
+            if 0 <= x < sz and 0 <= y < sz:
                 self._reference_corridor_mask[y, x] = True
 
         cut_a = int(0.30 * (len(base_path) - 1))
@@ -981,7 +1044,7 @@ class UrbanEnv(UAVBenchEnv):
                     "point": cut_points[idx],
                     "radius": radius,
                     "triggered": False,
-                    "reference_planner": ref_planner,
+                    "reference_planner": "bfs_shortest_path",
                 }
             )
 
@@ -1013,7 +1076,7 @@ class UrbanEnv(UAVBenchEnv):
                 x=int(cx),
                 y=int(cy),
                 step=step_idx,
-                reference_planner=event.get("reference_planner", "theta_star"),
+                reference_planner=event.get("reference_planner", "bfs_shortest_path"),
                 reference_hit=bool(hit_reference),
             )
             self.log_event("forced_replan_triggered", reason=event["name"], step=step_idx)
@@ -1290,6 +1353,11 @@ class UrbanEnv(UAVBenchEnv):
             state["intruder_buffer"] = self._intruder_model.get_buffer_mask((H, W))
         if self._dynamic_nfz is not None:
             state["dynamic_nfz_mask"] = self._dynamic_nfz.get_nfz_mask()
+            state["restriction_mask"] = self._dynamic_nfz.get_mask()
+            if hasattr(self._dynamic_nfz, "get_zones"):
+                state["restriction_zones"] = self._dynamic_nfz.get_zones()
+            if hasattr(self._dynamic_nfz, "get_risk_buffer"):
+                state["restriction_risk_buffer"] = self._dynamic_nfz.get_risk_buffer()
         state["forced_block_mask"] = self._forced_block_mask.copy()
         state["emergency_corridor_mask"] = self._emergency_corridor_mask.copy()
         if self._population_risk_enabled:

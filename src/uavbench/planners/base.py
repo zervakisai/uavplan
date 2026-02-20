@@ -17,7 +17,7 @@ GridPos = tuple[int, int]  # (x, y)
 @dataclass
 class PlannerConfig:
     """Base config for all planners (extensible)."""
-    max_planning_time_ms: float = 200.0  # Maximum allowed planning time per call
+    max_planning_time_ms: float = 2000.0  # Maximum allowed planning time per call (generous for 500×500 maps)
     allow_diagonal: bool = False
     block_buildings: bool = True
 

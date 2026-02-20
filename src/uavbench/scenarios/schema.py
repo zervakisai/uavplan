@@ -114,11 +114,22 @@ class ScenarioConfig:
     intruder_speed: float = 0.5
     intruder_spawn_zone: str = "north"
 
-    # Dynamic NFZ (comms-denied / airspace scenarios)
+    # Dynamic restrictions (mission-grounded airspace zones)
     enable_dynamic_nfz: bool = False
     num_nfz_zones: int = 3
-    nfz_expansion_rate: float = 0.8
-    nfz_max_radius: int = 35
+    nfz_expansion_rate: float = 0.8       # legacy (ignored by MissionRestrictionModel)
+    nfz_max_radius: int = 35              # legacy (ignored by MissionRestrictionModel)
+    restrictions_mode: str = "incident"   # "incident" | "disabled"
+    restrictions_max_coverage: float = 0.30
+    restrictions_buffer_px: int = 15
+    incident_point: tuple[int, int] | None = None     # cordon centre override
+    maritime_current_vec: tuple[float, float] | None = None  # SAR box drift
+
+    # Incident provenance (paper-facing metadata)
+    incident_name: str = ""
+    incident_year: int = 0
+    incident_summary: str = ""
+    incident_refs: tuple[str, ...] = ()
 
     # Risk weight configuration (default: population=0.55, adversarial=0.30, smoke=0.15)
     risk_weight_population: float = 0.55
@@ -140,6 +151,19 @@ class ScenarioConfig:
 
     # Collision termination policy (UAV-ON standard)
     terminate_on_collision: bool = True
+
+    # ── P1 realism features ────────────────────────────────────────
+    # Constraint update latency: number of steps before env state
+    # changes become visible to the planner's snapshot.
+    constraint_latency_steps: int = 0
+
+    # Communications dropout: probability per step that the planner
+    # receives a *stale* dynamic snapshot instead of the current one.
+    comms_dropout_prob: float = 0.0
+
+    # GNSS interference: additive Gaussian noise σ (in grid cells)
+    # applied to the observed agent position.  0 = perfect GPS.
+    gnss_noise_sigma: float = 0.0
 
     # V&V Certificates (computed at scenario load/reset; read-only metadata)
     solvability_cert_ok: bool = False  # At least 2 disjoint corridors exist at t=0
@@ -207,6 +231,10 @@ class ScenarioConfig:
             raise ValueError("intruder_spawn_zone must be north/south/east/west")
         if self.enable_dynamic_nfz and self.num_nfz_zones < 1:
             raise ValueError("enable_dynamic_nfz requires num_nfz_zones >= 1")
+        if self.restrictions_mode not in ("incident", "disabled"):
+            raise ValueError("restrictions_mode must be 'incident' or 'disabled'")
+        if not (0.0 < self.restrictions_max_coverage <= 1.0):
+            raise ValueError("restrictions_max_coverage must be in (0, 1]")
         # Risk weights must be non-negative
         if self.risk_weight_population < 0 or self.risk_weight_adversarial < 0 or self.risk_weight_smoke < 0:
             raise ValueError("risk weights must be non-negative")
@@ -226,6 +254,13 @@ class ScenarioConfig:
             raise ValueError("replan_every_steps must be >= 1")
         if self.max_replans_per_episode < 1:
             raise ValueError("max_replans_per_episode must be >= 1")
+        # P1 realism features
+        if self.constraint_latency_steps < 0:
+            raise ValueError("constraint_latency_steps must be >= 0")
+        if not (0.0 <= self.comms_dropout_prob <= 1.0):
+            raise ValueError("comms_dropout_prob must be in [0, 1]")
+        if self.gnss_noise_sigma < 0.0:
+            raise ValueError("gnss_noise_sigma must be >= 0")
         # Stress test regime requires at least one dynamic layer
         if self.regime == Regime.STRESS_TEST:
             has_dynamics = self.enable_fire or self.enable_traffic or self.enable_moving_target or self.enable_intruders or self.enable_dynamic_nfz

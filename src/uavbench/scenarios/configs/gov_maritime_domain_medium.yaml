@@ -6,31 +6,50 @@ mission_type: maritime_domain
 regime: stress_test
 paper_track: dynamic
 description: "ΛΣ-ΕΛΑΚΤ — Coastal Patrol + Distress Events (Medium: 6 waypoints, 1-2 events, hazard updates)"
-map_size: 64
+map_size: 500
 altitude_levels: 5
-building_density: 0.20
-tile_name: synthetic
-map_source: synthetic
+building_density: 0.29
+tile_name: piraeus
+map_source: osm
+osm_tile_id: piraeus
 
-fixed_start_xy: [32, 8]
-fixed_goal_xy: [32, 56]
+fixed_start_xy: [250, 50]
+fixed_goal_xy: [250, 450]
 
-enable_fire: false
+enable_fire: true
 enable_traffic: true
 enable_dynamic_nfz: true
 fire_blocks_movement: false
 traffic_blocks_movement: false
 wind_level: medium
 wind_speed: 0.4
-fire_ignition_points: 0
+fire_ignition_points: 2
 num_emergency_vehicles: 4
 num_nfz_zones: 2
 nfz_expansion_rate: 0.5
-nfz_max_radius: 18
+nfz_max_radius: 50
+restrictions_mode: incident
+restrictions_max_coverage: 0.30
+restrictions_buffer_px: 15
+maritime_current_vec: [0.2, 0.05]
+incident_name: "2017 Agia Zoni II Oil Spill (Saronic Gulf)"
+incident_year: 2017
+incident_summary: "SAR coordination box + port exclusion by Hellenic Coast Guard."
 force_replan_count: 1
-event_t1: 40
-event_t2: 80
+event_t1: 100
+event_t2: 200
 emergency_corridor_enabled: true
+
+replan_every_steps: 4
+max_replans_per_episode: 2000
+plan_budget_static_ms: 500.0
+plan_budget_dynamic_ms: 200.0
+interdiction_reference_planner: astar
+
+# P1 realism knobs (must be top-level for loader)
+constraint_latency_steps: 2
+comms_dropout_prob: 0.05
+gnss_noise_sigma: 1.0
 
 extra:
   mission_bank: maritime_domain
@@ -39,5 +58,3 @@ extra:
   dynamics_intensity: moderate
   time_budget: 350
   energy_budget: 0.85
-  comms_dropout_prob: 0.05
-  comms_latency_steps: 2
