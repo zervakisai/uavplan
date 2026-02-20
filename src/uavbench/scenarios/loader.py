@@ -115,6 +115,10 @@ def load_scenario(path: Path) -> ScenarioConfig:
         replan_every_steps=int(data.get("replan_every_steps", 2)),
         max_replans_per_episode=int(data.get("max_replans_per_episode", 200)),
         terminate_on_collision=bool(data.get("terminate_on_collision", True)),
+        # P1 realism features
+        constraint_latency_steps=int(data.get("constraint_latency_steps", 0)),
+        comms_dropout_prob=float(data.get("comms_dropout_prob", 0.0)),
+        gnss_noise_sigma=float(data.get("gnss_noise_sigma", 0.0)),
         debug=bool(data.get("debug", False)),
         extra=dict(data.get("extra", {})) if "extra" in data else None,
     )

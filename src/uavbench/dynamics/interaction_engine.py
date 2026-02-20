@@ -44,20 +44,11 @@ class InteractionEngine:
         fire_cells = int(np.sum(fire))
         fire_fraction = float(fire_cells / max(1, self.height * self.width))
 
-        # Fire -> Dynamic NFZ expansion coupling.
+        # Read restriction zone mask (no external mutation — zones manage
+        # their own growth internally via step()).
         nfz_mask = np.zeros((self.height, self.width), dtype=bool)
-        if dynamic_nfz is not None and hasattr(dynamic_nfz, "expansion_rate"):
-            if self._base_nfz_expansion_rate is None:
-                self._base_nfz_expansion_rate = float(getattr(dynamic_nfz, "expansion_rate", 0.8))
-            # Operationally-causal rule: base + alpha * active_fire_cells (clipped for stability).
-            boosted = self._base_nfz_expansion_rate + self._nfz_alpha * float(fire_cells) * self._coupling
-            setattr(dynamic_nfz, "expansion_rate", float(np.clip(boosted, 0.1, 2.0)))
-            if hasattr(dynamic_nfz, "radii"):
-                radii = np.asarray(getattr(dynamic_nfz, "radii"))
-                growth = min(1.5, fire_fraction * 6.0 * self._coupling)
-                setattr(dynamic_nfz, "radii", np.maximum(radii + growth, 3.0))
-            if hasattr(dynamic_nfz, "get_nfz_mask"):
-                nfz_mask = np.asarray(dynamic_nfz.get_nfz_mask(), dtype=bool)
+        if dynamic_nfz is not None and hasattr(dynamic_nfz, "get_nfz_mask"):
+            nfz_mask = np.asarray(dynamic_nfz.get_nfz_mask(), dtype=bool)
 
         # Fire + traffic -> road closures.
         self._traffic_closure_mask.fill(False)

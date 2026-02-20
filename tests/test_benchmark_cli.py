@@ -323,10 +323,10 @@ class TestPlannerRegistry:
         assert "theta_star" in PLANNERS
 
     def test_run_all_available_planners(self):
-        """Run all available planners on gov_civil_protection_easy."""
-        from uavbench.planners import PLANNERS
+        """Run paper-suite planners on gov_civil_protection_easy."""
+        from uavbench.planners import PAPER_PLANNERS
 
-        for planner_id in list(PLANNERS.keys())[:3]:  # Test first 3 planners
+        for planner_id in PAPER_PLANNERS[:3]:  # Test first 3 paper planners
             result = run_planner_once("gov_civil_protection_easy", planner_id, seed=0)
             assert result["planner_id"] == planner_id
             assert "path_length" in result

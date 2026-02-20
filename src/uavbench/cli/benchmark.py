@@ -13,8 +13,13 @@ import numpy as np
 
 from uavbench.envs.urban import UrbanEnv
 from uavbench.metrics.operational import compute_all_metrics
+from uavbench.missions.spec import MissionID, DifficultyKnobs
+from uavbench.missions.engine import MissionEngine
+from uavbench.missions.policies import GreedyPolicy, LookaheadOPTWPolicy
+from uavbench.missions.builders import build_mission
 from uavbench.planners import PLANNERS
 from uavbench.planners.astar import AStarPlanner
+from uavbench.planners.base import PlanResult
 from uavbench.scenarios.loader import load_scenario
 from uavbench.scenarios.registry import list_scenarios_by_track
 
@@ -300,6 +305,53 @@ def run_planner_once(
     }
 
 
+# ----------------- Mission POI generation for renderer -----------------
+
+
+def _compute_mission_pois(
+    cfg: Any,
+    start_xy: tuple[int, int],
+    goal_xy: tuple[int, int],
+) -> list[dict[str, Any]]:
+    """Generate mission-specific POI list for the operational renderer.
+
+    Returns a list of dicts with keys: xy, icon, color, label.
+    """
+    pois: list[dict[str, Any]] = []
+    mt = getattr(cfg.mission_type, "value", str(cfg.mission_type)).lower()
+
+    try:
+        from uavbench.visualization.icons.library import IconID
+    except ImportError:
+        return pois
+
+    # Only place start/goal semantic icons — dynamic zone markers are
+    # rendered per-zone by the renderer from restriction_zones data.
+    if "civil" in mt or "protection" in mt:
+        pois.append({
+            "xy": goal_xy,
+            "icon": IconID.HOME,
+            "color": "#00CC44",
+            "label": "Evacuation point",
+        })
+    elif "maritime" in mt or "domain" in mt:
+        pois.append({
+            "xy": goal_xy,
+            "icon": IconID.ANCHOR,
+            "color": "#0088CC",
+            "label": "Return-to-base",
+        })
+    elif "critical" in mt or "infra" in mt:
+        pois.append({
+            "xy": goal_xy,
+            "icon": IconID.INSPECTION,
+            "color": "#00CC88",
+            "label": "Inspection site",
+        })
+
+    return pois
+
+
 # ----------------- Dynamic episode run -----------------
 
 def run_dynamic_episode(
@@ -342,6 +394,42 @@ def run_dynamic_episode(
     if renderer is None and (render_dir or render_gif):
         try:
             from uavbench.visualization.operational_renderer import OperationalRenderer
+            mission_pois = _compute_mission_pois(cfg, start_xy, goal_xy)
+
+            # Build incident chips for the animated title card
+            incidents: list[str] = []
+            if getattr(cfg, "enable_fire", False):
+                if getattr(cfg, "fire_blocks_movement", False):
+                    incidents.append("FIRE BLOCKING")
+                else:
+                    incidents.append("FIRE ACTIVE")
+            if getattr(cfg, "enable_traffic", False):
+                if getattr(cfg, "traffic_blocks_movement", False):
+                    incidents.append("TRAFFIC BLOCKING")
+                else:
+                    incidents.append("TRAFFIC ACTIVE")
+            if getattr(cfg, "enable_dynamic_nfz", False):
+                # Mission-typed zone chip (TFR / SAR / CORDON)
+                mt = str(getattr(cfg.mission_type, "value", cfg.mission_type)).lower()
+                nz = getattr(cfg, "num_nfz_zones", 3)
+                if "civil" in mt:
+                    incidents.append(f"TFR \u00d7{nz}" if nz > 1 else "TFR")
+                elif "maritime" in mt:
+                    incidents.append("SAR BOX")
+                elif "critical" in mt or "infra" in mt:
+                    incidents.append(f"CORDON \u00d7{nz}" if nz > 1 else "CORDON")
+                else:
+                    incidents.append("DYNAMIC NFZ")
+            wind_val = str(getattr(cfg, "wind_level", "") or "")
+            if wind_val and wind_val.lower() not in ("none", ""):
+                incidents.append(f"WIND: {wind_val.upper()}")
+            if getattr(cfg, "emergency_corridor_enabled", False):
+                incidents.append("EMRG CORRIDOR")
+            extra = dict(cfg.extra or {}) if hasattr(cfg, "extra") else {}
+            cdp = extra.get("comms_dropout_prob", 0)
+            if cdp and float(cdp) > 0:
+                incidents.append(f"COMMS DROP {int(float(cdp) * 100)}%")
+
             renderer = OperationalRenderer(
                 heightmap, no_fly, start_xy, goal_xy,
                 planner_name=planner_id,
@@ -350,6 +438,11 @@ def run_dynamic_episode(
                 mission_type=getattr(cfg.mission_type, "value", str(cfg.mission_type)),
                 track=cfg.paper_track,
                 dpi=render_dpi,
+                landuse_map=getattr(env, '_landuse_map', None),
+                roads_mask=getattr(env, '_roads_mask', None),
+                osm_tile_id=cfg.osm_tile_id,
+                mission_pois=mission_pois,
+                active_incidents=incidents,
             )
         except ImportError:
             pass  # matplotlib not available
@@ -447,6 +540,18 @@ def run_dynamic_episode(
         "planner_signal": 0,
     }
 
+    # ── P1 realism buffers ───────────────────────────────────────────
+    from collections import deque as _deque
+
+    _constraint_latency = int(getattr(cfg, "constraint_latency_steps", 0))
+    _comms_dropout_prob = float(getattr(cfg, "comms_dropout_prob", 0.0))
+    _gnss_sigma = float(getattr(cfg, "gnss_noise_sigma", 0.0))
+
+    # FIFO buffer for constraint latency (stores last N snapshots)
+    _latency_buffer: _deque[dict] = _deque(maxlen=max(1, _constraint_latency + 1))
+    _last_good_snapshot: dict | None = None  # for comms dropout
+    _realism_rng = np.random.RandomState(int(seed) ^ 0x50_1A_C1_00)  # deterministic
+
     for step in range(max_steps):
         episode_steps = step + 1
 
@@ -500,6 +605,8 @@ def run_dynamic_episode(
                 traffic_closure_mask=dyn_snap.get("traffic_closure_mask"),
                 risk_map=dyn_snap.get("risk_cost_map"),
                 forced_block_mask=dyn_snap.get("forced_block_mask"),
+                restriction_zones=dyn_snap.get("restriction_zones"),
+                restriction_risk_buffer=dyn_snap.get("restriction_risk_buffer"),
                 trajectory=actual_trajectory,
                 heading_deg=prev_heading,
                 replan_flash=bool(episode_steps in replan_steps),
@@ -525,9 +632,28 @@ def run_dynamic_episode(
             break
 
         # Adaptive replanning
-        if is_adaptive and hasattr(planner, "replan"):
-            dyn = env.get_dynamic_state()
+        # ── Replanning (all planners) ────────────────────────────────
+        # Adaptive planners use their native .replan() method.
+        # Non-adaptive planners get harness-level replanning via .plan()
+        # so that every planner has a fair chance to recover from blocks.
+        if True:  # replanning gate – always enter
+            dyn_raw = env.get_dynamic_state()
             snapshot_calls += 1
+
+            # ── P1: constraint latency (FIFO buffer) ────────────────
+            _latency_buffer.append(dyn_raw)
+            if _constraint_latency > 0 and len(_latency_buffer) > _constraint_latency:
+                dyn = _latency_buffer[0]  # delayed snapshot
+            else:
+                dyn = dyn_raw
+
+            # ── P1: comms dropout (stale-state delivery) ────────────
+            if _comms_dropout_prob > 0.0 and _realism_rng.random() < _comms_dropout_prob:
+                if _last_good_snapshot is not None:
+                    dyn = _last_good_snapshot  # deliver stale snapshot
+                # else: first step, no stale available — use current
+            else:
+                _last_good_snapshot = dyn
 
             # Build merged extra_obstacles from new dynamic layers
             extra_obs = None
@@ -551,12 +677,25 @@ def run_dynamic_episode(
             path_invalid = _path_invalidated(path, path_idx, dyn, lookahead=6)
             stuck_trigger = stuck_counter >= 3
 
+            # ── P1: GNSS noise (noisy position for planner) ─────────
+            if _gnss_sigma > 0.0:
+                sz = int(cfg.map_size)
+                nx = int(round(current_pos[0] + _realism_rng.normal(0.0, _gnss_sigma)))
+                ny = int(round(current_pos[1] + _realism_rng.normal(0.0, _gnss_sigma)))
+                nx = int(np.clip(nx, 0, sz - 1))
+                ny = int(np.clip(ny, 0, sz - 1))
+                planner_pos = (nx, ny, current_pos[2]) if len(current_pos) == 3 else (nx, ny)
+                planner_xy = (nx, ny)
+            else:
+                planner_pos = current_pos
+                planner_xy = current_xy
+
             planner_should = False
             planner_reason = ""
             if hasattr(planner, "should_replan"):
                 try:
                     planner_should, planner_reason = planner.should_replan(
-                        current_pos,
+                        planner_pos,
                         dyn["fire_mask"],
                         dyn["traffic_positions"],
                         smoke_mask=dyn["smoke_mask"],
@@ -583,22 +722,40 @@ def run_dynamic_episode(
                     trigger_counts["stuck_fallback"] += 1
                 if planner_should:
                     trigger_counts["planner_signal"] += 1
-                try:
-                    t_replan = time.perf_counter()
-                    new_path = planner.replan(
-                        current_pos,
-                        goal_xy,
-                        dyn["fire_mask"],
-                        dyn["traffic_positions"],
-                        planner_reason or ("path_invalidated" if path_invalid else "cadence"),
-                        smoke_mask=dyn["smoke_mask"],
-                        extra_obstacles=extra_obs,
-                        risk_cost_map=dyn.get("risk_cost_map"),
-                    )
-                    replan_ms = (time.perf_counter() - t_replan) * 1000.0
-                except TypeError:
-                    new_path = []
-                    replan_ms = 0.0
+
+                # ── Dispatch: native replan vs harness replan ────────
+                new_path: list = []
+                replan_ms = 0.0
+                if is_adaptive and hasattr(planner, "replan"):
+                    # Native adaptive replanning
+                    try:
+                        t_replan = time.perf_counter()
+                        new_path = planner.replan(
+                            planner_pos,
+                            goal_xy,
+                            dyn["fire_mask"],
+                            dyn["traffic_positions"],
+                            planner_reason or ("path_invalidated" if path_invalid else "cadence"),
+                            smoke_mask=dyn["smoke_mask"],
+                            extra_obstacles=extra_obs,
+                            risk_cost_map=dyn.get("risk_cost_map"),
+                        )
+                        replan_ms = (time.perf_counter() - t_replan) * 1000.0
+                    except TypeError:
+                        new_path = []
+                        replan_ms = 0.0
+                else:
+                    # Harness-level replanning for non-adaptive planners:
+                    # call planner.plan() from current position to goal.
+                    try:
+                        t_replan = time.perf_counter()
+                        harness_result = planner.plan(planner_xy, goal_xy)
+                        replan_ms = (time.perf_counter() - t_replan) * 1000.0
+                        new_path = list(harness_result.path) if harness_result.success else []
+                    except Exception:
+                        new_path = []
+                        replan_ms = 0.0
+
                 if replan_ms > plan_budget_ms:
                     replan_budget_violations += 1
                     new_path = []
@@ -618,9 +775,9 @@ def run_dynamic_episode(
                     path = _expand_execution_path(list(new_path), heightmap, no_fly)
                     path_idx = 0
                     stuck_counter = 0
-        elif stuck_counter >= 10:
-            # Static planner: give up if stuck too long
-            break
+            elif stuck_counter >= 10:
+                # All planners: give up if stuck too long AND no replan triggered
+                break
 
     # Count real constraint violations (NFZ, building) — fire blocks are expected
     events = env.events
@@ -703,6 +860,11 @@ def run_dynamic_episode(
             "trigger_cadence": True,
             "max_replans": int(cfg.max_replans_per_episode),
         },
+        "replan_mode": "native" if is_adaptive else "harness_replan",
+        # P1 realism parameters
+        "constraint_latency_steps": _constraint_latency,
+        "comms_dropout_prob": _comms_dropout_prob,
+        "gnss_noise_sigma": _gnss_sigma,
         "replan_trigger_path_invalidation_count": int(trigger_counts["path_invalidation"]),
         "replan_trigger_forced_event_count": int(trigger_counts["forced_event"]),
         "replan_trigger_cadence_count": int(trigger_counts["cadence"]),
@@ -750,6 +912,20 @@ def run_dynamic_episode(
         ),
         "dynamic_block_entropy": _mean_metric(interaction_history, "dynamic_block_entropy"),
         "dynamic_block_entropy_env": _mean_metric(interaction_history, "dynamic_block_entropy_env"),
+        # Restriction zone metrics
+        "restriction_zone_count": int(
+            len(last_dyn.get("restriction_zones", []))
+            if (last_dyn := env.get_dynamic_state()) else 0
+        ),
+        "zone_coverage_peak": float(
+            getattr(env._dynamic_nfz, "peak_coverage", 0.0)
+            if hasattr(env, "_dynamic_nfz") and env._dynamic_nfz is not None else 0.0
+        ),
+        "zone_violation_count": int(
+            getattr(env._dynamic_nfz, "zone_violations", 0)
+            if hasattr(env, "_dynamic_nfz") and env._dynamic_nfz is not None else 0
+        ),
+        "restrictions_mode": str(getattr(cfg, "restrictions_mode", "disabled")),
         "interdiction_hit_rate": float(protocol_metrics.get("interdiction_hit_rate", 0.0)),
         "interdictions_triggered": int(protocol_metrics.get("interdictions_triggered", 0)),
         "forced_replans_triggered": int(protocol_metrics.get("forced_replans_triggered", 0)),
@@ -792,6 +968,398 @@ def run_dynamic_episode(
                 renderer.export_gif(Path(render_gif))
             except Exception:
                 pass
+
+    return result
+
+
+# ----------------- Mission episode run (multi-task) -----------------
+
+def run_mission_episode(
+    scenario_id: str,
+    planner_id: str,
+    *,
+    seed: int,
+    policy_id: str = "greedy",
+    protocol_variant: str = "default",
+    stress_alpha: float | None = None,
+    config_overrides: dict[str, Any] | None = None,
+    episode_horizon_steps: int | None = None,
+) -> dict[str, Any]:
+    """Run a multi-task mission episode using MissionEngine.
+
+    This extends ``run_dynamic_episode`` by integrating the mission layer:
+    task sequencing, injection, utility scoring, and operational products.
+
+    The environment still handles dynamics (fire, traffic, NFZ) exactly as
+    before; the mission layer adds multi-waypoint task selection on top.
+
+    Backward compatible: can be called from CLI with ``--mission`` flag;
+    existing ``run_dynamic_episode`` behaviour is unchanged.
+
+    Parameters
+    ----------
+    scenario_id : str
+        Scenario identifier (e.g. 'gov_civil_protection_hard').
+    planner_id : str
+        Planner registry key.
+    seed : int
+        Random seed for reproducibility.
+    policy_id : str
+        Mission-layer policy: 'greedy' or 'lookahead'.
+    protocol_variant, stress_alpha, config_overrides, episode_horizon_steps :
+        Same semantics as ``run_dynamic_episode``.
+
+    Returns
+    -------
+    dict
+        Superset of ``run_dynamic_episode`` keys, plus mission-specific:
+        ``mission_score``, ``task_completion_rate``, ``task_log``,
+        ``products``, ``mission_id``, ``difficulty``, ``policy_id``.
+    """
+    cfg = load_scenario(scenario_path(scenario_id))
+    cfg = _apply_protocol_variant(cfg, protocol_variant)
+    cfg = _apply_stress_alpha(cfg, stress_alpha)
+    cfg = _apply_config_overrides(cfg, config_overrides)
+    env = UrbanEnv(cfg)
+
+    env.reset(seed=seed)
+    heightmap, no_fly, start_xy, goal_xy = env.export_planner_inputs()
+
+    if planner_id not in PLANNERS:
+        raise ValueError(f"Unknown planner '{planner_id}'. Available: {list(PLANNERS.keys())}")
+
+    # ── Resolve mission parameters from scenario YAML extra field ────
+    extra = dict(cfg.extra or {}) if hasattr(cfg, "extra") else {}
+    mission_bank = extra.get("mission_bank", "")
+
+    # Map mission_bank string to MissionID
+    _bank_to_id = {
+        "civil_protection": MissionID.CIVIL_PROTECTION,
+        "maritime_domain": MissionID.MARITIME_DOMAIN,
+        "critical_infrastructure": MissionID.CRITICAL_INFRASTRUCTURE,
+    }
+    mission_type_str = getattr(cfg.mission_type, "value", str(cfg.mission_type)).lower()
+    mission_id = _bank_to_id.get(
+        mission_bank,
+        _bank_to_id.get(mission_type_str, MissionID.CIVIL_PROTECTION),
+    )
+
+    difficulty_raw = str(cfg.difficulty).lower()
+    difficulty = difficulty_raw if difficulty_raw in ("easy", "medium", "hard") else "easy"
+
+    # ── Build mission spec + injection schedule ──────────────────────
+    rng = np.random.default_rng(seed)
+    map_size = int(cfg.map_size)
+    spec, schedule = build_mission(mission_id, difficulty, map_size, seed)
+
+    engine = MissionEngine(spec, rng)
+    engine.set_injection_schedule(schedule)
+
+    # ── Instantiate policy ───────────────────────────────────────────
+    if policy_id == "lookahead":
+        policy = LookaheadOPTWPolicy(depth=2)
+    else:
+        policy = GreedyPolicy()
+
+    # ── Instantiate planner ──────────────────────────────────────────
+    planner_fn = PLANNERS[planner_id]
+    planner = planner_fn(heightmap, no_fly)
+    is_adaptive = hasattr(planner, "should_replan") and hasattr(planner, "replan")
+
+    # ── P1 realism buffers ───────────────────────────────────────────
+    from collections import deque as _deque
+
+    _constraint_latency = int(getattr(cfg, "constraint_latency_steps", 0))
+    _comms_dropout_prob = float(getattr(cfg, "comms_dropout_prob", 0.0))
+    _gnss_sigma = float(getattr(cfg, "gnss_noise_sigma", 0.0))
+    _latency_buffer: _deque[dict] = _deque(maxlen=max(1, _constraint_latency + 1))
+    _last_good_snapshot: dict | None = None
+    _realism_rng = np.random.RandomState(int(seed) ^ 0x50_1A_C1_00)
+
+    plan_budget_ms = (
+        cfg.plan_budget_dynamic_ms if cfg.paper_track == "dynamic" else cfg.plan_budget_static_ms
+    )
+
+    # ── Episode state ────────────────────────────────────────────────
+    current_xy = start_xy
+    path: list[tuple[int, int]] = []
+    path_idx = 0
+    actual_trajectory = [start_xy]
+    total_reward = 0.0
+    violations = 0
+    max_steps = episode_horizon_steps or spec.knobs.time_budget or 4 * map_size
+    episode_steps = 0
+    total_replans = 0
+    replan_budget_violations = 0
+    replan_steps: list[int] = []
+    risk_exposure_integral = 0.0
+    stuck_counter = 0
+    reached_goal = False
+    collision_terminated = False
+    termination_reason = "timeout"
+    segment_replans = 0
+    total_plan_time_ms = 0.0
+    total_expansions = 0
+
+    # ── Episode loop ─────────────────────────────────────────────────
+    for step in range(max_steps):
+        episode_steps = step + 1
+
+        # 1. If no active path, pick next task from mission policy
+        need_new_target = (not path) or (path_idx >= len(path) - 1)
+
+        if need_new_target:
+            target = policy.select_next_task(current_xy, engine)
+            if target is None:
+                # No more reachable tasks — episode complete
+                termination_reason = "all_tasks_done" if engine.done else "no_reachable_tasks"
+                break
+
+            engine.current_target = target
+
+            # Route-layer: plan path to target task
+            t0 = time.perf_counter()
+            plan_result = planner.plan(current_xy, target.xy)
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            total_plan_time_ms += elapsed_ms
+            total_expansions += plan_result.expansions
+
+            if elapsed_ms > plan_budget_ms:
+                replan_budget_violations += 1
+
+            engine.record_replan(PlanResult(
+                path=plan_result.path,
+                success=plan_result.success,
+                compute_time_ms=elapsed_ms,
+                expansions=plan_result.expansions,
+            ))
+
+            if plan_result.success and plan_result.path:
+                path = _expand_execution_path(list(plan_result.path), heightmap, no_fly)
+                path_idx = 0
+                segment_replans = 0
+            else:
+                # Can't reach target — step engine, try next task
+                risk_map = env.get_dynamic_state().get("risk_cost_map")
+                risk_at = 0.0
+                if risk_map is not None:
+                    x, y = current_xy
+                    if 0 <= y < risk_map.shape[0] and 0 <= x < risk_map.shape[1]:
+                        risk_at = float(risk_map[y, x])
+                engine.step(current_xy, {}, risk_at_pos=risk_at)
+                continue
+
+        # 2. Follow path one step
+        if path_idx < len(path) - 1:
+            action = _waypoint_action(path[path_idx], path[path_idx + 1])
+            obs, reward, terminated, truncated, info = env.step(action)
+            total_reward += reward
+            risk_exposure_integral += float(info.get("risk_cost", 0.0))
+
+            current_pos = tuple(int(v) for v in env._agent_pos)
+            current_xy = (current_pos[0], current_pos[1])
+
+            if current_xy == path[path_idx + 1]:
+                path_idx += 1
+                actual_trajectory.append(current_xy)
+                stuck_counter = 0
+            else:
+                stuck_counter += 1
+        else:
+            # At end of path — step env with hover action
+            obs, reward, terminated, truncated, info = env.step(0)
+            total_reward += reward
+            risk_exposure_integral += float(info.get("risk_cost", 0.0))
+
+        # 3. Step mission engine
+        risk_map = env.get_dynamic_state().get("risk_cost_map")
+        risk_at = 0.0
+        if risk_map is not None:
+            x, y = current_xy
+            if 0 <= y < risk_map.shape[0] and 0 <= x < risk_map.shape[1]:
+                risk_at = float(risk_map[y, x])
+
+        in_nfz = bool(no_fly[current_xy[1], current_xy[0]]) if (
+            0 <= current_xy[1] < no_fly.shape[0] and 0 <= current_xy[0] < no_fly.shape[1]
+        ) else False
+
+        events = engine.step(
+            current_xy,
+            {"in_nfz": in_nfz},
+            risk_at_pos=risk_at,
+            energy_cost=1.0,
+        )
+
+        # 4. Generate products on task completion
+        if events.get("completions"):
+            from uavbench.missions.runner import _generate_products
+            for tid in events["completions"]:
+                _generate_products(engine, spec, tid, engine.step_count)
+            # Clear path so next iteration picks a new task
+            path = []
+            path_idx = 0
+
+        # 5. Check strict compliance
+        if spec.strict_compliance and events.get("violation"):
+            termination_reason = "strict_compliance_violation"
+            break
+
+        if terminated:
+            reached_goal = info.get("reached_goal", False)
+            collision_terminated = info.get("collision_terminated", False)
+            termination_reason = info.get("termination_reason", "unknown")
+            break
+
+        if truncated:
+            termination_reason = "truncated"
+            break
+
+        # 6. Mid-segment replanning (same logic as run_dynamic_episode)
+        if path and path_idx < len(path) - 1:
+            dyn_raw = env.get_dynamic_state()
+
+            # P1: constraint latency
+            _latency_buffer.append(dyn_raw)
+            if _constraint_latency > 0 and len(_latency_buffer) > _constraint_latency:
+                dyn = _latency_buffer[0]
+            else:
+                dyn = dyn_raw
+
+            # P1: comms dropout
+            if _comms_dropout_prob > 0.0 and _realism_rng.random() < _comms_dropout_prob:
+                if _last_good_snapshot is not None:
+                    dyn = _last_good_snapshot
+            else:
+                _last_good_snapshot = dyn
+
+            path_invalid = _path_invalidated(path, path_idx, dyn, lookahead=6)
+
+            if path_invalid or stuck_counter >= 3:
+                # P1: GNSS noise
+                if _gnss_sigma > 0.0:
+                    sz = map_size
+                    nx = int(round(current_xy[0] + _realism_rng.normal(0.0, _gnss_sigma)))
+                    ny = int(round(current_xy[1] + _realism_rng.normal(0.0, _gnss_sigma)))
+                    nx = int(np.clip(nx, 0, sz - 1))
+                    ny = int(np.clip(ny, 0, sz - 1))
+                    planner_xy = (nx, ny)
+                else:
+                    planner_xy = current_xy
+
+                # Replan to current target
+                target_xy = engine.current_target.xy if engine.current_target else goal_xy
+                t0 = time.perf_counter()
+                if is_adaptive and hasattr(planner, "replan"):
+                    extra_obs = None
+                    for key in ("moving_target_buffer", "intruder_buffer",
+                                "dynamic_nfz_mask", "forced_block_mask", "traffic_closure_mask"):
+                        layer = dyn.get(key)
+                        if layer is not None:
+                            extra_obs = layer if extra_obs is None else (extra_obs | layer)
+                    try:
+                        pos_3d = (planner_xy[0], planner_xy[1], 0)
+                        new_path = planner.replan(
+                            pos_3d, target_xy,
+                            dyn.get("fire_mask"), dyn.get("traffic_positions"),
+                            "path_invalidated" if path_invalid else "stuck",
+                            smoke_mask=dyn.get("smoke_mask"),
+                            extra_obstacles=extra_obs,
+                            risk_cost_map=dyn.get("risk_cost_map"),
+                        )
+                    except TypeError:
+                        new_path = []
+                else:
+                    harness_result = planner.plan(planner_xy, target_xy)
+                    new_path = list(harness_result.path) if harness_result.success else []
+
+                replan_ms = (time.perf_counter() - t0) * 1000.0
+                total_plan_time_ms += replan_ms
+
+                if replan_ms <= plan_budget_ms and new_path:
+                    path = _expand_execution_path(list(new_path), heightmap, no_fly)
+                    path_idx = 0
+                    total_replans += 1
+                    segment_replans += 1
+                    replan_steps.append(episode_steps)
+                    stuck_counter = 0
+                elif replan_ms > plan_budget_ms:
+                    replan_budget_violations += 1
+
+        if stuck_counter >= 10:
+            termination_reason = "stuck"
+            break
+
+        if engine.done:
+            termination_reason = "mission_complete"
+            break
+
+    # ── Collect mission metrics ──────────────────────────────────────
+    mission_metrics = engine.compute_common_metrics()
+    episode_log = engine.export_episode_log()
+
+    # Count constraint violations
+    env_events = env.events
+    nfz_violations = sum(1 for e in env_events if e.get("type") == "no_fly_violation_attempt")
+    building_violations = sum(1 for e in env_events if e.get("type") == "collision_building_attempt")
+    violations = nfz_violations + building_violations
+
+    final_xy = (int(env._agent_pos[0]), int(env._agent_pos[1]))
+
+    result = {
+        # Core fields (compatible with run_dynamic_episode)
+        "scenario": scenario_id,
+        "planner": planner_id,
+        "seed": int(seed),
+        "success": mission_metrics.get("task_completion_rate", 0) > 0,
+        "constraint_violations": violations,
+        "path_length": len(actual_trajectory),
+        "path": actual_trajectory,
+        "heightmap": heightmap,
+        "no_fly": no_fly,
+        "start": start_xy,
+        "goal": goal_xy,
+        "planning_time": total_plan_time_ms / 1000.0,
+        "planning_time_ms": total_plan_time_ms,
+        "plan_budget_ms": float(plan_budget_ms),
+        "protocol_variant": protocol_variant,
+        "map_source": cfg.map_source,
+        "osm_tile_id": cfg.osm_tile_id,
+        "config": cfg,
+        "episode_steps": episode_steps,
+        "total_replans": total_replans,
+        "replan_steps": replan_steps,
+        "replan_budget_violations": replan_budget_violations,
+        "risk_exposure_integral": risk_exposure_integral,
+        "total_reward": total_reward,
+        "termination_reason": termination_reason,
+        "collision_terminated": collision_terminated,
+        "events": env_events,
+        # P1 realism
+        "constraint_latency_steps": _constraint_latency,
+        "comms_dropout_prob": _comms_dropout_prob,
+        "gnss_noise_sigma": _gnss_sigma,
+        "replan_mode": "native" if is_adaptive else "harness_replan",
+        # ── Mission-specific fields ──────────────────────────────────
+        "mission_id": spec.mission_id.value,
+        "difficulty": difficulty,
+        "policy_id": policy_id,
+        "mission_score": mission_metrics.get("mission_score", 0.0),
+        "task_completion_rate": mission_metrics.get("task_completion_rate", 0.0),
+        "completion_time": mission_metrics.get("completion_time", 0),
+        "energy_used": mission_metrics.get("energy_used", 0.0),
+        "mission_risk_integral": mission_metrics.get("risk_integral", 0.0),
+        "mission_violation_count": mission_metrics.get("violation_count", 0),
+        "replanning_cost_ms": mission_metrics.get("replanning_cost_ms", 0.0),
+        "replanning_count": mission_metrics.get("replanning_count", 0),
+        "replanning_expansions": mission_metrics.get("replanning_expansions", 0),
+        "robustness": mission_metrics.get("robustness", 0.0),
+        "product_latency": mission_metrics.get("product_latency", 0.0),
+        "mission_metrics": mission_metrics,
+        "task_log": episode_log.get("tasks", []),
+        "segment_log": episode_log.get("segments", []),
+        "products": episode_log.get("products", {}),
+        "event_detections": episode_log.get("event_detections", []),
+    }
 
     return result
 
@@ -930,7 +1498,7 @@ def main() -> None:
         "--planners",
         type=str,
         default="astar",
-        help="Comma-separated list of planner IDs to run (e.g. astar,dstar_lite,mppi).",
+        help="Comma-separated list of planner IDs to run (e.g. astar,periodic_replan,grid_mppi).",
     )
     parser.add_argument(
         "--metrics",
@@ -1079,6 +1647,20 @@ def main() -> None:
         default=120,
         help="DPI for rendered visualization frames (default: 120).",
     )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="nav",
+        choices=["nav", "mission"],
+        help="Execution mode: 'nav' for navigation (default), 'mission' for multi-task mission episodes.",
+    )
+    parser.add_argument(
+        "--policy",
+        type=str,
+        default="greedy",
+        choices=["greedy", "lookahead"],
+        help="Mission-layer task-selection policy (only used with --mode mission).",
+    )
 
     args = parser.parse_args()
 
@@ -1087,7 +1669,10 @@ def main() -> None:
         print_scenario_registry()
         return
     if args.list_planners:
-        print("Available planners:", ", ".join(sorted(PLANNERS.keys())))
+        from uavbench.planners import PAPER_PLANNERS, DEPRECATED_ALIASES, DEPRECATED_PLANNERS
+        print("Paper-suite planners:", ", ".join(PAPER_PLANNERS))
+        deprecated_keys = sorted(set(DEPRECATED_ALIASES) | DEPRECATED_PLANNERS)
+        print(f"Deprecated (removal planned v2.0): {', '.join(deprecated_keys)}")
         return
 
     scenario_ids = [s.strip() for s in args.scenarios.split(",") if s.strip()]
@@ -1103,7 +1688,8 @@ def main() -> None:
         f"metrics={metric_ids}, "
         f"trials={args.trials}, "
         f"seed_base={args.seed_base}, "
-        f"track={args.track}"
+        f"track={args.track}, "
+        f"mode={args.mode}"
     )
 
     # Run grid experiment
@@ -1124,7 +1710,15 @@ def main() -> None:
             for t in range(args.trials):
                 seed = args.seed_base + (hash(scenario_id) & 0xFFFF) + (hash(planner_id) & 0x0FFF) + t
                 try:
-                    if use_dynamic:
+                    if args.mode == "mission":
+                        r = run_mission_episode(
+                            scenario_id,
+                            planner_id,
+                            seed=seed,
+                            policy_id=args.policy,
+                            protocol_variant=args.protocol_variant,
+                        )
+                    elif use_dynamic:
                         # Build per-trial render paths if requested
                         _rd = ""
                         _rg = ""
@@ -1178,6 +1772,8 @@ def main() -> None:
                 )
             if use_dynamic:
                 print(f"Mode    : dynamic episode")
+            if args.mode == "mission":
+                print(f"Mode    : mission (policy={args.policy})")
             for k, v in metrics.items():
                 if isinstance(v, float) and np.isnan(v):
                     print(f"{k:>24}: n/a")
@@ -1242,7 +1838,7 @@ def main() -> None:
                     if args.with_dynamics and chosen.get("map_source") == "osm":
                         try:
                             from uavbench.viz.dynamics_sim import simulate_dynamics_along_path
-                            tile_path = Path("data/maps") / f"{chosen['osm_tile_id']}.npz"
+                            tile_path = Path(__file__).resolve().parents[3] / "data" / "maps" / f"{chosen['osm_tile_id']}.npz"
                             viz_cfg = chosen["config"]
                             sim = simulate_dynamics_along_path(
                                 tile_path=tile_path,

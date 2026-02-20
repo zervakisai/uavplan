@@ -6,31 +6,50 @@ mission_type: critical_infrastructure
 regime: stress_test
 paper_track: dynamic
 description: "ΥΠΕΘΑ/ISR-support — Inspection Tour + Dynamic Restrictions (Medium: 6 sites, tighter windows)"
-map_size: 64
+map_size: 500
 altitude_levels: 5
-building_density: 0.40
-tile_name: synthetic
-map_source: synthetic
+building_density: 0.50
+tile_name: downtown
+map_source: osm
+osm_tile_id: downtown
 
-fixed_start_xy: [8, 8]
-fixed_goal_xy: [56, 56]
+fixed_start_xy: [50, 50]
+fixed_goal_xy: [450, 450]
 
-enable_fire: false
+enable_fire: true
 enable_traffic: true
 enable_dynamic_nfz: true
 fire_blocks_movement: false
 traffic_blocks_movement: false
 wind_level: medium
 wind_speed: 0.3
-fire_ignition_points: 0
+fire_ignition_points: 2
 num_emergency_vehicles: 4
 num_nfz_zones: 2
 nfz_expansion_rate: 0.5
-nfz_max_radius: 15
+nfz_max_radius: 50
+restrictions_mode: incident
+restrictions_max_coverage: 0.30
+restrictions_buffer_px: 15
+incident_point: [250, 250]
+incident_name: "2021 Athens Metro Bomb Threat (Syntagma)"
+incident_year: 2021
+incident_summary: "Security cordon around Syntagma/Monastiraki stations."
 force_replan_count: 1
-event_t1: 25
-event_t2: 55
+event_t1: 60
+event_t2: 140
 emergency_corridor_enabled: true
+
+replan_every_steps: 4
+max_replans_per_episode: 2000
+plan_budget_static_ms: 500.0
+plan_budget_dynamic_ms: 200.0
+interdiction_reference_planner: astar
+
+# P1 realism knobs (must be top-level for loader)
+constraint_latency_steps: 2
+comms_dropout_prob: 0.05
+gnss_noise_sigma: 1.0
 
 extra:
   mission_bank: critical_infrastructure
@@ -39,5 +58,3 @@ extra:
   dynamics_intensity: moderate
   time_budget: 260
   energy_budget: 0.85
-  comms_dropout_prob: 0.05
-  comms_latency_steps: 2
