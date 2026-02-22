@@ -324,6 +324,34 @@ class MissionRestrictionModel:
         """
         self.step_count += 1
 
+        # Pre-compute fire labeling once per step for all TFR zones
+        _fire_label_cache: tuple | None = None
+        has_active_tfr = any(
+            z.zone_type == "tfr"
+            and (z.active or self.step_count >= z.activation_step)
+            for z in self._zones
+        )
+        if has_active_tfr and fire_mask is not None and np.any(fire_mask):
+            try:
+                from scipy.ndimage import label as scipy_label
+                labeled, n_clusters = scipy_label(fire_mask)
+                if n_clusters > 0:
+                    # Vectorized centroids via np.bincount (faster than center_of_mass)
+                    flat_labels = labeled.ravel()
+                    H, W = labeled.shape
+                    ys, xs = np.mgrid[:H, :W]
+                    counts = np.bincount(flat_labels, minlength=n_clusters + 1)
+                    sum_x = np.bincount(flat_labels, weights=xs.ravel(), minlength=n_clusters + 1)
+                    sum_y = np.bincount(flat_labels, weights=ys.ravel(), minlength=n_clusters + 1)
+                    # Slice [1:] to skip background label 0
+                    valid = counts[1:n_clusters + 1]
+                    valid = np.maximum(valid, 1)  # avoid division by zero
+                    cx_arr = sum_x[1:n_clusters + 1] / valid  # mean x per cluster
+                    cy_arr = sum_y[1:n_clusters + 1] / valid  # mean y per cluster
+                    _fire_label_cache = (labeled, n_clusters, cx_arr, cy_arr)
+            except ImportError:
+                pass
+
         for zone in self._zones:
             # Expiration check
             if zone.active and zone.expires_step is not None and self.step_count >= zone.expires_step:
@@ -346,7 +374,7 @@ class MissionRestrictionModel:
             age = self.step_count - zone.activation_step
 
             if zone.zone_type == "tfr":
-                self._step_tfr(zone, age, fire_mask)
+                self._step_tfr(zone, age, fire_mask, _fire_label_cache)
             elif zone.zone_type == "sar_box":
                 self._step_sar_box(zone, age)
             elif zone.zone_type == "port_exclusion":
@@ -365,6 +393,7 @@ class MissionRestrictionModel:
     def _step_tfr(
         self, zone: RestrictionZone, age: int,
         fire_mask: Optional[np.ndarray],
+        fire_label_cache: tuple | None = None,
     ) -> None:
         """TFR: derive zone from fire perimeter + buffer."""
         H, W = self.height, self.width
@@ -372,7 +401,7 @@ class MissionRestrictionModel:
 
         if fire_mask is not None and np.any(fire_mask):
             # Find fire cluster nearest to this zone's anchor
-            zone_mask = self._fire_cluster_tfr(fire_mask, cx, cy)
+            zone_mask = self._fire_cluster_tfr(fire_mask, cx, cy, fire_label_cache)
         else:
             # No fire yet: expand a small circle from the anchor point
             radius = min(self.buffer_px, 5 + age // 3)
@@ -382,42 +411,51 @@ class MissionRestrictionModel:
 
     def _fire_cluster_tfr(
         self, fire_mask: np.ndarray, cx: int, cy: int,
+        fire_label_cache: tuple | None = None,
     ) -> np.ndarray:
         """Derive TFR mask from fire cluster nearest to (cx, cy).
 
         Steps: label connected components of fire → pick cluster nearest
         to anchor → dilate by buffer_px → return mask.
+
+        Optimized: uses pre-computed label cache and np.bincount
+        for vectorized centroid computation + vectorized nearest lookup.
         """
         H, W = self.height, self.width
 
-        # Label connected components (simple 4-connected via sequential scan)
-        try:
-            from scipy.ndimage import label as scipy_label, binary_dilation
-            labeled, n_clusters = scipy_label(fire_mask)
-        except ImportError:
-            # Fallback: just dilate entire fire mask
-            return self._dilate_mask(fire_mask, self.buffer_px)
+        # Use cached label data if available
+        if fire_label_cache is not None:
+            labeled, n_clusters, cx_arr, cy_arr = fire_label_cache
+        else:
+            try:
+                from scipy.ndimage import label as scipy_label
+                labeled, n_clusters = scipy_label(fire_mask)
+                if n_clusters == 0:
+                    return self._circle_mask(cx, cy, self.buffer_px)
+                # Compute centroids via np.bincount
+                flat_labels = labeled.ravel()
+                ys, xs = np.mgrid[:H, :W]
+                counts = np.bincount(flat_labels, minlength=n_clusters + 1)
+                sum_x = np.bincount(flat_labels, weights=xs.ravel(), minlength=n_clusters + 1)
+                sum_y = np.bincount(flat_labels, weights=ys.ravel(), minlength=n_clusters + 1)
+                valid = np.maximum(counts[1:n_clusters + 1], 1)
+                cx_arr = sum_x[1:n_clusters + 1] / valid
+                cy_arr = sum_y[1:n_clusters + 1] / valid
+            except ImportError:
+                return self._dilate_mask(fire_mask, self.buffer_px)
 
         if n_clusters == 0:
             return self._circle_mask(cx, cy, self.buffer_px)
 
-        # Find nearest cluster to anchor (cx, cy)
-        best_id = 1
-        best_dist = float("inf")
-        for cid in range(1, n_clusters + 1):
-            ys, xs = np.where(labeled == cid)
-            if len(xs) == 0:
-                continue
-            mean_x, mean_y = float(np.mean(xs)), float(np.mean(ys))
-            dist = (mean_x - cx) ** 2 + (mean_y - cy) ** 2
-            if dist < best_dist:
-                best_dist = dist
-                best_id = cid
+        # Vectorized nearest cluster lookup
+        dists = (cx_arr - cx) ** 2 + (cy_arr - cy) ** 2
+        best_id = int(np.argmin(dists)) + 1  # +1 because label 0 is background
 
         cluster = labeled == best_id
 
         # Dilate by buffer
         try:
+            from scipy.ndimage import binary_dilation
             struct = np.ones((3, 3), dtype=bool)
             dilated = binary_dilation(cluster, structure=struct,
                                       iterations=self.buffer_px)

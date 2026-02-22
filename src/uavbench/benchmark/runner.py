@@ -176,7 +176,13 @@ class BenchmarkRunner:
             or cfg.enable_dynamic_nfz
         )
         if use_dynamic:
-            res = run_dynamic_episode(scenario_id, planner_id, seed=seed, protocol_variant="default")
+            res = run_dynamic_episode(
+                scenario_id,
+                planner_id,
+                seed=seed,
+                protocol_variant="default",
+                episode_horizon_steps=self.config.max_episode_steps,
+            )
             path = list(res.get("path") or [res.get("start")])
             start_xy = tuple(res.get("start", (0, 0)))
             goal_xy = tuple(res.get("goal", (0, 0)))

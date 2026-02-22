@@ -123,11 +123,14 @@ class TrafficModel:
 
         for i in range(len(self._positions)):
             py, px = self._positions[i]
-            for dy in range(-buffer_radius, buffer_radius + 1):
-                for dx in range(-buffer_radius, buffer_radius + 1):
-                    if abs(dy) + abs(dx) <= buffer_radius:
-                        ny, nx = int(py) + dy, int(px) + dx
-                        if 0 <= ny < H and 0 <= nx < W:
-                            mask[ny, nx] = True
+            iy, ix = int(py), int(px)
+            y_lo = max(0, iy - buffer_radius)
+            y_hi = min(H, iy + buffer_radius + 1)
+            x_lo = max(0, ix - buffer_radius)
+            x_hi = min(W, ix + buffer_radius + 1)
+            for ny in range(y_lo, y_hi):
+                for nx in range(x_lo, x_hi):
+                    if abs(ny - iy) + abs(nx - ix) <= buffer_radius:
+                        mask[ny, nx] = True
 
         return mask

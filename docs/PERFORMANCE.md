@@ -47,6 +47,28 @@ Results from running the full 20-scenario pack with A* planner on Apple Silicon 
 
 ## Runtime Performance
 
+### Dynamic Episode Step Time (gov_civil_protection_hard, seed=42)
+
+The env.step() function was optimized in v2.0 with **26× wall-clock speedup**:
+
+| Component | Before (ms/step) | After (ms/step) | Speedup |
+|-----------|------------------:|------------------:|--------:|
+| NFZ/TFR zones | 380.1 | 12.5 | 30× |
+| BFS reachability | 210.9 | 1.9 | 110× |
+| Fire spread | 2.8 | 2.7 | 1.0× |
+| Interaction engine | 2.7 | 2.6 | 1.0× |
+| Population risk | 1.1 | 1.0 | 1.1× |
+| **Total step** | **599.5** | **22.6** | **26.5×** |
+
+**Optimizations applied (zero algorithmic/fairness changes):**
+1. **NFZ fire-cluster centroids**: `scipy.ndimage.label` + `np.bincount` vectorized centroids (replaces per-cluster `np.where` loop)
+2. **BFS reachability**: `scipy.ndimage.label` connected-component check (replaces pure-Python deque BFS on 500×500 grid)
+3. **Fire proximity & vehicle near-miss**: Vectorized numpy slices (replaces nested Python loops)
+4. **Dynamic state cache**: Per-step memoization of `get_dynamic_state()` (called multiple times per step)
+5. **Topology-change detection**: Guardrail skips BFS when blocking mask unchanged
+
+### Static Operations
+
 | Operation | Time |
 |-----------|------|
 | Load .npz tile | ~2ms |
@@ -73,9 +95,20 @@ Results from running the full 20-scenario pack with A* planner on Apple Silicon 
 # Install
 pip install -e ".[viz]"
 
-# Single trial
+# ── Scenario pack (static planners) ──
 python tools/benchmark_scenario_pack.py --planners astar --trials 1 --output outputs/
-
-# Statistically robust (5 trials)
 python tools/benchmark_scenario_pack.py --planners astar --trials 5 --seed-base 42 --output outputs/
+
+# ── Paper artifact export ──
+# FAST_DEV: quick iteration (seeds=1, horizon=500, no ablations)
+python scripts/export_paper_artifacts.py --mode FAST_DEV
+
+# CAMERA_READY: full publication run (seeds=30, horizon=2000, all ablations)
+python scripts/export_paper_artifacts.py --mode CAMERA_READY
+
+# Parallel execution (4 workers)
+python scripts/export_paper_artifacts.py --mode CAMERA_READY --parallel 4
+
+# Custom settings
+python scripts/export_paper_artifacts.py --seeds 5 --episode-horizon 1000 --output-root results/custom
 ```
