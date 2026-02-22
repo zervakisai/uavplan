@@ -1,5 +1,0 @@
-track,planner,seed,success_mean,replans_mean,risk_exposure_mean,dynamic_hits_mean
-dynamic,astar,0,0.0,0.0,3.00554395218515e-07,0.0
-dynamic,dstar_lite,0,0.0,5.785714285714286,3.00554395218515e-07,0.0
-static,astar,0,1.0,0.0,0.0,0.0
-static,dstar_lite,0,1.0,0.0,0.0,0.0

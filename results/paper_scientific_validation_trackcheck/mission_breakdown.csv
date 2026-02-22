@@ -1,9 +1,0 @@
-mission_type,planner,n,success_mean,success_ci95,replans_mean,risk_exposure_mean,guardrail_activation_mean,guardrail_activation_rate_mean,corridor_fallback_rate_mean,relaxation_magnitude_mean,time_to_recover_mean,replan_latency_mean,dynamic_hits_mean,interdiction_hit_rate_reference_mean,trigger_path_invalidation_mean,trigger_forced_event_mean,trigger_cadence_mean
-border_surveillance,astar,2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,0.0,0.0
-comms_denied,astar,1,0.0,0.0,0.0,6.0110879043703e-07,0.0,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,0.0,0.0
-crisis_dual,astar,1,0.0,0.0,0.0,6.0110879043703e-07,0.0,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,0.0,0.0
-emergency_response,astar,2,0.0,0.0,0.0,3.00554395218515e-07,0.0,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,0.0,0.0
-infrastructure_patrol,astar,2,0.0,0.0,0.0,3.00554395218515e-07,0.0,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,0.0,0.0
-port_security,astar,2,0.0,0.0,0.0,3.00554395218515e-07,0.0,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,0.0,0.0
-search_rescue,astar,2,0.0,0.0,0.0,3.00554395218515e-07,0.0,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,0.0,0.0
-wildfire_wui,astar,2,0.0,0.0,0.0,3.00554395218515e-07,0.0,0.0,0.0,0.0,nan,nan,0.0,1.0,0.0,0.0,0.0
