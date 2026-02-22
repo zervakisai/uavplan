@@ -8,10 +8,12 @@ import csv
 import hashlib
 import json
 import math
+import multiprocessing
 import random
 import subprocess
 import sys
 from collections import defaultdict
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -59,12 +61,14 @@ def _run_track(
     planner_ids: list[str],
     seeds: list[int],
     output_dir: Path,
+    max_episode_steps: int = 500,
 ) -> None:
     runner = BenchmarkRunner(
         BenchmarkConfig(
             scenario_ids=scenario_ids,
             planner_ids=planner_ids,
             seeds=seeds,
+            max_episode_steps=max_episode_steps,
             output_dir=output_dir,
             save_jsonl=True,
             save_csv=True,
@@ -169,39 +173,51 @@ def _mission_effect_sizes(agg_csv: Path, baseline: str = "astar") -> dict[str, d
     return out
 
 
+def _run_single_variant_episode(args_tuple: tuple) -> dict[str, Any]:
+    """Worker function for parallel variant episode execution."""
+    sid, pid, seed, variant = args_tuple
+    res = run_dynamic_episode(sid, pid, seed=seed, protocol_variant=variant)
+    return {
+        "scenario_id": sid,
+        "planner_id": pid,
+        "seed": int(seed),
+        "variant": variant,
+        "success": 1.0 if bool(res.get("success", False)) else 0.0,
+        "path_length": float(res.get("path_length", 0.0)),
+        "total_replans": float(res.get("total_replans", 0.0)),
+        "initial_budget_exceeded": 1.0 if bool(res.get("initial_budget_exceeded", False)) else 0.0,
+        "replan_budget_violations": float(res.get("replan_budget_violations", 0.0)),
+        "dynamic_block_hits": float(res.get("dynamic_block_hits", 0.0)),
+        "risk_exposure_integral": float(res.get("risk_exposure_integral", 0.0)),
+        "time_to_recover_after_break": float(res.get("time_to_recover_after_break", float("nan"))),
+        "replan_latency_after_break": float(res.get("replan_latency_after_break", float("nan"))),
+        "interaction_fire_nfz_overlap_ratio": float(res.get("interaction_fire_nfz_overlap_ratio", 0.0)),
+        "interaction_fire_road_closure_rate": float(res.get("interaction_fire_road_closure_rate", 0.0)),
+        "interaction_congestion_risk_corr": float(res.get("interaction_congestion_risk_corr", 0.0)),
+        "dynamic_block_entropy": float(res.get("dynamic_block_entropy", 0.0)),
+        "interdiction_hit_rate": float(res.get("interdiction_hit_rate", 0.0)),
+    }
+
+
+# Global for multiprocessing pool size (set in main)
+_N_WORKERS: int = 1
+
+
 def _run_variant_rows(
     scenario_ids: list[str],
-    planners: list[str],
+    planner_ids: list[str],
     seeds: list[int],
     variant: str,
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for sid in scenario_ids:
-        for pid in planners:
-            for seed in seeds:
-                res = run_dynamic_episode(sid, pid, seed=seed, protocol_variant=variant)
-                rows.append(
-                    {
-                        "scenario_id": sid,
-                        "planner_id": pid,
-                        "seed": int(seed),
-                        "variant": variant,
-                        "success": 1.0 if bool(res.get("success", False)) else 0.0,
-                        "path_length": float(res.get("path_length", 0.0)),
-                        "total_replans": float(res.get("total_replans", 0.0)),
-                        "initial_budget_exceeded": 1.0 if bool(res.get("initial_budget_exceeded", False)) else 0.0,
-                        "replan_budget_violations": float(res.get("replan_budget_violations", 0.0)),
-                        "dynamic_block_hits": float(res.get("dynamic_block_hits", 0.0)),
-                        "risk_exposure_integral": float(res.get("risk_exposure_integral", 0.0)),
-                        "time_to_recover_after_break": float(res.get("time_to_recover_after_break", float("nan"))),
-                        "replan_latency_after_break": float(res.get("replan_latency_after_break", float("nan"))),
-                        "interaction_fire_nfz_overlap_ratio": float(res.get("interaction_fire_nfz_overlap_ratio", 0.0)),
-                        "interaction_fire_road_closure_rate": float(res.get("interaction_fire_road_closure_rate", 0.0)),
-                        "interaction_congestion_risk_corr": float(res.get("interaction_congestion_risk_corr", 0.0)),
-                        "dynamic_block_entropy": float(res.get("dynamic_block_entropy", 0.0)),
-                        "interdiction_hit_rate": float(res.get("interdiction_hit_rate", 0.0)),
-                    }
-                )
+    tasks = [(sid, pid, seed, variant)
+             for sid in scenario_ids
+             for pid in planner_ids
+             for seed in seeds]
+    if _N_WORKERS > 1 and len(tasks) > 1:
+        with multiprocessing.Pool(_N_WORKERS) as pool:
+            rows = pool.map(_run_single_variant_episode, tasks)
+    else:
+        rows = [_run_single_variant_episode(t) for t in tasks]
     return rows
 
 
@@ -270,6 +286,12 @@ def _write_rows_csv(rows: list[dict[str, Any]], out_csv: Path) -> None:
         writer.writerows(rows)
 
 
+def _run_single_dynamic_episode(args_tuple: tuple) -> dict[str, Any]:
+    """Worker function for parallel dynamic episode execution."""
+    sid, pid, seed = args_tuple
+    return run_dynamic_episode(sid, pid, seed=seed, protocol_variant="default")
+
+
 def _export_dynamic_event_views(
     scenario_ids: list[str],
     planners: list[str],
@@ -280,49 +302,58 @@ def _export_dynamic_event_views(
     replan_csv.parent.mkdir(parents=True, exist_ok=True)
     repl_rows: list[dict[str, Any]] = []
     inter_rows: list[dict[str, Any]] = []
-    for sid in scenario_ids:
-        for pid in planners:
-            for seed in seeds:
-                res = run_dynamic_episode(sid, pid, seed=seed, protocol_variant="default")
-                repl_rows.append(
-                    {
-                        "scenario": sid,
-                        "planner": pid,
-                        "seed": seed,
-                        "total_replans": res.get("total_replans", 0),
-                        "planner_total_replans_raw": res.get("planner_total_replans_raw", 0),
-                        "replan_budget_violations": res.get("replan_budget_violations", 0),
-                        "forced_replans_triggered": res.get("forced_replans_triggered", 0),
-                        "interdictions_triggered": res.get("interdictions_triggered", 0),
-                        "interdiction_hit_rate": res.get("interdiction_hit_rate", 0.0),
-                        "termination_reason": res.get("termination_reason", "unknown"),
-                    }
-                )
-                inter_rows.append(
-                    {
-                        "scenario": sid,
-                        "planner": pid,
-                        "seed": seed,
-                        "dynamic_blocks": res.get("total_dynamic_blocks", 0),
-                        "fire_blocks": res.get("fire_blocks", 0),
-                        "traffic_blocks": res.get("traffic_blocks", 0),
-                        "intruder_blocks": res.get("intruder_blocks", 0),
-                        "dynamic_nfz_blocks": res.get("dynamic_nfz_blocks", 0),
-                        "interaction_fire_nfz_overlap_ratio": res.get("interaction_fire_nfz_overlap_ratio", 0.0),
-                        "interaction_fire_road_closure_rate": res.get("interaction_fire_road_closure_rate", 0.0),
-                        "interaction_congestion_risk_corr": res.get("interaction_congestion_risk_corr", 0.0),
-                        "dynamic_block_entropy": res.get("dynamic_block_entropy", 0.0),
-                        "interdiction_hit_rate": res.get("interdiction_hit_rate", 0.0),
-                        "dynamic_block_hits": res.get("dynamic_block_hits", 0.0),
-                        "risk_exposure_integral": res.get("risk_exposure_integral", 0.0),
-                        "time_to_recover_after_break": res.get("time_to_recover_after_break", float("nan")),
-                        "replan_latency_after_break": res.get("replan_latency_after_break", float("nan")),
-                        "reachability_failed_before_relax": res.get("reachability_failed_before_relax", False),
-                        "corridor_fallback_used": res.get("corridor_fallback_used", False),
-                        "feasible_after_guardrail": res.get("feasible_after_guardrail", True),
-                        "success": res.get("success", False),
-                    }
-                )
+
+    tasks = [(sid, pid, seed)
+             for sid in scenario_ids
+             for pid in planners
+             for seed in seeds]
+
+    if _N_WORKERS > 1 and len(tasks) > 1:
+        with multiprocessing.Pool(_N_WORKERS) as pool:
+            results = pool.map(_run_single_dynamic_episode, tasks)
+    else:
+        results = [_run_single_dynamic_episode(t) for t in tasks]
+
+    for (sid, pid, seed), res in zip(tasks, results):
+        repl_rows.append(
+            {
+                "scenario": sid,
+                "planner": pid,
+                "seed": seed,
+                "total_replans": res.get("total_replans", 0),
+                "planner_total_replans_raw": res.get("planner_total_replans_raw", 0),
+                "replan_budget_violations": res.get("replan_budget_violations", 0),
+                "forced_replans_triggered": res.get("forced_replans_triggered", 0),
+                "interdictions_triggered": res.get("interdictions_triggered", 0),
+                "interdiction_hit_rate": res.get("interdiction_hit_rate", 0.0),
+                "termination_reason": res.get("termination_reason", "unknown"),
+            }
+        )
+        inter_rows.append(
+            {
+                "scenario": sid,
+                "planner": pid,
+                "seed": seed,
+                "dynamic_blocks": res.get("total_dynamic_blocks", 0),
+                "fire_blocks": res.get("fire_blocks", 0),
+                "traffic_blocks": res.get("traffic_blocks", 0),
+                "intruder_blocks": res.get("intruder_blocks", 0),
+                "dynamic_nfz_blocks": res.get("dynamic_nfz_blocks", 0),
+                "interaction_fire_nfz_overlap_ratio": res.get("interaction_fire_nfz_overlap_ratio", 0.0),
+                "interaction_fire_road_closure_rate": res.get("interaction_fire_road_closure_rate", 0.0),
+                "interaction_congestion_risk_corr": res.get("interaction_congestion_risk_corr", 0.0),
+                "dynamic_block_entropy": res.get("dynamic_block_entropy", 0.0),
+                "interdiction_hit_rate": res.get("interdiction_hit_rate", 0.0),
+                "dynamic_block_hits": res.get("dynamic_block_hits", 0.0),
+                "risk_exposure_integral": res.get("risk_exposure_integral", 0.0),
+                "time_to_recover_after_break": res.get("time_to_recover_after_break", float("nan")),
+                "replan_latency_after_break": res.get("replan_latency_after_break", float("nan")),
+                "reachability_failed_before_relax": res.get("reachability_failed_before_relax", False),
+                "corridor_fallback_used": res.get("corridor_fallback_used", False),
+                "feasible_after_guardrail": res.get("feasible_after_guardrail", True),
+                "success": res.get("success", False),
+            }
+        )
 
     _write_rows_csv(repl_rows, replan_csv)
     _write_rows_csv(inter_rows, interaction_csv)
@@ -347,14 +378,56 @@ def _write_ablation_table(rows: list[dict[str, Any]], out_path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export UAVBench paper artifacts")
-    parser.add_argument("--seeds", type=int, default=10, help="Number of seeds (0..N-1)")
-    parser.add_argument("--output-root", type=Path, default=Path("results/paper"))
+    parser.add_argument("--seeds", type=int, default=None, help="Number of seeds (0..N-1). Overrides --mode default.")
+    parser.add_argument("--output-root", type=Path, default=None, help="Output dir. Overrides --mode default.")
+    parser.add_argument("--episode-horizon", type=int, default=None, help="Max steps per dynamic episode. Overrides --mode default.")
     parser.add_argument("--skip-ablations", action="store_true")
+    parser.add_argument(
+        "--mode",
+        choices=["FAST_DEV", "CAMERA_READY", "custom"],
+        default="custom",
+        help=(
+            "Benchmark mode. "
+            "FAST_DEV: horizon=500, seeds=1, skip-ablations (quick iteration). "
+            "CAMERA_READY: full horizon=2000, seeds=30, all ablations (publication). "
+            "custom: use --seeds, --episode-horizon, --output-root explicitly."
+        ),
+    )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="Number of parallel workers for episode execution (default: 1 = sequential).",
+    )
     args = parser.parse_args()
 
-    seeds = list(range(args.seeds))
-    output_root = args.output_root
+    # ── Mode presets ──────────────────────────────────────────────
+    if args.mode == "FAST_DEV":
+        n_seeds = args.seeds if args.seeds is not None else 1
+        episode_horizon = args.episode_horizon if args.episode_horizon is not None else 500
+        output_root = args.output_root if args.output_root is not None else Path("results/paper_fast_dev")
+        skip_ablations = True
+        print(f"[FAST_DEV] seeds={n_seeds}, horizon={episode_horizon}, ablations=skip")
+    elif args.mode == "CAMERA_READY":
+        n_seeds = args.seeds if args.seeds is not None else 30
+        episode_horizon = args.episode_horizon if args.episode_horizon is not None else 2000
+        output_root = args.output_root if args.output_root is not None else Path("results/paper_camera_ready")
+        skip_ablations = args.skip_ablations
+        print(f"[CAMERA_READY] seeds={n_seeds}, horizon={episode_horizon}, ablations={'skip' if skip_ablations else 'run'}")
+    else:
+        n_seeds = args.seeds if args.seeds is not None else 10
+        episode_horizon = args.episode_horizon if args.episode_horizon is not None else 500
+        output_root = args.output_root if args.output_root is not None else Path("results/paper")
+        skip_ablations = args.skip_ablations
+
+    seeds = list(range(n_seeds))
     output_root.mkdir(parents=True, exist_ok=True)
+
+    # Set global parallelism level
+    global _N_WORKERS
+    _N_WORKERS = max(1, args.parallel)
+    if _N_WORKERS > 1:
+        print(f"[Parallel] Using {_N_WORKERS} worker processes")
 
     static_scenarios = list_scenarios_by_track("static")
     dynamic_scenarios = list_scenarios_by_track("dynamic")
@@ -363,16 +436,16 @@ def main() -> None:
     dynamic_planners = [
         "astar",
         "theta_star",
-        "dstar_lite",
-        "ad_star",
-        "dwa",
-        "mppi",
+        "periodic_replan",
+        "aggressive_replan",
+        "incremental_dstar_lite",
+        "grid_mppi",
     ]
 
     static_dir = output_root / "static_run"
     dynamic_dir = output_root / "dynamic_run"
     _run_track(static_scenarios, static_planners, seeds, static_dir)
-    _run_track(dynamic_scenarios, dynamic_planners, seeds, dynamic_dir)
+    _run_track(dynamic_scenarios, dynamic_planners, seeds, dynamic_dir, max_episode_steps=episode_horizon)
 
     static_csv = static_dir / "aggregates.csv"
     dynamic_csv = dynamic_dir / "aggregates.csv"
@@ -396,7 +469,7 @@ def main() -> None:
     (output_root / "stats_summary.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
 
     ablation_summary_rows: list[dict[str, Any]] = []
-    if not args.skip_ablations:
+    if not skip_ablations:
         ablation_variants = [
             "no_interactions",
             "no_forced_breaks",

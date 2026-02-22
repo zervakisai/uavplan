@@ -220,7 +220,7 @@ def main() -> None:
     parser.add_argument(
         "--planners",
         type=str,
-        default="dstar_lite,ad_star,dwa,mppi",
+        default="periodic_replan,aggressive_replan,incremental_dstar_lite,grid_mppi",
         help="Comma-separated planner IDs",
     )
     args = parser.parse_args()

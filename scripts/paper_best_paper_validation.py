@@ -722,9 +722,9 @@ def _stress_story_audit(stress_agg_rows: list[dict[str, Any]], out_dir: Path) ->
     lookup = {r["planner"]: r for r in rows}
     narrative = {
         "astar_collapses_fast": bool(lookup.get("astar", {}).get("degradation_slope", 0.0) < -0.4),
-        "dstar_moderate_degradation": bool(lookup.get("dstar_lite", {}).get("degradation_slope", 0.0) < -0.15),
-        "mppi_graceful_degradation": bool(lookup.get("mppi", {}).get("degradation_slope", 0.0) > lookup.get("astar", {}).get("degradation_slope", -999)),
-        "dwa_tradeoff_stable": bool(lookup.get("dwa", {}).get("success_at_alpha1", 0.0) >= 0.5 * lookup.get("dwa", {}).get("success_at_alpha0", 0.0)),
+        "dstar_moderate_degradation": bool(lookup.get("periodic_replan", {}).get("degradation_slope", 0.0) < -0.15),
+        "mppi_graceful_degradation": bool(lookup.get("grid_mppi", {}).get("degradation_slope", 0.0) > lookup.get("astar", {}).get("degradation_slope", -999)),
+        "dwa_tradeoff_stable": bool(lookup.get("aggressive_replan", {}).get("success_at_alpha1", 0.0) >= 0.5 * lookup.get("aggressive_replan", {}).get("success_at_alpha0", 0.0)),
     }
     _write_csv(rows, out_dir / "stress_story_audit.csv")
     (out_dir / "stress_story_narrative.json").write_text(json.dumps(narrative, indent=2), encoding="utf-8")
@@ -1072,7 +1072,7 @@ def _fairness_audit(dynamic_scenarios: list[str], out_dir: Path, episode_horizon
     # 4b) Replanning trigger contract consistency
     trigger_ok = True
     trigger_details: dict[str, Any] = {}
-    planners_check = ["dstar_lite", "ad_star", "mppi"]
+    planners_check = ["periodic_replan", "aggressive_replan", "grid_mppi"]
     for sid in scenarios:
         per_planner: dict[str, Any] = {}
         for planner in planners_check:
@@ -1099,14 +1099,14 @@ def _fairness_audit(dynamic_scenarios: list[str], out_dir: Path, episode_horizon
     for sid in scenarios:
         r1 = run_dynamic_episode(
             sid,
-            "dstar_lite",
+            "periodic_replan",
             seed=9,
             protocol_variant="default",
             episode_horizon_steps=episode_horizon,
         )
         r2 = run_dynamic_episode(
             sid,
-            "dstar_lite",
+            "periodic_replan",
             seed=9,
             protocol_variant="default",
             episode_horizon_steps=episode_horizon,
@@ -1175,8 +1175,8 @@ def _failure_mode_taxonomy(
             cases["static_corridor_collapse"] = r
             break
 
-    # Incremental oscillation (D* Lite / AD*)
-    for planner in ("dstar_lite", "ad_star"):
+    # Incremental oscillation (periodic_replan / aggressive_replan)
+    for planner in ("periodic_replan", "aggressive_replan"):
         for seed in seeds:
             r = run_dynamic_episode(
                 stress_scenario,
@@ -1195,7 +1195,7 @@ def _failure_mode_taxonomy(
     for seed in seeds:
         r = run_dynamic_episode(
             stress_scenario,
-            "mppi",
+            "grid_mppi",
             seed=seed,
             stress_alpha=0.8,
             episode_horizon_steps=episode_horizon,
@@ -1208,14 +1208,14 @@ def _failure_mode_taxonomy(
     for seed in seeds:
         rr = run_dynamic_episode(
             stress_scenario,
-            "dwa",
+            "aggressive_replan",
             seed=seed,
             stress_alpha=0.8,
             episode_horizon_steps=episode_horizon,
         )
         hh = run_dynamic_episode(
             stress_scenario,
-            "mppi",
+            "grid_mppi",
             seed=seed,
             stress_alpha=0.8,
             episode_horizon_steps=episode_horizon,
@@ -1233,7 +1233,7 @@ def _failure_mode_taxonomy(
     for seed in seeds:
         d = run_dynamic_episode(
             stress_scenario,
-            "dstar_lite",
+            "periodic_replan",
             seed=seed,
             stress_alpha=0.8,
             protocol_variant="default",
@@ -1241,7 +1241,7 @@ def _failure_mode_taxonomy(
         )
         ng = run_dynamic_episode(
             stress_scenario,
-            "dstar_lite",
+            "periodic_replan",
             seed=seed,
             stress_alpha=0.8,
             protocol_variant="no_guardrail",
@@ -1355,10 +1355,10 @@ def _reviewer2_verdict(
     dyn_stats = [r for r in summary_rows if r["track"] == "dynamic"]
     by_planner = {r["planner"]: r for r in dyn_stats}
     astar = by_planner.get("astar", {"mean_success": 0.0})
-    mppi = by_planner.get("mppi", {"mean_success": 0.0})
-    dwa = by_planner.get("dwa", {"mean_success": 0.0})
+    mppi = by_planner.get("grid_mppi", {"mean_success": 0.0})
+    dwa = by_planner.get("aggressive_replan", {"mean_success": 0.0})
 
-    dyn_effect = [r for r in effect_rows if r["track"] == "dynamic" and r["planner"] in {"dstar_lite", "ad_star", "mppi"}]
+    dyn_effect = [r for r in effect_rows if r["track"] == "dynamic" and r["planner"] in {"periodic_replan", "aggressive_replan", "grid_mppi"}]
     significant = all(float(r["mann_whitney_pvalue"]) < 0.05 for r in dyn_effect) if dyn_effect else False
     strong_effect = all(abs(float(r["cohen_d_success"])) >= 0.5 for r in dyn_effect) if dyn_effect else False
 
@@ -1725,12 +1725,12 @@ def main() -> None:
     parser.add_argument(
         "--stats-planners",
         type=str,
-        default="astar,theta_star,dstar_lite,ad_star,dwa,mppi",
+        default="astar,theta_star,periodic_replan,aggressive_replan,incremental_dstar_lite,grid_mppi",
     )
     parser.add_argument(
         "--stress-planners",
         type=str,
-        default="astar,theta_star,dstar_lite,ad_star,dwa,mppi",
+        default="astar,theta_star,periodic_replan,aggressive_replan,incremental_dstar_lite,grid_mppi",
     )
     parser.add_argument(
         "--stress-scenario",

@@ -36,7 +36,7 @@ HARD_SCENARIOS = [
 ]
 
 # Adaptive planners that support replanning (best suited for hard/dynamic scenarios)
-PLANNERS = ["dstar_lite", "ad_star"]
+PLANNERS = ["periodic_replan", "aggressive_replan"]
 
 SEED = 42
 OUT_DIR = Path(__file__).resolve().parent.parent / "outputs" / "hard_gifs"

@@ -59,14 +59,19 @@ class AdversarialUAVModel:
             return risk
 
         r = self.safety_radius
+        r_inv = 1.0 / max(r, 1)
         for py, px in self._positions:
             iy = int(py)
             ix = int(px)
-            for dy in range(-r, r + 1):
-                for dx in range(-r, r + 1):
-                    ny, nx = iy + dy, ix + dx
-                    if 0 <= ny < H and 0 <= nx < W:
-                        d = abs(dy) + abs(dx)
-                        if d <= r:
-                            risk[ny, nx] = max(risk[ny, nx], float(1.0 - d / max(r, 1)))
+            y_lo = max(0, iy - r)
+            y_hi = min(H, iy + r + 1)
+            x_lo = max(0, ix - r)
+            x_hi = min(W, ix + r + 1)
+            for ny in range(y_lo, y_hi):
+                for nx in range(x_lo, x_hi):
+                    d = abs(ny - iy) + abs(nx - ix)
+                    if d <= r:
+                        v = float(1.0 - d * r_inv)
+                        if v > risk[ny, nx]:
+                            risk[ny, nx] = v
         return np.clip(risk, 0.0, 1.0)
