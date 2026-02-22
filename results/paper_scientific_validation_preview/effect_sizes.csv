@@ -1,7 +1,0 @@
-track,planner,baseline,cohen_d_success,mann_whitney_pvalue
-static,dstar_lite,astar,0.0,1.0
-static,hybrid_dstar_teb_lite,astar,0.0,1.0
-static,risk_mpc,astar,0.0,1.0
-dynamic,dstar_lite,astar,0.0,1.0
-dynamic,hybrid_dstar_teb_lite,astar,0.0,1.0
-dynamic,risk_mpc,astar,0.0,1.0

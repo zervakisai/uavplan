@@ -1,3 +1,0 @@
-track,num_seeds,mean_kendall_tau,rank_change_count,rank_change_rate,ci_overlap_pairs_vs_astar,ci_overlap_ratio_vs_astar
-dynamic,1,1.0,0,0.0,1,1.0
-static,1,1.0,0,0.0,1,1.0

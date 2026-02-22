@@ -1,6 +1,0 @@
-step,event_id,detected_time,first_response_time
-19,cp_corridor_checkpoint_3,0,19
-59,cp_perimeter_point_0,0,59
-79,cp_corridor_checkpoint_2,0,79
-110,cp_perimeter_point_1,0,110
-141,cp_injected_0,80,141

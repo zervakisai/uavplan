@@ -1,0 +1,21 @@
+{
+  "scenario_ids": [
+    "gov_civil_protection_easy",
+    "gov_critical_infrastructure_easy",
+    "gov_maritime_domain_easy"
+  ],
+  "planner_ids": [
+    "astar",
+    "theta_star"
+  ],
+  "seeds": [
+    0
+  ],
+  "deterministic": true,
+  "oracle_horizon": 0,
+  "oracle_planner_id": "astar",
+  "max_episode_steps": 1000,
+  "python_version": "3.14.2",
+  "num_episode_records": 6,
+  "num_aggregate_rows": 6
+}
