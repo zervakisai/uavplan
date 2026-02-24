@@ -87,6 +87,7 @@ class DStarLiteRealPlanner(BasePlanner):
         self._incremental_updates = 0
         self._current_path: list[GridPos] = []
         self._replan_count = 0
+        self._path_idx: int = 0  # UAV's current progress index into _current_path
 
     # ═══════════════════════════════════════════════════════════════
     # D* Lite core — Koenig & Likhachev 2002
@@ -456,12 +457,17 @@ class DStarLiteRealPlanner(BasePlanner):
         if smoke_mask is not None:
             dyn |= smoke_mask > 0.3
 
-        # Check if path is blocked
+        # Advance _path_idx to UAV's current position so lookahead only
+        # inspects cells the UAV has NOT yet visited.
         cx = int(current_pos[0]) if hasattr(current_pos, '__len__') else int(current_pos)
         cy = int(current_pos[1]) if hasattr(current_pos, '__len__') and len(current_pos) > 1 else 0
+        while (self._path_idx + 1 < len(self._current_path)
+               and self._current_path[self._path_idx] != (cx, cy)):
+            self._path_idx += 1
 
-        lookahead = min(15, len(self._current_path))
-        for i in range(lookahead):
+        start = self._path_idx
+        lookahead = min(15, len(self._current_path) - start)
+        for i in range(start, start + lookahead):
             if i >= len(self._current_path):
                 break
             px, py = self._current_path[i]
@@ -512,10 +518,12 @@ class DStarLiteRealPlanner(BasePlanner):
             self._compute_shortest_path()
             path = self._extract_path()
             self._current_path = path
+            self._path_idx = 0
             return path
 
         # Incremental replan
         result = self.replan_incremental(start)
+        self._path_idx = 0  # new path starts from current position
         return result.path
 
     def get_replan_metrics(self) -> dict[str, Any]:

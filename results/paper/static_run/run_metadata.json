@@ -14,7 +14,7 @@
   "deterministic": true,
   "oracle_horizon": 0,
   "oracle_planner_id": "astar",
-  "max_episode_steps": 1000,
+  "max_episode_steps": 500,
   "python_version": "3.14.2",
   "num_episode_records": 6,
   "num_aggregate_rows": 6

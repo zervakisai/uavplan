@@ -1,4 +1,13 @@
-"""Enhanced mission runner with UpdateBus + PlannerAdapter + SafetyMonitor.
+"""EXPERIMENTAL MODULE — Not used in reported benchmark results.
+
+This module is retained for demo/stakeholder visualization only.
+The canonical evaluation path is::
+
+    cli/benchmark.py → benchmark/runner.py → envs/urban.py
+
+Do not use ``plan_mission_v2`` for reproducible benchmark evaluation.
+
+Enhanced mission runner with UpdateBus + PlannerAdapter + SafetyMonitor.
 
 ``plan_mission_v2()`` is the upgraded mission runner that integrates:
   - UpdateBus for unified event pipeline

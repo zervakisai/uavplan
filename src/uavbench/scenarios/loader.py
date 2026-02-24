@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -56,6 +57,15 @@ def load_scenario(path: Path) -> ScenarioConfig:
         osm_tile_id = None
 
     # Build config (explicit mapping keeps it stable & V&V friendly)
+    # Emit deprecation warning if the now-ignored field is explicitly set
+    if "interdiction_reference_planner" in data:
+        warnings.warn(
+            "interdiction_reference_planner is deprecated and has no effect; "
+            "interdiction placement uses planner-agnostic BFS shortest path.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     cfg = ScenarioConfig(
         name=name,
         domain=domain,
@@ -119,6 +129,26 @@ def load_scenario(path: Path) -> ScenarioConfig:
         constraint_latency_steps=int(data.get("constraint_latency_steps", 0)),
         comms_dropout_prob=float(data.get("comms_dropout_prob", 0.0)),
         gnss_noise_sigma=float(data.get("gnss_noise_sigma", 0.0)),
+        # Restriction zone operational parameters
+        restrictions_mode=str(data.get("restrictions_mode", "incident")),
+        restrictions_max_coverage=float(data.get("restrictions_max_coverage", 0.30)),
+        restrictions_buffer_px=int(data.get("restrictions_buffer_px", 15)),
+        incident_point=cast(
+            tuple[int, int],
+            tuple(int(v) for v in data["incident_point"]),
+        ) if data.get("incident_point") is not None else None,
+        maritime_current_vec=cast(
+            tuple[float, float],
+            tuple(float(v) for v in data["maritime_current_vec"]),
+        ) if data.get("maritime_current_vec") is not None else None,
+        # Incident provenance metadata
+        incident_name=str(data.get("incident_name", "")),
+        incident_year=int(data.get("incident_year", 0)),
+        incident_summary=str(data.get("incident_summary", "")),
+        incident_refs=tuple(str(r) for r in data["incident_refs"]) if data.get("incident_refs") else (),
+        # Physics basis
+        cell_size_m=float(data.get("cell_size_m", 5.0)),
+        dt_s=float(data.get("dt_s", 1.0)),
         debug=bool(data.get("debug", False)),
         extra=dict(data.get("extra", {})) if "extra" in data else None,
     )

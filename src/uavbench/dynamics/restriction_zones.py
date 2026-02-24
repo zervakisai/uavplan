@@ -677,3 +677,35 @@ class MissionRestrictionModel:
     @zone_violations.setter
     def zone_violations(self, v: int) -> None:
         self._zone_violations = v
+
+    def relax_zones(self, shrink_px: int = 2) -> int:
+        """Shrink all active zone masks by *shrink_px* pixels (erosion).
+
+        Returns the number of cells freed.  Called by the feasibility
+        guardrail at depth-2 to reduce NFZ pressure without fully
+        clearing zones.  If a zone erodes to nothing it is deactivated.
+        """
+        freed = 0
+        for zone in self._zones:
+            if not zone.active or zone._mask is None:
+                continue
+            prev = int(np.sum(zone._mask))
+            # Iterative erosion: a cell stays True only if all 4-connected
+            # neighbours are also True.
+            eroded = zone._mask.copy()
+            for _ in range(shrink_px):
+                eroded = (
+                    eroded
+                    & np.roll(eroded, 1, axis=0)
+                    & np.roll(eroded, -1, axis=0)
+                    & np.roll(eroded, 1, axis=1)
+                    & np.roll(eroded, -1, axis=1)
+                )
+            zone._mask = eroded
+            now = int(np.sum(eroded))
+            freed += prev - now
+            if now == 0:
+                zone.active = False
+        if freed > 0:
+            self._rebuild_mask()
+        return freed

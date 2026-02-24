@@ -6,7 +6,7 @@ This is the full operational guide for understanding, running, validating, and d
 
 UAVBench is a deterministic 2D operational UAV navigation benchmark with:
 
-- 34 scenario IDs (fixed catalog)
+- 9 scenario IDs (3 static control, 6 dynamic stress — gov mission bank)
 - two paper tracks:
   - `static` control track
   - `dynamic` forced-replanning stress track
@@ -16,6 +16,19 @@ UAVBench is a deterministic 2D operational UAV navigation benchmark with:
 - paper export pipeline (CSV + LaTeX + reproducibility manifest + ablations)
 
 ## 2. End-to-End Pipeline
+
+### Canonical Evaluation Path
+
+All reported benchmark results are produced exclusively through:
+
+```
+cli/benchmark.py → benchmark/runner.py → envs/urban.py
+```
+
+The `missions/runner_v2.py` module is experimental (demo/stakeholder
+visualization only) and is **not** part of the canonical evaluation path.
+
+### Pipeline Steps
 
 1. Scenario YAML loads into `ScenarioConfig`.
 2. `UrbanEnv` builds static map + dynamic layers.
@@ -166,7 +179,49 @@ Logged proof fields:
 - `dynamic_block_entropy`
 - `interdiction_hit_rate`
 
-## 9. Cheat Sheet Commands
+## 9. Architecture Guarantees
+
+The following invariants hold for every episode produced by the canonical
+evaluation path (`cli/benchmark.py → benchmark/runner.py → envs/urban.py`):
+
+| # | Guarantee | Enforcement |
+|---|-----------|-------------|
+| AG-1 | **Planner-agnostic interdiction placement.** Forced corridor breaks are computed from a single reference path (BFS) at reset. No planner sees a different interdiction schedule. | `UrbanEnv._init_forced_interdictions` |
+| AG-2 | **Deterministic dynamic evolution.** Given the same seed, map, and scenario config, the sequence of fire growth, NFZ expansion, traffic closures, and population drift is identical across planners and runs. | Seeded RNGs in `DynamicsManager` and `InteractionEngine` |
+| AG-3 | **Feasibility guardrail with logged proof.** After every dynamic update, a multi-depth reachability cascade ensures goal reachability. Every relaxation step is recorded in `guardrail_status`. | `UrbanEnv._enforce_feasibility_guardrail` |
+| AG-4 | **Snapshot equality contract.** Every planner receives the same obstacle/risk snapshot for a given planning call. The snapshot is frozen before the planner is invoked and is not mutated during planning. | `benchmark/runner.py` snapshot capture |
+| AG-5 | **Time budget enforcement.** Planning calls are bounded by `plan_budget_static_ms` / `plan_budget_dynamic_ms`. Exceeding the budget results in a logged timeout; the planner does not receive extra compute. | `PlannerInterface` timeout wrapper |
+| AG-6 | **Counter-based guardrail skip.** The feasibility guardrail uses an integer topology-change counter to avoid redundant BFS when the blocking topology has not changed since the last check. This is semantically equivalent to a hash check but avoids O(n) hashing of the full mask. | `_topology_change_counter` / `_guardrail_prev_topo_version` in `UrbanEnv` |
+
+## 10. Known Non-Goals
+
+The following are explicitly out of scope for UAVBench v1.0.0. They are
+documented here to set correct expectations for reviewers and users:
+
+1. **No 3-D physics or flight dynamics.** UAVBench operates on a 2-D
+   grid world. Altitude is not modelled; aerodynamic effects, wind, and
+   battery discharge are abstracted away.
+
+2. **No full agent-based traffic simulation.** Traffic closures are
+   generated procedurally from seeded models, not from a microscopic
+   traffic simulator (e.g., SUMO). The closure patterns are sufficient
+   for corridor-blocking stress tests but do not replicate real traffic
+   dynamics.
+
+3. **No bidirectional hazard loop beyond documented chains.** Causal
+   interactions flow in documented directions (fire → NFZ expansion,
+   fire → road closures, congestion → risk amplification). Reverse
+   couplings (e.g., UAV presence affecting fire spread) are not modelled.
+
+4. **No multi-agent coordination.** The benchmark evaluates a single UAV
+   agent. Multi-UAV deconfliction, task allocation, and communication
+   constraints are not part of the evaluation protocol.
+
+5. **No real-time hardware-in-the-loop.** All planners run in simulated
+   time with deterministic stepping. Wall-clock timing is logged for
+   transparency but does not affect simulation progression.
+
+## 11. Cheat Sheet Commands
 
 Run from:
 
@@ -276,7 +331,7 @@ Quick check:
 cat /Users/konstantinos/Dev/uavbench/results/paper_scientific_validation_full/runtime_profile.json
 ```
 
-## 10. Demo Plan (Professor Meeting)
+## 12. Demo Plan (Professor Meeting)
 
 ### Segment A (2 min): credibility
 
@@ -300,7 +355,7 @@ cat /Users/konstantinos/Dev/uavbench/results/paper_scientific_validation_full/ru
 1. Run exporter command.
 2. Open generated CSV/LaTeX/manifest files.
 
-## 11. Legacy docs
+## 13. Legacy docs
 
 Older root markdown files were archived to:
 

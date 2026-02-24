@@ -1,7 +1,7 @@
 scenario_id,planner_id,num_seeds,success_count,success_rate,path_length_mean,path_length_std,path_length_min,path_length_max,path_length_ci_lower,path_length_ci_upper,planning_time_mean_ms,planning_time_std_ms,replans_mean,replans_std,collision_mean,collision_rate,nfz_violation_mean,nfz_violation_rate,fire_exposure_mean,traffic_proximity_mean,intruder_proximity_mean,regret_length_mean,regret_length_std,regret_risk_mean,regret_risk_std,oracle_planner_id
-gov_civil_protection_easy,astar,1,1,1.0,801.0,0.0,801.0,801.0,801.0,801.0,348.8962500123307,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-gov_civil_protection_easy,theta_star,1,1,1.0,73.0,0.0,73.0,73.0,73.0,73.0,27.697207988239825,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-gov_critical_infrastructure_easy,astar,1,1,1.0,801.0,0.0,801.0,801.0,801.0,801.0,74.26758308429271,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-gov_critical_infrastructure_easy,theta_star,1,1,1.0,103.0,0.0,103.0,103.0,103.0,103.0,24.11966596264392,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-gov_maritime_domain_easy,astar,1,1,1.0,452.0,0.0,452.0,452.0,452.0,452.0,51.09908303711563,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
-gov_maritime_domain_easy,theta_star,1,1,1.0,20.0,0.0,20.0,20.0,20.0,20.0,1306.762041989714,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+gov_civil_protection_easy,astar,1,1,1.0,801.0,0.0,801.0,801.0,801.0,801.0,350.28383403550833,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+gov_civil_protection_easy,theta_star,1,1,1.0,73.0,0.0,73.0,73.0,73.0,73.0,27.895124978385866,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+gov_critical_infrastructure_easy,astar,1,1,1.0,801.0,0.0,801.0,801.0,801.0,801.0,74.78675001766533,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+gov_critical_infrastructure_easy,theta_star,1,1,1.0,103.0,0.0,103.0,103.0,103.0,103.0,24.038500036112964,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+gov_maritime_domain_easy,astar,1,1,1.0,452.0,0.0,452.0,452.0,452.0,452.0,51.86808295547962,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar
+gov_maritime_domain_easy,theta_star,1,1,1.0,20.0,0.0,20.0,20.0,20.0,20.0,1304.0063329972327,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,,,,,astar

@@ -53,6 +53,7 @@ class AdaptiveAStarPlanner:
         self._steps_since_replan: int = 0
         self._replan_events: List[dict[str, Any]] = []
         self._total_replans: int = 0
+        self._path_idx: int = 0  # UAV's current progress index into _current_path
 
     def plan(self, start: GridPos, goal: GridPos) -> PlanResult:
         """Initial plan (same interface as AStarPlanner)."""
@@ -60,6 +61,7 @@ class AdaptiveAStarPlanner:
         self._steps_since_replan = 0
         self._replan_events = []
         self._total_replans = 0
+        self._path_idx = 0
 
         planner = AStarPlanner(self.heightmap, self.no_fly)
         t0 = time.monotonic()
@@ -95,9 +97,16 @@ class AdaptiveAStarPlanner:
         """
         self._steps_since_replan += 1
 
+        # Advance _path_idx to UAV's current position so lookahead only
+        # inspects cells the UAV has NOT yet visited.
+        cx, cy = int(current_pos[0]), int(current_pos[1])
+        while (self._path_idx + 1 < len(self._current_path)
+               and self._current_path[self._path_idx] != (cx, cy)):
+            self._path_idx += 1
+
         # 1. Check if upcoming path is blocked
         if self._is_path_blocked(fire_mask, traffic_positions, smoke_mask,
-                                 extra_obstacles):
+                                 extra_obstacles, path_from=self._path_idx):
             return True, "path_blocked"
 
         # 2. Check adaptive interval
@@ -169,6 +178,7 @@ class AdaptiveAStarPlanner:
 
         if new_path:
             self._current_path = new_path
+            self._path_idx = 0  # new path starts from current position
 
         return new_path
 
@@ -187,13 +197,19 @@ class AdaptiveAStarPlanner:
         traffic_positions: Optional[np.ndarray],
         smoke_mask: Optional[np.ndarray] = None,
         extra_obstacles: Optional[np.ndarray] = None,
+        path_from: int = 0,
     ) -> bool:
-        """Check if upcoming path segment intersects obstacles."""
+        """Check if upcoming path segment intersects obstacles.
+
+        ``path_from`` is the UAV's current progress index so cells already
+        traversed (indices < path_from) are never checked.
+        """
         if not self._current_path:
             return False
 
-        end_idx = min(self.cfg.lookahead_steps, len(self._current_path))
-        upcoming = self._current_path[:end_idx]
+        start = max(0, path_from)
+        end_idx = min(start + self.cfg.lookahead_steps, len(self._current_path))
+        upcoming = self._current_path[start:end_idx]
 
         for x, y in upcoming:
             if fire_mask is not None and fire_mask[y, x]:

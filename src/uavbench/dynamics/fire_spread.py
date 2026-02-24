@@ -225,3 +225,17 @@ class FireSpreadModel:
     def total_affected(self) -> int:
         """Number of cells burning or burned out."""
         return int((self._state > UNBURNED).sum())
+
+    def force_cell_state(self, x: int, y: int, state: int) -> None:
+        """FOR TESTS ONLY — directly set cell (x, y) to a fire state constant.
+
+        Args:
+            x: Column index (0-indexed).
+            y: Row index (0-indexed).
+            state: One of UNBURNED (0), BURNING (1), BURNED_OUT (2).
+
+        This bypasses normal fire spread physics and should only be called in
+        unit/integration tests to inject fire state without running the full
+        fire-spread simulation.
+        """
+        self._state[int(y), int(x)] = int(state)

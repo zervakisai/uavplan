@@ -66,7 +66,7 @@ HYPOTHESES = [
         "id": "H3",
         "claim": "Behaviorally distinct adaptive planners produce statistically different replan trigger distributions.",
         "metric": "total_replans",
-        "comparison": ("dstar_lite", "mppi"),
+        "comparison": ("incremental_dstar_lite", "grid_mppi"),
         "direction": "different",
         "falsifiable": "Falsified if Cohen's d < 0.5 between any two adaptive planner pairs.",
     },
@@ -96,11 +96,11 @@ HYPOTHESES = [
     },
     {
         "id": "H7",
-        "claim": "MPPI planner reduces replan storm oscillation compared to DWA.",
+        "claim": "Incremental D* Lite requires fewer total replans than periodic-replan A* on dynamic scenarios.",
         "metric": "total_replans",
-        "comparison": ("mppi", "dwa"),
+        "comparison": ("incremental_dstar_lite", "periodic_replan"),
         "direction": "less",
-        "falsifiable": "Falsified if mppi shows >= replans as dwa.",
+        "falsifiable": "Falsified if incremental_dstar_lite shows >= replans as periodic_replan.",
     },
 ]
 
@@ -124,10 +124,10 @@ def generate_validation_report(
         pid = r.get("planner", r.get("planner_id", "unknown"))
         by_planner.setdefault(pid, []).append(r)
 
-    # Define planner groups
+    # Define planner groups — MUST use honest (paper) planner IDs
     static_planners = {"astar", "theta_star"}
-    adaptive_planners = {"dstar_lite", "ad_star", "dwa", "mppi"}
-    risk_aware_planners = {"mppi"}
+    adaptive_planners = {"periodic_replan", "aggressive_replan", "incremental_dstar_lite", "grid_mppi"}
+    risk_aware_planners = {"grid_mppi"}
 
     static_group = [r for pid in static_planners for r in by_planner.get(pid, [])]
     adaptive_group = [r for pid in adaptive_planners for r in by_planner.get(pid, [])]

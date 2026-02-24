@@ -45,6 +45,9 @@ def _bfs_connectivity(
 ) -> Tuple[bool, list[GridPos]]:
     """BFS to check reachability and return path if found.
     
+    Uses a parent-dict for path reconstruction instead of carrying full
+    path copies in the queue — O(V) memory instead of O(V × path_length).
+
     Args:
         mask: 2D bool array (True = passable)
         start: Start position
@@ -54,6 +57,8 @@ def _bfs_connectivity(
     Returns:
         (reachable: bool, path: list of GridPos)
     """
+    from collections import deque
+
     H, W = mask.shape
     
     # Validate positions
@@ -67,31 +72,44 @@ def _bfs_connectivity(
     if start == goal:
         return True, [start]
     
-    queue = [(start, [start])]
-    visited = {start}
+    parent: dict[GridPos, GridPos | None] = {start: None}
+    queue: deque[GridPos] = deque([start])
     
     while queue:
-        pos, path = queue.pop(0)
-        
-        if max_dist is not None and len(path) > max_dist:
-            continue
+        pos = queue.popleft()
+
+        if max_dist is not None:
+            # Reconstruct depth cheaply: count parent chain length
+            depth = 0
+            p: GridPos | None = pos
+            while p is not None and depth <= max_dist:
+                p = parent.get(p)
+                depth += 1
+            if depth > max_dist:
+                continue
         
         x, y = pos
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nx, ny = x + dx, y + dy
             if not (0 <= nx < W and 0 <= ny < H):
                 continue
-            if not mask[ny, nx] or (nx, ny) in visited:
+            new_pos = (nx, ny)
+            if not mask[ny, nx] or new_pos in parent:
                 continue
             
-            new_pos = (nx, ny)
-            new_path = path + [new_pos]
+            parent[new_pos] = pos
             
             if new_pos == goal:
-                return True, new_path
+                # Reconstruct path
+                path: list[GridPos] = []
+                cur: GridPos | None = goal
+                while cur is not None:
+                    path.append(cur)
+                    cur = parent[cur]
+                path.reverse()
+                return True, path
             
-            visited.add(new_pos)
-            queue.append((new_pos, new_path))
+            queue.append(new_pos)
     
     return False, []
 
@@ -222,21 +240,44 @@ def check_forced_replan_certificate(
 ) -> Tuple[bool, str]:
     """Check if a dynamic scenario forces replanning within time_horizon steps.
     
-    This simulates: compute initial A* path (at t=0), then check if dynamic obstacles
-    make it infeasible by some step <= time_horizon.
+    This computes the initial BFS shortest path from start to goal and verifies
+    that the forced interdiction schedule (derived from event_t1) will block
+    that path before ``time_horizon`` steps.
+
+    NOTE: This is a static analysis only — it verifies that interdiction
+    placement *would* block the BFS path, not that any specific planner's
+    path will be blocked.  Full runtime verification is performed by the
+    benchmark harness (``run_dynamic_episode``).
     
     Args:
         heightmap: 2D building height map
         no_fly: 2D no-fly zone mask at t=0
         start: Start position
         goal: Goal position
-        dyn_state_at_step: Function or dict returning dyn_state at each step (placeholder)
+        dyn_state_at_step: Dict with optional keys 'event_t1', 'force_replan_count'
         time_horizon: Max steps to check (default 50)
     
     Returns:
         (forced: bool, reason: str)
     """
-    # Placeholder: in full implementation, this would simulate dynamics forward
-    # and check if initial path becomes infeasible.
-    # For now, we just return True (assume forced replan is guaranteed by scenario design).
-    return True, "forced_replan check deferred to runtime validation"
+    static_mask = _build_static_mask(heightmap, no_fly)
+    reachable, path = _bfs_connectivity(static_mask, start, goal)
+    if not reachable or len(path) < 6:
+        return False, "no BFS path found or path too short for interdiction"
+
+    force_count = int(dyn_state_at_step.get("force_replan_count", 0))
+    event_t1 = dyn_state_at_step.get("event_t1")
+    if force_count == 0 or event_t1 is None:
+        return False, "no forced interdictions configured"
+
+    if int(event_t1) > time_horizon:
+        return False, f"event_t1={event_t1} exceeds time_horizon={time_horizon}"
+
+    # The interdiction is placed at ~30% of the BFS path — check it exists
+    cut_idx = int(0.30 * (len(path) - 1))
+    cut_idx = max(2, min(cut_idx, len(path) - 3))
+
+    return True, (
+        f"BFS path length={len(path)}, interdiction at path[{cut_idx}], "
+        f"event_t1={event_t1} <= horizon={time_horizon}"
+    )

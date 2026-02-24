@@ -106,11 +106,24 @@ class UrbanEnv(UAVBenchEnv):
         self._emergency_corridor_active = False
 
         # Guardrail topology-change tracking: only run BFS when blocking
-        # mask has changed since last check.
-        self._guardrail_prev_blocking_hash: int | None = None
+        # mask has changed since last check.  Uses an integer counter
+        # (incremented whenever a dynamic layer steps or a mask is
+        # mutated) instead of hashing the full mask array.
+        self._topology_change_counter: int = 0
+        self._guardrail_prev_topo_version: int | None = None
         self._guardrail_last_reachable: bool = True
         self._guardrail_bfs_calls: int = 0
         self._guardrail_bfs_skips: int = 0
+
+        # Plan instrumentation — updated by benchmark runner via set_plan_info()
+        self._plan_len: int = 0
+        self._plan_stale: bool = False
+        self._plan_reason: str = "none"
+        self._plan_snapshot_age: int = 0
+
+        # Forced interdiction lifecycle tracking (paper V&V)
+        self._forced_interdiction_triggered_steps: list[int] = []
+        self._forced_block_cleared_by_guardrail: bool = False
 
         # ---------- Initialize dynamic layers ----------
         self._fire_model: FireSpreadModel | None = None
@@ -501,6 +514,43 @@ class UrbanEnv(UAVBenchEnv):
         self._risk_map = data["risk_map"]
 
 
+    @property
+    def agent_xy(self) -> tuple[int, int]:
+        """Current agent position as (x, y) grid cell tuple. Public stable API."""
+        return (int(self._agent_pos[0]), int(self._agent_pos[1]))
+
+    @property
+    def goal_xy(self) -> tuple[int, int]:
+        """Goal position as (x, y) grid cell tuple. Public stable API."""
+        return (int(self._goal_pos[0]), int(self._goal_pos[1]))
+
+    def set_plan_info(
+        self,
+        plan_len: int,
+        plan_stale: bool = False,
+        plan_reason: str = "initial",
+        snapshot_age_steps: int = 0,
+    ) -> None:
+        """Called by the benchmark runner after each (re)plan to record plan state.
+
+        Args:
+            plan_len: Number of waypoints remaining in the current plan
+                      (len(path) for initial plan; len(path) - path_idx after replan).
+            plan_stale: True when the plan could not be refreshed this step
+                        (e.g. budget_exceeded, planner returned empty path).
+            plan_reason: Reason for the last plan/replan call.
+                         Enum: "initial" | "cadence" | "path_invalidated" |
+                               "forced_event" | "stuck" | "budget_exceeded" |
+                               "planner_signal" | "dropout" | "latency" | "none".
+            snapshot_age_steps: Age of the dynamic-state snapshot used for planning
+                                 (0 = current; >0 = stale due to P1 constraint latency
+                                 or comms dropout).
+        """
+        self._plan_len = int(plan_len)
+        self._plan_stale = bool(plan_stale)
+        self._plan_reason = str(plan_reason)
+        self._plan_snapshot_age = int(snapshot_age_steps)
+
     def _step_impl(self, action: int):
         """Urban step: 2D moves + explicit altitude up/down, with building/no-fly constraints.
 
@@ -515,6 +565,8 @@ class UrbanEnv(UAVBenchEnv):
         p_building = 5.0    # penalty for attempted building collision
         p_no_fly = 8.0      # penalty for attempted no-fly violation
         r_goal = 50.0       # goal bonus
+        # Episode timeout: 4× map side-length gives ample time for Manhattan
+        # traversal plus dynamic detours on 500×500 grids (max_steps = 2000).
         max_steps = 4 * int(self.map_size)
         next_step_idx = self._step_count + 1
 
@@ -636,6 +688,7 @@ class UrbanEnv(UAVBenchEnv):
             if nfz_mask[ny, nx]:
                 accepted = False
                 attempted_nfz_block = True
+                self._dynamic_nfz.zone_violations += 1
                 self.log_event("dynamic_nfz_block", x=nx, y=ny, z=nz)
 
         if accepted:
@@ -683,8 +736,10 @@ class UrbanEnv(UAVBenchEnv):
         if self._intruder_model is not None:
             self._intruder_model.step(dt=1.0)
         fire_mask = self._fire_model.fire_mask if self._fire_model is not None else None
+        blocking_changed = False
         if self._dynamic_nfz is not None:
             self._dynamic_nfz.step(dt=1.0, fire_mask=fire_mask)
+            blocking_changed = True
 
         # Causal interactions update
         traffic_positions = (
@@ -708,7 +763,10 @@ class UrbanEnv(UAVBenchEnv):
                 dynamic_nfz=self._dynamic_nfz,
                 risk_map=(self._population_model.risk_map if self._population_risk_enabled else np.zeros((H, W), dtype=np.float32)),
             )
+            prev_closures = self._traffic_closure_mask
             self._traffic_closure_mask = self._interaction_engine.traffic_closure_mask
+            if not np.array_equal(prev_closures, self._traffic_closure_mask):
+                blocking_changed = True
         else:
             self._interaction_metrics_last = {
                 "step_idx": float(next_step_idx),
@@ -723,6 +781,12 @@ class UrbanEnv(UAVBenchEnv):
                 "nfz_cells": 0.0,
             }
             self._traffic_closure_mask.fill(False)
+
+        # Increment topology counter only when blocking layers changed,
+        # so the guardrail can skip redundant BFS on steps with no
+        # topological mutation.
+        if blocking_changed:
+            self._topology_change_counter += 1
 
         pop_risk = (
             self._population_model.risk_map
@@ -898,6 +962,20 @@ class UrbanEnv(UAVBenchEnv):
             "attempted_intruder_block": attempted_intruder_block,
             "attempted_nfz_block": attempted_nfz_block,
             "accepted_move": bool(accepted),
+            # Unified rejection reason (first blocking layer; "none" if move accepted)
+            "reject_reason": (
+                "building" if attempted_building_collision else
+                "no_fly" if attempted_no_fly else
+                "forced_block" if attempted_forced_block else
+                "traffic_closure" if attempted_traffic_closure else
+                "fire" if attempted_fire_block else
+                "traffic" if attempted_traffic_block else
+                "moving_target" if attempted_target_block else
+                "intruder" if attempted_intruder_block else
+                "dynamic_nfz" if attempted_nfz_block else
+                "none"
+            ),
+            "reject_cell": (int(nx), int(ny)) if not accepted else None,
 
             # State for metrics (path length, energy proxy κ.λπ. τα χτίζεις έξω)
             "agent_pos": (int(ax2), int(ay2), int(az2)),
@@ -915,6 +993,10 @@ class UrbanEnv(UAVBenchEnv):
             "risk_cost": float(self._risk_cost_map[ay2, ax2]),
             "forced_replans_triggered": int(self._forced_replans_triggered),
             "interdiction_hit_rate": float(self._interdiction_hits / max(self._interdiction_total, 1)),
+            "forced_block_active": bool(np.any(self._forced_block_mask)),
+            "forced_block_area": int(np.sum(self._forced_block_mask)),
+            "forced_block_cleared_by_guardrail": bool(self._forced_block_cleared_by_guardrail),
+            "forced_interdiction_triggered_steps": list(self._forced_interdiction_triggered_steps),
             "feasible_after_guardrail": bool(guardrail_status.get("feasible_after_guardrail", True)),
             "guardrail_corridor_fallback_used": bool(guardrail_status.get("corridor_fallback_used", False)),
             "guardrail_depth": int(guardrail_status.get("guardrail_depth", 0)),
@@ -925,6 +1007,12 @@ class UrbanEnv(UAVBenchEnv):
             "vehicle_near_miss_count": int(vehicle_near_miss_count),
             "nfz_violation_time": float(nfz_violation_time),
 
+            # Plan instrumentation (set by benchmark runner via set_plan_info)
+            "plan_len": int(self._plan_len),
+            "plan_stale": bool(self._plan_stale),
+            "plan_reason": self._plan_reason,
+            "snapshot_age_steps": int(self._plan_snapshot_age),
+
             # Optional debugging
             "step_index": int(self._step_count + 1),
         }
@@ -933,13 +1021,20 @@ class UrbanEnv(UAVBenchEnv):
     def _init_forced_interdictions(self, start_xy: GridPos, goal_xy: GridPos) -> None:
         """Prepare deterministic 1-2 path interdictions for dynamic paper track.
 
+        This is the canonical inline implementation used by the benchmark
+        pipeline.  It intentionally does NOT delegate to
+        ``ForcedReplanScheduler`` (which is used only by the experimental
+        ``runner_v2`` demo module) in order to keep the canonical path
+        free of UpdateBus/adapter dependencies and to guarantee
+        deterministic interdiction placement with zero overhead.
+
         Interdiction placement uses a planner-agnostic BFS shortest path
         on the traversable grid (buildings + NFZ removed).  This is the
         graph-theoretic shortest path — not tied to any named planner —
         so interdiction placement is fair across all planner algorithms.
 
-        Legacy ``interdiction_reference_planner`` config is still accepted
-        for backward compatibility but is no longer used for placement.
+        The ``interdiction_reference_planner`` config field is accepted
+        for backward compatibility but has no effect on placement.
         """
         from collections import deque
 
@@ -1073,17 +1168,20 @@ class UrbanEnv(UAVBenchEnv):
             event["triggered"] = True
             self._forced_replans_triggered += 1
             self._interdiction_total += 1
+            self._topology_change_counter += 1  # forced block mask mutated
             if hit_reference:
                 self._interdiction_hits += 1
+            self._forced_interdiction_triggered_steps.append(int(step_idx))
             self.log_event(
                 event["name"],
+                _step_override=step_idx,  # authoritative: exact step scheduled in paper protocol
                 x=int(cx),
                 y=int(cy),
-                step=step_idx,
+                radius=int(radius),
                 reference_planner=event.get("reference_planner", "bfs_shortest_path"),
                 reference_hit=bool(hit_reference),
             )
-            self.log_event("forced_replan_triggered", reason=event["name"], step=step_idx)
+            self.log_event("forced_replan_triggered", _step_override=step_idx, reason=event["name"])
 
     def _build_emergency_corridor_mask(
         self,
@@ -1103,7 +1201,10 @@ class UrbanEnv(UAVBenchEnv):
                 t = k / steps
                 x = int(round(x0 + (x1 - x0) * t))
                 y = int(round(y0 + (y1 - y0) * t))
-                static_path.append((x, y))
+                # Only include passable cells in the linear fallback corridor
+                if 0 <= y < self.map_size and 0 <= x < self.map_size:
+                    if self._heightmap[y, x] <= 0 and not self._no_fly_mask[y, x]:
+                        static_path.append((x, y))
 
         for x, y in static_path:
             for dy in range(-width, width + 1):
@@ -1122,6 +1223,19 @@ class UrbanEnv(UAVBenchEnv):
             mask |= self._fire_model.fire_mask
         if self._traffic_model is not None and self.config.traffic_blocks_movement:
             mask |= self._traffic_model.get_occupancy_mask((self.map_size, self.map_size), buffer_radius=5)
+        if self._moving_target is not None:
+            # Moving-target buffer: step() rejects moves within buffer_radius,
+            # so the guardrail must treat those cells as blocked too.
+            tp = self._moving_target.current_position
+            tx, ty = int(tp[0]), int(tp[1])
+            r = int(self._moving_target.buffer_radius)
+            sz = self.map_size
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    if abs(dx) + abs(dy) <= r:
+                        ny, nx = ty + dy, tx + dx
+                        if 0 <= ny < sz and 0 <= nx < sz:
+                            mask[ny, nx] = True
         if self._intruder_model is not None:
             mask |= self._intruder_model.get_buffer_mask((self.map_size, self.map_size))
         if self._dynamic_nfz is not None:
@@ -1136,10 +1250,11 @@ class UrbanEnv(UAVBenchEnv):
         Returns guardrail_depth: 0=no action, 1=forced blocks cleared,
         2=NFZ/closures relaxed, 3=emergency corridor fallback.
 
-        Optimization: skips BFS when blocking topology is unchanged from
-        the last check AND the previous check confirmed reachability.
-        This is safe because connected-component membership is invariant
-        when the mask doesn't change.
+        Optimization: skips BFS when the topology change counter has not
+        been incremented since the last check AND that check confirmed
+        reachability.  The counter is incremented whenever dynamic layers
+        step, interaction engine updates closures, or interdictions fire.
+        This is O(1) and avoids the previous O(N) byte-hash approach.
         """
         status: dict[str, Any] = {
             "reachability_failed_before_relax": False,
@@ -1152,14 +1267,12 @@ class UrbanEnv(UAVBenchEnv):
         relaxed = False
         depth = 0
 
-        runtime_mask = self._build_runtime_blocking_mask()
-        free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
-
-        # Topology-change detection: skip expensive BFS if blocking mask
-        # is unchanged AND previous check confirmed reachability.
-        blocking_hash = hash(runtime_mask.data.tobytes())
+        # Topology-change detection: skip expensive BFS if no blocking
+        # layer has changed since the last check AND previous check
+        # confirmed reachability.
+        topo_version = self._topology_change_counter
         if (
-            self._guardrail_prev_blocking_hash == blocking_hash
+            self._guardrail_prev_topo_version == topo_version
             and self._guardrail_last_reachable
         ):
             # Topology unchanged and was reachable → still reachable
@@ -1168,9 +1281,12 @@ class UrbanEnv(UAVBenchEnv):
             self._last_guardrail_status = status
             return 0
 
+        runtime_mask = self._build_runtime_blocking_mask()
+        free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
+
         reachable = self._is_reachable(free, current_xy, goal_xy)
         self._guardrail_bfs_calls += 1
-        self._guardrail_prev_blocking_hash = blocking_hash
+        self._guardrail_prev_topo_version = topo_version
         self._guardrail_last_reachable = reachable
         if reachable:
             self._guardrail_unreachable_streak = 0
@@ -1184,6 +1300,7 @@ class UrbanEnv(UAVBenchEnv):
         forced_before = int(np.sum(self._forced_block_mask))
         if forced_before > 0:
             self._forced_block_mask[:] = False
+            self._forced_block_cleared_by_guardrail = True
             relaxation["forced_blocks_cleared"] = forced_before
             relaxed = True
             runtime_mask = self._build_runtime_blocking_mask()
@@ -1194,26 +1311,27 @@ class UrbanEnv(UAVBenchEnv):
                 status["feasible_after_guardrail"] = True
                 status["guardrail_depth"] = depth
                 self._guardrail_unreachable_streak = 0
-                self._guardrail_prev_blocking_hash = None  # invalidate cache
+                self._guardrail_prev_topo_version = None  # invalidate cache
                 self._guardrail_last_reachable = True
                 self._last_guardrail_status = status
                 return depth
 
         # Step 2 (depth=2): reduce NFZ growth / closures this tick.
         depth = 2
-        nfz_rate_delta = 0.0
-        nfz_radius_delta = 0.0
+        nfz_cells_freed = 0
         if self._dynamic_nfz is not None:
-            if hasattr(self._dynamic_nfz, "expansion_rate"):
-                prev_rate = float(getattr(self._dynamic_nfz, "expansion_rate"))
-                new_rate = max(0.1, prev_rate * 0.70)
-                setattr(self._dynamic_nfz, "expansion_rate", float(new_rate))
-                nfz_rate_delta = prev_rate - new_rate
-            if hasattr(self._dynamic_nfz, "radii"):
-                prev_radii = np.asarray(getattr(self._dynamic_nfz, "radii"), dtype=np.float32)
-                new_radii = np.maximum(prev_radii - 2.0, 4.0)
-                setattr(self._dynamic_nfz, "radii", new_radii)
-                nfz_radius_delta = float(np.mean(prev_radii - new_radii))
+            if hasattr(self._dynamic_nfz, "relax_zones"):
+                nfz_cells_freed = self._dynamic_nfz.relax_zones(shrink_px=2)
+            else:
+                # Legacy fallback for non-MissionRestrictionModel NFZ models
+                if hasattr(self._dynamic_nfz, "expansion_rate"):
+                    prev_rate = float(getattr(self._dynamic_nfz, "expansion_rate"))
+                    new_rate = max(0.1, prev_rate * 0.70)
+                    setattr(self._dynamic_nfz, "expansion_rate", float(new_rate))
+                if hasattr(self._dynamic_nfz, "radii"):
+                    prev_radii = np.asarray(getattr(self._dynamic_nfz, "radii"), dtype=np.float32)
+                    new_radii = np.maximum(prev_radii - 2.0, 4.0)
+                    setattr(self._dynamic_nfz, "radii", new_radii)
         closures_removed = 0
         if np.any(self._traffic_closure_mask):
             to_relax = self._traffic_closure_mask & self._emergency_corridor_mask
@@ -1223,9 +1341,8 @@ class UrbanEnv(UAVBenchEnv):
             else:
                 closures_removed = int(np.sum(self._traffic_closure_mask))
                 self._traffic_closure_mask[:] = False
-        if nfz_rate_delta > 0.0 or nfz_radius_delta > 0.0 or closures_removed > 0:
-            relaxation["nfz_rate_delta"] = round(float(nfz_rate_delta), 6)
-            relaxation["nfz_radius_delta"] = round(float(nfz_radius_delta), 6)
+        if nfz_cells_freed > 0 or closures_removed > 0:
+            relaxation["nfz_cells_freed"] = nfz_cells_freed
             relaxation["closures_removed"] = int(closures_removed)
             relaxed = True
 
@@ -1237,7 +1354,7 @@ class UrbanEnv(UAVBenchEnv):
             status["feasible_after_guardrail"] = True
             status["guardrail_depth"] = depth
             self._guardrail_unreachable_streak = 0
-            self._guardrail_prev_blocking_hash = None  # invalidate cache
+            self._guardrail_prev_topo_version = None  # invalidate cache
             self._guardrail_last_reachable = True
             self._last_guardrail_status = status
             return depth
@@ -1267,7 +1384,7 @@ class UrbanEnv(UAVBenchEnv):
         status["relaxation_applied"] = relaxation
         status["feasible_after_guardrail"] = bool(reachable)
         status["guardrail_depth"] = depth
-        self._guardrail_prev_blocking_hash = None  # invalidate cache after relaxation
+        self._guardrail_prev_topo_version = None  # invalidate cache after relaxation
         self._guardrail_last_reachable = bool(reachable)
         if reachable:
             self._guardrail_unreachable_streak = 0
@@ -1433,6 +1550,11 @@ class UrbanEnv(UAVBenchEnv):
             "reference_path_length": int(len(self._reference_path)),
             "emergency_corridor_active": bool(self._emergency_corridor_active),
         }
+        # Forced block lifecycle (paper V&V)
+        state["forced_block_active"] = bool(np.any(self._forced_block_mask))
+        state["forced_block_area"] = int(np.sum(self._forced_block_mask))
+        state["forced_block_cleared_by_guardrail"] = bool(self._forced_block_cleared_by_guardrail)
+        state["forced_interdiction_triggered_steps"] = list(self._forced_interdiction_triggered_steps)
 
         # Cache for this step
         self._dynamic_state_cache = state
