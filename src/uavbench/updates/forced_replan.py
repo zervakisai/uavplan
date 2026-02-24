@@ -1,5 +1,14 @@
 """ForcedReplanScheduler: guarantees ≥2 replans per episode.
 
+.. note::
+
+    This scheduler is used only by the experimental ``runner_v2``
+    mission demo module.  The canonical benchmark pipeline
+    (``cli/benchmark.py → envs/urban.py``) uses inline interdiction
+    logic in ``UrbanEnv._init_forced_interdictions`` for performance
+    and determinism.  Both implementations produce identical
+    planner-agnostic BFS-based interdiction placement.
+
 "φρόντισε οπως το ειχαμε κανει να αναγκάζεται σιγουρα να κανει 2 φορες replan"
 
 Strategy:

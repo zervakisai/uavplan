@@ -1,3 +1,15 @@
+"""Canonical evaluation entrypoint for UAVBench benchmark results.
+
+Canonical Evaluation Path::
+
+    cli/benchmark.py → benchmark/runner.py → envs/urban.py
+
+All results reported in the paper are produced exclusively through this
+module's ``run_planner_once``, ``run_dynamic_episode``, and
+``run_mission_episode`` functions.  The ``missions/runner_v2.py`` module
+is an *experimental* demo runner and is NOT used for reported results.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -132,11 +144,15 @@ def _compute_guardrail_depth_distribution(events: list[dict[str, Any]]) -> dict[
 
     depths = [int((e.get("payload", {}) or {}).get("guardrail_depth", 0)) for e in guardrail_events]
     total = max(len(depths), 1)
+    d1 = sum(1 for d in depths if d == 1)
+    d2 = sum(1 for d in depths if d == 2)
+    d3 = sum(1 for d in depths if d == 3)
+    d0 = total - d1 - d2 - d3
     return {
-        "depth_0": float(1.0 - len(depths) / max(total + 10, 1)),
-        "depth_1": float(sum(1 for d in depths if d == 1) / total),
-        "depth_2": float(sum(1 for d in depths if d == 2) / total),
-        "depth_3": float(sum(1 for d in depths if d == 3) / total),
+        "depth_0": float(d0 / total),
+        "depth_1": float(d1 / total),
+        "depth_2": float(d2 / total),
+        "depth_3": float(d3 / total),
     }
 
 
@@ -467,6 +483,7 @@ def run_dynamic_episode(
             budget_ms=float(plan_budget_ms),
         )
     path = _expand_execution_path(list(plan_result.path), heightmap, no_fly)
+    env.set_plan_info(len(path), initial_budget_exceeded, "initial")
 
     is_adaptive = hasattr(planner, "should_replan") and hasattr(planner, "replan")
 
@@ -608,6 +625,7 @@ def run_dynamic_episode(
                 restriction_zones=dyn_snap.get("restriction_zones"),
                 restriction_risk_buffer=dyn_snap.get("restriction_risk_buffer"),
                 trajectory=actual_trajectory,
+                planned_path=path[path_idx + 1:] if path_idx + 1 < len(path) else [],
                 heading_deg=prev_heading,
                 replan_flash=bool(episode_steps in replan_steps),
                 replans=enforced_replans,
@@ -620,6 +638,11 @@ def run_dynamic_episode(
                 total_steps=max_steps,
                 event_t1=getattr(cfg, "event_t1", None),
                 event_t2=getattr(cfg, "event_t2", None),
+                plan_len=int(info.get("plan_len", 0)),
+                plan_stale=bool(info.get("plan_stale", False)),
+                plan_reason=str(info.get("plan_reason", "none")),
+                forced_block_active=bool(info.get("forced_block_active", False)),
+                forced_block_cleared=bool(info.get("forced_block_cleared_by_guardrail", False)),
             )
 
         if terminated:
@@ -642,8 +665,10 @@ def run_dynamic_episode(
 
             # ── P1: constraint latency (FIFO buffer) ────────────────
             _latency_buffer.append(dyn_raw)
+            _snapshot_age = 0
             if _constraint_latency > 0 and len(_latency_buffer) > _constraint_latency:
                 dyn = _latency_buffer[0]  # delayed snapshot
+                _snapshot_age = _constraint_latency
             else:
                 dyn = dyn_raw
 
@@ -651,6 +676,7 @@ def run_dynamic_episode(
             if _comms_dropout_prob > 0.0 and _realism_rng.random() < _comms_dropout_prob:
                 if _last_good_snapshot is not None:
                     dyn = _last_good_snapshot  # deliver stale snapshot
+                    _snapshot_age = max(_snapshot_age, episode_steps - getattr(_last_good_snapshot, "_step", episode_steps))
                 # else: first step, no stale available — use current
             else:
                 _last_good_snapshot = dyn
@@ -756,6 +782,13 @@ def run_dynamic_episode(
                         new_path = []
                         replan_ms = 0.0
 
+                _replan_reason = (
+                    "forced_event" if forced_event else
+                    "path_invalidated" if path_invalid else
+                    "cadence" if cadence_due else
+                    "stuck" if stuck_trigger else
+                    "planner_signal"
+                )
                 if replan_ms > plan_budget_ms:
                     replan_budget_violations += 1
                     new_path = []
@@ -765,6 +798,7 @@ def run_dynamic_episode(
                         elapsed_ms=round(float(replan_ms), 3),
                         budget_ms=float(plan_budget_ms),
                     )
+                    env.set_plan_info(len(path) - path_idx, True, "budget_exceeded", _snapshot_age)
                 else:
                     enforced_replans += 1
                     last_replan_step = episode_steps
@@ -775,6 +809,7 @@ def run_dynamic_episode(
                     path = _expand_execution_path(list(new_path), heightmap, no_fly)
                     path_idx = 0
                     stuck_counter = 0
+                    env.set_plan_info(len(path), False, _replan_reason, _snapshot_age)
             elif stuck_counter >= 10:
                 # All planners: give up if stuck too long AND no replan triggered
                 break
@@ -1700,9 +1735,11 @@ def main() -> None:
 
         # Check if scenario needs dynamic episode execution
         cfg = load_scenario(sp)
-        use_dynamic = (cfg.fire_blocks_movement or cfg.traffic_blocks_movement
+        use_dynamic = (cfg.paper_track == "dynamic"
+                       or cfg.fire_blocks_movement or cfg.traffic_blocks_movement
                        or cfg.enable_moving_target or cfg.enable_intruders
-                       or cfg.enable_dynamic_nfz)
+                       or cfg.enable_dynamic_nfz
+                       or int(cfg.force_replan_count) > 0)
 
         for planner_id in planner_ids:
             per_trial: list[dict[str, Any]] = []

@@ -381,6 +381,7 @@ class OperationalRenderer:
         intruder_positions: Optional[np.ndarray] = None,
         comms_coverage_map: Optional[np.ndarray] = None,
         trajectory: Optional[list[tuple[int, int]]] = None,
+        planned_path: Optional[list[tuple[int, int]]] = None,
         heading_deg: float = 0.0,
         replan_flash: bool = False,
         replan_reason: str = "",
@@ -401,6 +402,11 @@ class OperationalRenderer:
         total_steps: int = 0,
         planner_name: Optional[str] = None,
         mode_label: Optional[str] = None,
+        plan_len: int = 0,
+        plan_stale: bool = False,
+        plan_reason: str = "none",
+        forced_block_active: bool = False,
+        forced_block_cleared: bool = False,
     ) -> np.ndarray:
         """Render one frame with all operational layers.
 
@@ -838,6 +844,27 @@ class OperationalRenderer:
                 solid_capstyle="round",
             )
 
+        # ═══════════════════════ Z 9.55: Planned lookahead path ══════════════
+        # Drawn above trajectory so the blue planned line is always visible.
+        if planned_path and len(planned_path) > 1:
+            pxs = [p[0] for p in planned_path]
+            pys = [p[1] for p in planned_path]
+            # Black outline for legibility over fire / smoke
+            ax.plot(
+                pxs, pys, "-", color="black",
+                linewidth=3.5, alpha=0.6, zorder=9.55,
+                solid_capstyle="round",
+            )
+            ax.plot(
+                pxs, pys, "--", color="#4FC3F7",
+                linewidth=1.8, alpha=0.95, zorder=9.56,
+                solid_capstyle="round",
+                label="planned_path",
+                path_effects=[
+                    path_effects.withStroke(linewidth=3.0, foreground="black", alpha=0.4)
+                ],
+            )
+
         # Start & goal — large markers with halo
         _marker_sz = max(180, self.W * 0.6)
         ax.scatter(
@@ -971,6 +998,11 @@ class OperationalRenderer:
             planner_name=planner_name or self.planner_name,
             mode_label=mode_label or self.mode_label,
             comms_coverage_map=comms_coverage_map,
+            plan_len=plan_len,
+            plan_stale=plan_stale,
+            plan_reason=plan_reason,
+            forced_block_active=forced_block_active,
+            forced_block_cleared=forced_block_cleared,
         )
         self._draw_legend(
             ax, fire_mask, smoke_mask, traffic_closure_mask,
@@ -1020,6 +1052,11 @@ class OperationalRenderer:
         planner_name: str,
         mode_label: str,
         comms_coverage_map: Optional[np.ndarray],
+        plan_len: int = 0,
+        plan_stale: bool = False,
+        plan_reason: str = "none",
+        forced_block_active: bool = False,
+        forced_block_cleared: bool = False,
     ) -> None:
         """C2-style HUD: scenario + planner info, metrics, guardrail status."""
         depth_labels = {0: "G0 ●", 1: "G1 ▬", 2: "G2 ▲", 3: "G3 ◆"}
@@ -1066,6 +1103,16 @@ class OperationalRenderer:
         if comms_coverage_map is not None:
             uptime = float(np.mean(comms_coverage_map > 0.5)) * 100.0
             r3.append(f"COMM: {uptime:.0f}%")
+        if plan_len > 1 and not plan_stale:
+            r3.append(f"PLAN: {plan_len}wp")
+        elif plan_stale:
+            r3.append(f"STALE PLAN ({plan_reason})")
+        elif plan_len <= 1 and plan_reason not in ("none", "initial", ""):
+            r3.append("NO PLAN")
+        if forced_block_cleared:
+            r3.append("FORCED BLOCK: CLEARED")
+        elif forced_block_active:
+            r3.append("FORCED BLOCK: ACTIVE")
         if status_text:
             r3.append(status_text)
         row3 = "  │  ".join(r3)

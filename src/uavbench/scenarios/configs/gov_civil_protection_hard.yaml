@@ -50,9 +50,9 @@ plan_budget_dynamic_ms: 200.0
 interdiction_reference_planner: astar
 
 # P1 realism knobs (must be top-level for loader)
-constraint_latency_steps: 4
-comms_dropout_prob: 0.15
-gnss_noise_sigma: 2.0
+constraint_latency_steps: 0
+comms_dropout_prob: 0.0
+gnss_noise_sigma: 0.0
 
 extra:
   mission_bank: civil_protection

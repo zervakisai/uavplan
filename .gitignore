@@ -7,6 +7,7 @@ __pycache__/
 
 # OS
 .DS_Store
+**/.DS_Store
 
 # Build / dist
 build/
@@ -15,6 +16,9 @@ dist/
 # Videos / artifacts
 videos/
 outputs/
+
+# Remote fetch cache (auto-generated, ephemeral)
+cache/
 
 # OSM pipeline data (offline-generated, not committed)
 data/maps/*.npz
@@ -32,3 +36,6 @@ tools/osm_pipeline/__pycache__/
 
 # Editor backup files
 *.save
+
+# Fast-dev benchmark runs (ephemeral, not paper results)
+results/paper_fast_dev/

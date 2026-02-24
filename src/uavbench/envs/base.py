@@ -80,11 +80,16 @@ class UAVBenchEnv(gym.Env, ABC):
         terminated = bool(terminated)
         truncated = bool(truncated)
 
-        # Usually a design bug: both True at once (treat as hard fail for benchmark consistency).
+        # Usually a design bug: both True at once.  Log and resolve to terminated.
         if terminated and truncated:
-            raise RuntimeError(
-                "Both terminated and truncated are True. Check domain termination logic."
+            import warnings
+            warnings.warn(
+                "Both terminated and truncated are True. "
+                "Resolving to terminated=True, truncated=False for Gymnasium compliance.",
+                RuntimeWarning,
+                stacklevel=2,
             )
+            truncated = False
 
         # Normalize info
         if info is None:
@@ -158,16 +163,22 @@ class UAVBenchEnv(gym.Env, ABC):
         """High-level events (collisions, violations, replans, etc.)."""
         return list(self._events)
 
-    def log_event(self, event_type: str, **payload: Any) -> None:
+    def log_event(self, event_type: str, _step_override: int | None = None, **payload: Any) -> None:
         """Structured event logging (for metrics/robustness/debugging).
 
         Convention:
-        - event is associated with the *current* step index (post-step).
-        - keep payload JSON-friendly where possible (cast numpy scalars to Python types upstream).
+        - By default, event["step"] = self._step_count (the *completed* step count,
+          i.e. pre-increment when called from _step_impl before base.step() finishes).
+        - Pass _step_override=N to record an authoritative, unambiguous step index.
+          Use this when the caller already knows the authoritative step (e.g., the
+          next-step index passed to _maybe_trigger_interdictions), so that
+          event["step"] == N exactly as specified in the paper protocol (t1, t2).
+        - Keep payload JSON-friendly where possible.
         """
+        step = int(_step_override) if _step_override is not None else self._step_count
         self._events.append(
             {
-                "step": self._step_count,
+                "step": step,
                 "type": str(event_type),
                 "payload": payload,
             }

@@ -1,14 +1,29 @@
 """Dynamic no-fly zones that expand and contract — forces replanning.
 
+.. deprecated:: 1.0.0
+    This module is superseded by :class:`uavbench.dynamics.restriction_zones.MissionRestrictionModel`,
+    which provides mission-grounded restriction zones with structured lifecycle events.
+    ``DynamicNFZModel`` is retained only for backward compatibility with external scripts
+    that may reference it directly.  It is NOT imported by any production module in
+    UAVBench and will be removed in a future release.
+
 Zones are placed along the UAV's straight-line path so the initial
 static plan becomes invalid within the first ~30-50 steps.
 """
 
 from __future__ import annotations
 
+import warnings
 from typing import Tuple
 
 import numpy as np
+
+warnings.warn(
+    "DynamicNFZModel is deprecated; use MissionRestrictionModel from "
+    "uavbench.dynamics.restriction_zones instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 GridPos = Tuple[int, int]
 

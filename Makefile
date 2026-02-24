@@ -33,7 +33,7 @@ lock:  ## Regenerate requirements-lock.txt from current env
 
 # ─── Quality ───────────────────────────────────────────────────
 
-test:  ## Run full test suite (245+ tests)
+test:  ## Run full test suite (365+ tests)
 	$(PYTEST) tests/ -q --tb=short
 
 lint:  ## Type-check with mypy

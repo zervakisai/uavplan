@@ -46,7 +46,14 @@ class Regime(str, Enum):
 
 
 class InterdictionReferencePlanner(str, Enum):
-    """Planner used only for fair, planner-agnostic interdiction scheduling."""
+    """Planner used only for fair, planner-agnostic interdiction scheduling.
+
+    .. deprecated:: 1.0.0
+        This field is accepted for backward compatibility but has **no
+        effect** on interdiction placement.  The canonical pipeline uses
+        planner-agnostic BFS shortest path for all interdiction
+        placement.  See ``UrbanEnv._init_forced_interdictions``.
+    """
     ASTAR = "astar"
     THETA_STAR = "theta_star"
 
@@ -141,7 +148,7 @@ class ScenarioConfig:
     event_t1: int | None = None
     event_t2: int | None = None
     emergency_corridor_enabled: bool = True
-    interdiction_reference_planner: InterdictionReferencePlanner = InterdictionReferencePlanner.THETA_STAR
+    interdiction_reference_planner: InterdictionReferencePlanner = InterdictionReferencePlanner.THETA_STAR  # deprecated — ignored; BFS used
 
     # Fair evaluation protocol controls (shared across planners)
     plan_budget_static_ms: float = 50.0
@@ -168,6 +175,11 @@ class ScenarioConfig:
     # V&V Certificates (computed at scenario load/reset; read-only metadata)
     solvability_cert_ok: bool = False  # At least 2 disjoint corridors exist at t=0
     forced_replan_ok: bool = False     # Initial A* path will be blocked by step 50
+
+    # Physics basis (documented for V&V reproducibility)
+    # 1 grid cell = cell_size_m metres; 1 environment step = dt_s seconds
+    cell_size_m: float = 5.0
+    dt_s: float = 1.0
 
     # Debug
     debug: bool = False
@@ -238,6 +250,17 @@ class ScenarioConfig:
         # Risk weights must be non-negative
         if self.risk_weight_population < 0 or self.risk_weight_adversarial < 0 or self.risk_weight_smoke < 0:
             raise ValueError("risk weights must be non-negative")
+        # Risk weights should sum to 1.0 (tolerance for float rounding)
+        _rw_sum = self.risk_weight_population + self.risk_weight_adversarial + self.risk_weight_smoke
+        if abs(_rw_sum - 1.0) > 1e-6:
+            raise ValueError(
+                f"risk weights must sum to 1.0 (got {_rw_sum:.6f})"
+            )
+        # downtown_window must fit within the map
+        if self.downtown_window >= self.map_size:
+            raise ValueError(
+                f"downtown_window ({self.downtown_window}) must be < map_size ({self.map_size})"
+            )
         if self.force_replan_count < 0 or self.force_replan_count > 2:
             raise ValueError("force_replan_count must be in [0, 2]")
         if self.event_t1 is not None and self.event_t1 < 1:

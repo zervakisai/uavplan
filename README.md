@@ -4,7 +4,7 @@ Operationally-realistic 2D UAV navigation benchmark with deterministic tracks fo
 
 ## What You Get
 
-- 34 scenarios total
+- 9 scenarios (3 static control, 6 dynamic stress)
 - 2 paper tracks: `static` (control), `dynamic` (forced-replan stress)
 - 6 planners (global optimal, any-angle, incremental, anytime, reactive, sampling-based MPC)
 - deterministic seeding and reproducible evaluation flow
@@ -18,6 +18,18 @@ Operationally-realistic 2D UAV navigation benchmark with deterministic tracks fo
 For full documentation, commands, demo flow, and troubleshooting, use:
 
 - [`BENCHMARK_GUIDE.md`](BENCHMARK_GUIDE.md)
+
+## Canonical Evaluation Path
+
+All results reported in the paper are produced through a single canonical pipeline:
+
+```
+cli/benchmark.py → benchmark/runner.py → envs/urban.py
+```
+
+The `missions/runner_v2.py` module is an **experimental** demo runner
+retained for stakeholder visualization only.  It is **not** used for
+reported benchmark results.
 
 ## Quick Start
 
