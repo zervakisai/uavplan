@@ -107,6 +107,12 @@ class ScenarioConfig:
     replan_every_steps: int = 6
     max_replans_per_episode: int = 2000
 
+    # Battery
+    battery_capacity_wh: float = 150.0
+    battery_base_cost: float = 0.15
+    battery_hover_cost: float = 0.10
+    battery_wind_penalty: float = 0.05
+
     # Comms
     comms_dropout_prob: float = 0.0
     comms_latency_steps: int = 0
