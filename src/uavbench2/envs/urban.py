@@ -14,6 +14,7 @@ from gymnasium import spaces
 
 from uavbench2.blocking import compute_blocking_mask
 from uavbench2.dynamics.fire_ca import FireSpreadModel
+from uavbench2.dynamics.forced_block import ForcedBlockManager, bfs_shortest_path
 from uavbench2.dynamics.interaction_engine import InteractionEngine
 from uavbench2.dynamics.restriction_zones import RestrictionZoneModel
 from uavbench2.dynamics.traffic import TrafficModel
@@ -86,6 +87,8 @@ class UrbanEnvV2(gym.Env):
         self._traffic: TrafficModel | None = None
         self._nfz: RestrictionZoneModel | None = None
         self._interaction: InteractionEngine | None = None
+        self._forced_block: ForcedBlockManager | None = None
+        self._bfs_corridor: list[tuple[int, int]] = []
         self._use_dynamics: bool = (
             config.enable_fire
             or config.enable_traffic
@@ -105,6 +108,18 @@ class UrbanEnvV2(gym.Env):
     @property
     def events(self) -> list[dict]:
         return self._events
+
+    @property
+    def bfs_corridor(self) -> list[tuple[int, int]]:
+        """BFS reference corridor on static grid (FC-1)."""
+        return list(self._bfs_corridor)
+
+    @property
+    def forced_block_cells(self) -> list[tuple[int, int]]:
+        """Cells selected for forced interdiction (FC-1)."""
+        if self._forced_block is not None:
+            return self._forced_block.forced_cells
+        return []
 
     # -- Gymnasium API --
 
@@ -206,6 +221,24 @@ class UrbanEnvV2(gym.Env):
             self._interaction = InteractionEngine(
                 map_shape=map_shape,
                 roads_mask=self._roads,
+            )
+
+        # BFS reference corridor + forced interdictions (FC-1, Phase 5)
+        self._bfs_corridor = bfs_shortest_path(
+            self._heightmap, self._agent_xy, self._goal_xy
+        )
+
+        self._forced_block = None
+        if self.config.force_replan_count > 0 and len(self._bfs_corridor) > 2:
+            # Use a dedicated child RNG for forced block cell selection
+            fb_rng = _reserved_rng
+            self._forced_block = ForcedBlockManager(
+                bfs_corridor=self._bfs_corridor,
+                force_replan_count=self.config.force_replan_count,
+                event_t1=self.config.event_t1 or 30,
+                event_t2=self.config.event_t2 or 80,
+                map_shape=map_shape,
+                rng=fb_rng,
             )
 
         self._events.append({
@@ -350,7 +383,11 @@ class UrbanEnvV2(gym.Env):
                 if self._traffic is not None
                 else None
             ),
-            "forced_block_mask": None,  # Phase 5
+            "forced_block_mask": (
+                self._forced_block.get_mask()
+                if self._forced_block is not None
+                else None
+            ),
             "risk_cost_map": None,  # Phase 4+
             "traffic_closure_mask": (
                 self._interaction.traffic_closure_mask
@@ -396,6 +433,14 @@ class UrbanEnvV2(gym.Env):
                     self._nfz.get_nfz_mask() if self._nfz else None
                 ),
             )
+
+        # Forced block lifecycle (FC-1)
+        if self._forced_block is not None:
+            events_before = len(self._forced_block.events)
+            self._forced_block.step(self._step_idx)
+            # Append any new forced block events
+            for evt in self._forced_block.events[events_before:]:
+                self._events.append(evt)
 
     def _classify_block(
         self,
@@ -488,6 +533,14 @@ class UrbanEnvV2(gym.Env):
             "termination_reason": self._termination_reason,
             "objective_completed": self._objective_completed,
         }
+
+        # Forced block state (FC-1)
+        if self._forced_block is not None:
+            info["forced_block_active"] = self._forced_block.active
+            info["forced_block_lifecycle"] = self._forced_block.lifecycle.value
+        else:
+            info["forced_block_active"] = False
+            info["forced_block_lifecycle"] = "none"
 
         # Mission fields (MC-1, MC-3)
         if self._mission is not None:
