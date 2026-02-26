@@ -1,20 +1,22 @@
 """Planner registry (PL-3).
 
-Exactly 6 paper planners. Phase 2 implements only astar;
-others are registered as stubs.
+Exactly 6 paper planners registered.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from uavbench2.planners.base import PlannerBase
-
+from uavbench2.planners.aggressive_replan import AggressiveReplanPlanner
 from uavbench2.planners.astar import AStarPlanner
+from uavbench2.planners.dstar_lite import DStarLitePlanner
+from uavbench2.planners.mppi_grid import MPPIGridPlanner
+from uavbench2.planners.periodic_replan import PeriodicReplanPlanner
+from uavbench2.planners.theta_star import ThetaStarPlanner
 
-# Phase 2: only astar is fully implemented.
-# Other planners will be added in Phase 7.
 PLANNERS: dict[str, type] = {
     "astar": AStarPlanner,
+    "theta_star": ThetaStarPlanner,
+    "periodic_replan": PeriodicReplanPlanner,
+    "aggressive_replan": AggressiveReplanPlanner,
+    "dstar_lite": DStarLitePlanner,
+    "mppi_grid": MPPIGridPlanner,
 }
