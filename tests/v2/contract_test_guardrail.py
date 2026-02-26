@@ -64,7 +64,7 @@ class TestGC1_MultiDepthRelaxation:
         no_fly = np.zeros((10, 10), dtype=bool)
         config = ScenarioConfig(
             name="test_gr",
-            mission_type=MissionType.CIVIL_PROTECTION,
+            mission_type=MissionType.FIRE_DELIVERY,
             difficulty=Difficulty.EASY,
             map_size=10,
         )
@@ -115,7 +115,7 @@ class TestGC1_MultiDepthRelaxation:
         no_fly = np.zeros((10, 10), dtype=bool)
         config = ScenarioConfig(
             name="test_d1",
-            mission_type=MissionType.CIVIL_PROTECTION,
+            mission_type=MissionType.FIRE_DELIVERY,
             difficulty=Difficulty.EASY,
             map_size=10,
         )
@@ -186,7 +186,7 @@ class TestGC1_MultiDepthRelaxation:
         no_fly = np.zeros((10, 10), dtype=bool)
         config = ScenarioConfig(
             name="test_d2",
-            mission_type=MissionType.CIVIL_PROTECTION,
+            mission_type=MissionType.FIRE_DELIVERY,
             difficulty=Difficulty.MEDIUM,
             map_size=10,
             enable_dynamic_nfz=True,
@@ -254,7 +254,7 @@ class TestGC1_MultiDepthRelaxation:
         no_fly = np.zeros((10, 10), dtype=bool)
         config = ScenarioConfig(
             name="test_d3",
-            mission_type=MissionType.CIVIL_PROTECTION,
+            mission_type=MissionType.FIRE_DELIVERY,
             difficulty=Difficulty.MEDIUM,
             map_size=10,
             enable_traffic=True,
@@ -319,7 +319,7 @@ class TestGC2_InfeasibleFlagging:
 
         config = ScenarioConfig(
             name="test_infeasible",
-            mission_type=MissionType.CIVIL_PROTECTION,
+            mission_type=MissionType.FIRE_DELIVERY,
             difficulty=Difficulty.EASY,
             map_size=10,
         )

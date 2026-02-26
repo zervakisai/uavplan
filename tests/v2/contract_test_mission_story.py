@@ -93,12 +93,12 @@ MC3_REQUIRED_HUD_FIELDS = (
 def _make_minimal_env() -> UrbanEnvV2:
     """Return a small 10x10 synthetic UrbanEnvV2 suitable for fast testing.
 
-    The config uses the civil_protection mission type (fly-through tasks,
+    The config uses the fire_delivery mission type (fly-through tasks,
     service_time_s=0 for perimeter points) so that basic reset/step
     semantics can be tested without needing to simulate many steps.
 
-    For service-time tests a maritime domain config with a distress_event
-    task (service_time_s=2) is used instead; see _make_maritime_env().
+    For service-time tests a flood_rescue config with a distress_event
+    task (service_time_s=2) is used instead; see _make_flood_rescue_env().
     """
     try:
         from uavbench2.scenarios.schema import ScenarioConfig, MissionType, Difficulty
@@ -106,8 +106,8 @@ def _make_minimal_env() -> UrbanEnvV2:
         pytest.skip("uavbench2.scenarios.schema not available")
 
     cfg = ScenarioConfig(
-        name="test_minimal_civil",
-        mission_type=MissionType.CIVIL_PROTECTION,
+        name="test_minimal_fire_delivery",
+        mission_type=MissionType.FIRE_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=10,
         map_source="synthetic",
@@ -126,16 +126,16 @@ def _make_minimal_env() -> UrbanEnvV2:
     return UrbanEnvV2(cfg)
 
 
-def _make_maritime_env() -> UrbanEnvV2:
-    """Return a 10x10 maritime env with service_time_s=2 for MC-2 tests."""
+def _make_flood_rescue_env() -> UrbanEnvV2:
+    """Return a 10x10 flood_rescue env with service_time_s=2 for MC-2 tests."""
     try:
         from uavbench2.scenarios.schema import ScenarioConfig, MissionType, Difficulty
     except ImportError:
         pytest.skip("uavbench2.scenarios.schema not available")
 
     cfg = ScenarioConfig(
-        name="test_minimal_maritime",
-        mission_type=MissionType.MARITIME_DOMAIN,
+        name="test_minimal_flood_rescue",
+        mission_type=MissionType.FLOOD_RESCUE,
         difficulty=Difficulty.EASY,
         map_size=10,
         map_source="synthetic",
@@ -297,18 +297,18 @@ def test_task_completion_requires_service_time():
       Agent at POI for fewer than service_time_s steps does NOT trigger
       completion event.
 
-    Uses the maritime env where distress_event tasks have service_time_s=2.
+    Uses the flood_rescue env where distress_event tasks have service_time_s=2.
     After arriving at the POI, one STAY (< service_time_s) must NOT produce
     a task_completed event.
     """
     # Arrange
-    env = _make_maritime_env()
+    env = _make_flood_rescue_env()
     _obs, info = env.reset(seed=FIXED_SEED)
 
     service_time_s = info.get("service_time_s")
     if service_time_s is None or service_time_s < 2:
         pytest.skip(
-            "Maritime env did not expose service_time_s >= 2 in info; "
+            "Flood rescue env did not expose service_time_s >= 2 in info; "
             "adjust test config once schema is implemented"
         )
 
@@ -350,13 +350,13 @@ def test_task_completion_logs_event():
       event with task_id.
     """
     # Arrange
-    env = _make_maritime_env()
+    env = _make_flood_rescue_env()
     _obs, info = env.reset(seed=FIXED_SEED)
 
     service_time_s = info.get("service_time_s")
     if service_time_s is None:
         pytest.skip(
-            "Maritime env did not expose service_time_s in info; "
+            "Flood rescue env did not expose service_time_s in info; "
             "adjust test config once schema is implemented"
         )
 
@@ -402,7 +402,7 @@ def test_hud_fields_present_every_step():
     Acceptance criterion (V2_TEST_PLAN.md §2.7):
       Info dict contains all 5 HUD fields with non-None values at every step.
 
-    Runs 20 steps on the minimal civil_protection env.  Checks each info
+    Runs 20 steps on the minimal fire_delivery env.  Checks each info
     dict individually so failures report the exact step number.
     """
     # Arrange
@@ -480,8 +480,8 @@ def test_termination_reason_in_final_info():
         pytest.skip("uavbench2.scenarios.schema not available")
 
     cfg = ScenarioConfig(
-        name="test_timeout_civil",
-        mission_type=MissionType.CIVIL_PROTECTION,
+        name="test_timeout_fire_delivery",
+        mission_type=MissionType.FIRE_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=10,
         map_source="synthetic",
@@ -539,7 +539,7 @@ def test_successful_episode_objective_completed():
     Acceptance criterion (V2_TEST_PLAN.md §2.7):
       When agent reaches goal and completes tasks, objective_completed is True.
 
-    Strategy: use a 10x10 civil_protection env with fly-through tasks
+    Strategy: use a 10x10 fire_delivery env with fly-through tasks
     (service_time_s=0) and no buildings.  Navigate directly from start to
     goal via Manhattan-optimal moves.  The env must set objective_completed
     True on success.
@@ -551,8 +551,8 @@ def test_successful_episode_objective_completed():
         pytest.skip("uavbench2.scenarios.schema not available")
 
     cfg = ScenarioConfig(
-        name="test_success_civil",
-        mission_type=MissionType.CIVIL_PROTECTION,
+        name="test_success_fire_delivery",
+        mission_type=MissionType.FIRE_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=10,
         map_source="synthetic",

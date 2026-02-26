@@ -1,5 +1,5 @@
-name: gov_civil_protection_easy
-mission_type: civil_protection
+name: gov_fire_surveillance_easy
+mission_type: fire_surveillance
 difficulty: easy
 domain: urban
 regime: naturalistic
@@ -7,8 +7,7 @@ paper_track: static
 
 map_size: 500
 map_source: synthetic
-osm_tile_id: penteli
-building_density: 0.18
+building_density: 0.16
 
 fixed_start_xy: [50, 50]
 fixed_goal_xy: [450, 450]

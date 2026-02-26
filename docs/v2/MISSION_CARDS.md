@@ -6,261 +6,197 @@ dynamic intensity, task count, time budget, and event timing.
 
 ---
 
-## Mission Family 1: Civil Protection
+## Mission Family 1: Fire Delivery
 
 ### Identity
 
 | Field | Value |
 |-------|-------|
-| Mission Type | `CIVIL_PROTECTION` |
-| Registry Prefix | `gov_civil_protection_{easy,medium,hard}` |
-| Agency (EN) | GSCP (General Secretariat for Civil Protection) |
-| Agency (EL) | Γενική Γραμματεία Πολιτικής Προστασίας (ΓΓΠΠ) |
-| Tile | `penteli` (Penteli, Attica) |
-| Building Density | 0.18 |
-| Start | `(50, 50)` |
-| Goal | `(450, 450)` |
+| Mission Type | `FIRE_DELIVERY` |
+| Registry Prefix | `gov_fire_delivery_{easy,medium,hard}` |
+| Domain | `fire_delivery` |
+| Inspired by | Evia/Εύβοια wildfires 2021 |
+| Building Density | 0.18 (easy/medium), 0.22 (hard) |
 
 ### Incident Provenance
 
-**2018 Attica Wildfire (Penteli/Mati)**
+**2021 Evia Megafire (North Evia)**
 
-Deadliest Greek wildfire; temporary flight restrictions (TFRs) were established
-over active fire perimeters in eastern Attica by HCAA. The scenario models
-UAV operations under evolving fire dynamics and airspace restrictions.
-
-References: [CITE] Lekkas et al., 2018, NHESS; [CITE] HCAA NOTAM A0412/18
+The August 2021 Evia wildfire burned for over two weeks, becoming the largest
+wildfire recorded in the EU. Settlements were isolated by rapidly advancing
+fire fronts, and emergency supplies had to be delivered by sea and air to
+cut-off villages. [CITE] EFFIS Annual Report 2021; [CITE] GSCP After-Action Report 2021-EV
 
 ### Mission Objective
 
-**Wildfire Crisis Situational Awareness + Evacuation Corridor Monitoring**
+**Emergency Medical Supply Delivery to Fire-Isolated Settlement**
 
-The UAV must survey fire perimeter points and evacuation corridor checkpoints,
-delivering a thermal map and corridor status report. As fire spreads, new
-perimeter points are injected and airspace restrictions expand.
+The UAV must navigate through fire-affected terrain to deliver medical supplies
+to an isolated village. Megafire dynamics with wind-biased spread create evolving
+obstacles. Dynamic NFZs represent manned aircraft firefighting corridors.
 
 | Field | Value |
 |-------|-------|
-| Objective Label | "Wildfire SA + Evacuation Corridor" |
-| Deliverable | `fire_perimeter.geojson`, `corridor_status.csv`, `alert_timeline.csv` |
-| Reason String | "Survey active fire perimeter and verify evacuation corridor viability" |
+| Objective Label | "Emergency Medical Supply Delivery" |
+| Deliverable | `medical_supplies` |
+| Reason String | "Emergency medical supply delivery to fire-isolated settlement" |
+| Service Time | 0 (fly-through delivery at goal) |
 
 ### Task Queue
 
-| Category | Weight | Time Decay (lambda) | Service Time | Description |
-|----------|--------|-------------------|--------------|-------------|
-| `perimeter_point` | 1.2 | 0.025 | 0 (fly-through) | Fire perimeter waypoint for thermal imaging |
-| `corridor_checkpoint` | 1.0 | 0.015 | 0 (fly-through) | Evacuation corridor status check |
-| `injected_perimeter_point` | 1.5 | 0.04 | 0 (fly-through) | Dynamically injected as fire perimeter shifts |
-
-### Injection Events (Dynamic Track)
-
-| Event | Description | Trigger |
-|-------|-------------|---------|
-| Perimeter shift | Fire perimeter shift detected — new POI injected | Step >= event_t1 |
-| TFR expansion | Temporary aviation restriction zone (smoke/wind) | Step >= event_t1 |
-| Corridor blockage | Corridor blocked — traffic congestion spike | Step >= event_t2 |
+| Category | Weight | Time Decay | Service Time | Description |
+|----------|--------|-----------|--------------|-------------|
+| `delivery_point` | 1.0 | 0.02 | 0 (fly-through) | Delivery waypoint at isolated settlement |
 
 ### Difficulty Matrix
 
-| Difficulty | Tasks | Dynamics | Fire Blocks | Traffic Blocks | Wind | Events | Time Budget | Energy |
-|------------|-------|----------|-------------|----------------|------|--------|-------------|--------|
-| Easy | 4 | Static | No | No | Low (0.2) | 0 | 350 | 1.0 |
-| Medium | 6 | Moderate | No | No | Medium (0.4) | 2 (t1=80, t2=160) | 300 | 0.85 |
-| Hard | 8 | Severe | Yes | Yes | High (0.7) | 2 (t1=60, t2=140) | 250 | 0.70 |
-
-### Scoring Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Utility decay (lambda) | 0.025 |
-| Risk penalty weight | 0.35 |
-| Violation penalty weight | 1.0 |
-| Strict compliance | No |
+| Difficulty | Dynamics | Fire Ignitions | Wind | NFZ Zones | Forced Replans | Event Timing |
+|------------|----------|---------------|------|-----------|---------------|-------------|
+| Easy | Static | 0 | 0.2 | 0 | 0 | — |
+| Medium | Moderate | 2 | 0.3 | 1 | 1 | t1=40, t2=120 |
+| Hard | Severe | 4 | 0.5 | 2 | 2 | t1=30, t2=90 |
 
 ### Visual Profile
 
 | Field | Value |
 |-------|-------|
 | Accent color | `#FF6B35` (orange) |
-| POI icon | FIRE |
-| Hazard icon | ALERT |
-| Task icon | CAMERA |
+| POI icon | Medical cross |
+| Fire rendering | Red-orange CA cells |
+| HUD shows | Fire perimeter, delivery POI, distance_to_task, package status |
 
 ---
 
-## Mission Family 2: Maritime Domain
+## Mission Family 2: Flood Rescue
 
 ### Identity
 
 | Field | Value |
 |-------|-------|
-| Mission Type | `MARITIME_DOMAIN` |
-| Registry Prefix | `gov_maritime_domain_{easy,medium,hard}` |
-| Agency (EN) | HCG (Hellenic Coast Guard) |
-| Agency (EL) | Λιμενικό Σώμα – Ελληνική Ακτοφυλακή (ΛΣ-ΕΛΑΚΤ) |
-| Tile | `piraeus` (Piraeus port) |
-| Building Density | 0.29 |
-| Start | `(250, 50)` |
-| Goal | `(250, 450)` |
+| Mission Type | `FLOOD_RESCUE` |
+| Registry Prefix | `gov_flood_rescue_{easy,medium,hard}` |
+| Domain | `flood_rescue` |
+| Inspired by | Thessaly/Θεσσαλία floods 2023 |
+| Building Density | 0.15 (easy/medium), 0.20 (hard) |
 
 ### Incident Provenance
 
-**2017 Agia Zoni II Oil Spill (Saronic Gulf)**
+**2023 Thessaly Floods (Storm Daniel)**
 
-Tanker sinking off Salamina; SAR coordination box and port exclusion zone
-established by Hellenic Coast Guard. The scenario models maritime patrol
-operations under evolving hazard conditions and restricted zones.
-
-References: [CITE] REMPEC, 2017, Agia Zoni II Pollution Report; [CITE] HCG OPS-SAR Directive 2017-1192
+Storm Daniel caused catastrophic flooding across Thessaly in September 2023,
+stranding thousands. Road infrastructure was destroyed, and aerial platforms
+were critical for search and rescue assessment. [CITE] GSCP Storm Daniel AAR 2023;
+[CITE] Copernicus EMS Activation EMSR686
 
 ### Mission Objective
 
-**Coastal Search Corridor Patrol + Distress Event Response**
+**Search and Rescue Assessment of Flood-Stranded Population**
 
-The UAV patrols a coastal corridor and responds to distress events,
-delivering corridor coverage data and event response reports. Hazard zones
-expand as conditions evolve.
+The UAV must reach stranded population areas through flood-affected terrain.
+Water spread dynamics (modeled via traffic/road closures) create evolving
+obstacles. The agent must perform on-site assessment (service_time hover).
 
 | Field | Value |
 |-------|-------|
-| Objective Label | "Coastal Patrol + Distress Response" |
-| Deliverable | `corridor_coverage.csv`, `event_response.csv`, `exposure_report.csv` |
-| Reason String | "Patrol coastal corridor and respond to maritime distress events" |
+| Objective Label | "Flood Search & Rescue Assessment" |
+| Deliverable | `rescue_assessment` |
+| Reason String | "Search and rescue assessment of flood-stranded population" |
+| Service Time | 2 steps (hover assessment) |
 
 ### Task Queue
 
-| Category | Weight | Time Decay (lambda) | Service Time | Description |
-|----------|--------|-------------------|--------------|-------------|
-| `patrol_waypoint` | 1.0 | 0.01 | 0 (fly-through) | Circular corridor patrol checkpoint |
-| `distress_event` | 3.0 | 0.06 | 2 steps | Emergency response — hover + confirm |
-
-### Injection Events (Dynamic Track)
-
-| Event | Description | Trigger |
-|-------|-------------|---------|
-| Distress signal | Distress/safety event detected — immediate response required | Step >= event_t1 |
-| Weather alert | Weather/hazard alert — temporary high-risk region | Step >= event_t1 |
-| Zone expansion | Restricted area expansion — safety zone policy update | Step >= event_t2 |
+| Category | Weight | Time Decay | Service Time | Description |
+|----------|--------|-----------|--------------|-------------|
+| `rescue_site` | 1.0 | 0.02 | 2 steps | Rescue assessment — hover + confirm |
 
 ### Difficulty Matrix
 
-| Difficulty | Tasks | Dynamics | Fire Blocks | Traffic Blocks | Wind | Events | Time Budget | Energy |
-|------------|-------|----------|-------------|----------------|------|--------|-------------|--------|
-| Easy | 4 | Static | No | No | Low (0.2) | 0 | 400 | 1.0 |
-| Medium | 6 | Moderate | No | No | Medium (0.4) | 2 (t1=100, t2=200) | 350 | 0.85 |
-| Hard | 8 | Severe | Yes | Yes | High (0.6) | 2 (t1=80, t2=180) | 280 | 0.70 |
-
-### Scoring Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Utility decay (lambda) | 0.01 |
-| Risk penalty weight | 0.25 |
-| Violation penalty weight | 1.2 |
-| Patrol weight alpha | 0.6 (easy), 0.5 (medium/hard) |
+| Difficulty | Dynamics | Fire Ignitions | Vehicles | Wind | NFZ Zones | Forced Replans | Event Timing |
+|------------|----------|---------------|----------|------|-----------|---------------|-------------|
+| Easy | Static | 0 | 0 | 0.1 | 0 | 0 | — |
+| Medium | Moderate | 2 | 3 | 0.2 | 1 | 1 | t1=40, t2=120 |
+| Hard | Severe | 3 | 5 | 0.4 | 2 | 2 | t1=30, t2=90 |
 
 ### Visual Profile
 
 | Field | Value |
 |-------|-------|
 | Accent color | `#0088CC` (blue) |
-| POI icon | SHIP |
-| Hazard icon | DISTRESS |
-| Task icon | ANCHOR |
+| POI icon | Rescue marker |
+| Flood rendering | Blue-tinted traffic zones (road closures as flood proxy) |
+| HUD shows | Flood zones, rescue POI, distance_to_task, assessment progress |
 
 ---
 
-## Mission Family 3: Critical Infrastructure
+## Mission Family 3: Fire Surveillance
 
 ### Identity
 
 | Field | Value |
 |-------|-------|
-| Mission Type | `CRITICAL_INFRASTRUCTURE` |
-| Registry Prefix | `gov_critical_infrastructure_{easy,medium,hard}` |
-| Agency (EN) | MoD (Ministry of National Defence) |
-| Agency (EL) | Υπουργείο Εθνικής Άμυνας (ΥΠΕΘΑ) |
-| Tile | `downtown` (Athens center) |
-| Building Density | 0.50 |
-| Start | `(50, 50)` |
-| Goal | `(450, 450)` |
+| Mission Type | `FIRE_SURVEILLANCE` |
+| Registry Prefix | `gov_fire_surveillance_{easy,medium,hard}` |
+| Domain | `fire_surveillance` |
+| Inspired by | Evros/Έβρος megafire 2023 |
+| Building Density | 0.16 (easy/medium), 0.22 (hard) |
 
 ### Incident Provenance
 
-**2021 Athens Metro Bomb Threat (Syntagma)**
+**2023 Evros Megafire (Alexandroupolis Region)**
 
-Security cordon established around Syntagma/Monastiraki metro stations following
-bomb threat. The scenario models infrastructure inspection operations under
-evolving security restrictions and degraded communications.
-
-References: [CITE] ELAS Press Release 2021-12-14; [CITE] Athens Urban Transport Organisation Disruption Report 2021-Q4
+The August 2023 Evros fire was the largest single wildfire in EU history,
+burning over 96,000 hectares. Manned firefighting aircraft established
+complex NFZ corridors, and real-time perimeter mapping was critical for
+command post operations. [CITE] EFFIS Special Report Evros 2023;
+[CITE] HCAA NOTAM Series A2023-EV
 
 ### Mission Objective
 
-**Time-Critical Inspection Tour under Dynamic Restrictions**
+**Aerial Survey of Active Fire Perimeter for Command Post**
 
-The UAV must inspect critical infrastructure sites under time pressure,
-delivering an inspection log and compliance report. Security restrictions
-expand dynamically, and communications may be degraded.
+The UAV must survey fire perimeter points while avoiding active NFZ corridors
+(manned aircraft). Fast-spreading fire dynamics and multiple NFZs create
+a challenging environment requiring service_time hover at survey points.
 
 | Field | Value |
 |-------|-------|
-| Objective Label | "Infrastructure Inspection Tour" |
-| Deliverable | `inspection_log.csv`, `compliance_report.csv`, `resilience_curve.csv` |
-| Reason String | "Inspect critical infrastructure sites under evolving security restrictions" |
+| Objective Label | "Aerial Fire Perimeter Survey" |
+| Deliverable | `perimeter_report` |
+| Reason String | "Aerial survey of active fire perimeter for command post" |
+| Service Time | 3 steps (hover survey) |
 
 ### Task Queue
 
-| Category | Weight | Time Decay (lambda) | Service Time | Description |
-|----------|--------|-------------------|--------------|-------------|
-| `inspection_site` | 1.0 + 0.1*i | 0.03 | 3 steps | Site inspection — hover + sensor sweep |
-
-### Injection Events (Dynamic Track)
-
-| Event | Description | Trigger |
-|-------|-------------|---------|
-| Restriction expansion | Dynamic restriction — temporary closure / topology change | Step >= event_t1 |
-| Comms degradation | Degraded comms pocket — delayed map updates | Step >= event_t2 |
+| Category | Weight | Time Decay | Service Time | Description |
+|----------|--------|-----------|--------------|-------------|
+| `survey_point` | 1.0 | 0.02 | 3 steps | Perimeter survey — hover + sensor sweep |
 
 ### Difficulty Matrix
 
-| Difficulty | Tasks | Dynamics | Fire Blocks | Traffic Blocks | Wind | Events | Time Budget | Energy |
-|------------|-------|----------|-------------|----------------|------|--------|-------------|--------|
-| Easy | 4 | Static | No | No | None (0.1) | 0 | 300 | 1.0 |
-| Medium | 6 | Moderate | No | No | Medium (0.3) | 2 (t1=60, t2=140) | 260 | 0.85 |
-| Hard | 8 | Severe | Yes | Yes | High (0.6) | 2 (t1=50, t2=120) | 220 | 0.70 |
-
-### Scoring Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Utility decay (lambda) | 0.03 |
-| Risk penalty weight | 0.30 |
-| Violation penalty weight | 1.5 |
-| Strict compliance | Hard only |
+| Difficulty | Dynamics | Fire Ignitions | Wind | NFZ Zones | Forced Replans | Event Timing |
+|------------|----------|---------------|------|-----------|---------------|-------------|
+| Easy | Static | 0 | 0.2 | 0 | 0 | — |
+| Medium | Moderate | 3 | 0.4 | 2 | 1 | t1=40, t2=120 |
+| Hard | Severe | 5 | 0.6 | 3 | 2 | t1=25, t2=80 |
 
 ### Visual Profile
 
 | Field | Value |
 |-------|-------|
 | Accent color | `#00CC88` (green) |
-| POI icon | BUILDING |
-| Hazard icon | SHIELD |
-| Task icon | INSPECTION |
+| POI icon | Survey camera |
+| Fire rendering | Red-orange CA cells + NFZ corridor overlays |
+| HUD shows | Fire front, NFZ corridors, survey POI, coverage % |
 
 ---
 
 ## Restriction Zone Types (Cross-Mission)
 
-All dynamic restriction zones use mission-specific visual vocabularies:
-
-| Zone Type | Mission | Color | Hatch | Border |
-|-----------|---------|-------|-------|--------|
-| `tfr` (Temporary Flight Restriction) | Civil Protection | Orange `#FF8C00` | 45-degree | Dashed |
-| `sar_box` (SAR coordination box) | Maritime Domain | Blue `#1E90FF` | Horizontal | Dashed |
-| `port_exclusion` | Maritime Domain | Blue `#1E90FF` | Vertical | Solid |
-| `security_cordon` | Critical Infrastructure | Purple `#9B59B6` | Diagonal-back | Solid |
+| Zone Type | Mission | Color | Description |
+|-----------|---------|-------|-------------|
+| `firefighting_corridor` | Fire Delivery | Orange `#FF8C00` | Manned aircraft corridor |
+| `flood_exclusion` | Flood Rescue | Blue `#1E90FF` | Flooded area / road closure |
+| `aircraft_corridor` | Fire Surveillance | Purple `#9B59B6` | Active firefighting NFZ |
 
 ---
 
@@ -270,12 +206,13 @@ These knobs scale identically across mission families:
 
 | Knob | Easy | Medium | Hard |
 |------|------|--------|------|
-| `comms_dropout_prob` | 0.0 | 0.05 | 0.15 |
-| `comms_latency_steps` | 0 | 2 | 4 |
-| `risk_update_cadence` | 8 | 5 | 3 |
+| `enable_fire` | false | true | true |
+| `enable_traffic` | false | true | true |
+| `enable_dynamic_nfz` | false | true | true |
+| `fire_blocks_movement` | false | true | true |
+| `traffic_blocks_movement` | false | true | true |
 | `force_replan_count` | 0 | 1 | 2 |
-| `replan_every_steps` | — | 4 | 4 |
-| `max_replans_per_episode` | — | 2000 | 2000 |
+| `replan_every_steps` | 6 | 6 | 6 |
 
 ---
 
@@ -286,4 +223,4 @@ These knobs scale identically across mission families:
 | MC-1 | Objective POI + Reason String (each mission) |
 | MC-2 | Task Queue: Service Time column |
 | MC-3 | Visual Profile + Objective Label + Deliverable |
-| MC-4 | Difficulty Matrix → termination conditions |
+| MC-4 | Difficulty Matrix -> termination conditions |
