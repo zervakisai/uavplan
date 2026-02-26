@@ -13,7 +13,6 @@ import numpy as np
 from gymnasium import spaces
 
 from uavbench2.blocking import compute_blocking_mask
-from uavbench2.dynamics.battery import BatteryModel
 from uavbench2.dynamics.fire_ca import FireSpreadModel
 from uavbench2.dynamics.forced_block import ForcedBlockManager, bfs_shortest_path
 from uavbench2.dynamics.interaction_engine import InteractionEngine
@@ -82,9 +81,6 @@ class UrbanEnvV2(gym.Env):
         self._truncated: bool = False
         self._termination_reason = TerminationReason.IN_PROGRESS
         self._objective_completed: bool = False
-
-        # Battery (BC-1, BC-2, BC-3)
-        self._battery: BatteryModel | None = None
 
         # Dynamics (set during reset, None when disabled)
         self._fire: FireSpreadModel | None = None
@@ -175,14 +171,6 @@ class UrbanEnvV2(gym.Env):
         self._truncated = False
         self._termination_reason = TerminationReason.IN_PROGRESS
         self._objective_completed = False
-
-        # Battery model (BC-1, BC-2, BC-3)
-        self._battery = BatteryModel(
-            capacity_wh=self.config.battery_capacity_wh,
-            base_cost_per_step=self.config.battery_base_cost,
-            hover_cost=self.config.battery_hover_cost,
-            wind_penalty_factor=self.config.battery_wind_penalty,
-        )
 
         # Mission engine (MC-1, MC-2)
         self._mission = MissionEngine(
@@ -331,11 +319,6 @@ class UrbanEnvV2(gym.Env):
             ) + abs(self._agent_xy[1] - self._goal_xy[1])
             reward += 0.2 * (dist_before - dist_after)
 
-        # Battery step (BC-1)
-        if self._battery is not None:
-            wind_speed = self.config.wind_speed if self.config else 0.0
-            self._battery.step(action, wind_speed)
-
         # Mission engine step (MC-2)
         if self._mission is not None:
             events_before = len(self._mission.events)
@@ -343,16 +326,6 @@ class UrbanEnvV2(gym.Env):
             # Append any new mission events to env events
             for evt in self._mission.events[events_before:]:
                 self._events.append(evt)
-
-        # Check battery depletion (BC-2) — before goal check
-        if not self._terminated and self._battery is not None and self._battery.depleted:
-            self._terminated = True
-            self._termination_reason = TerminationReason.BATTERY_DEPLETED
-            self._events.append({
-                "type": "battery_depleted",
-                "step_idx": self._step_idx,
-                "battery_wh": 0.0,
-            })
 
         # Check goal reached
         if not self._terminated and self._agent_xy == self._goal_xy:
@@ -574,13 +547,6 @@ class UrbanEnvV2(gym.Env):
         else:
             info["forced_block_active"] = False
             info["forced_block_lifecycle"] = "none"
-
-        # Battery fields (BC-1)
-        if self._battery is not None:
-            info["battery_wh"] = self._battery.wh
-            info["battery_percent"] = self._battery.percent
-            info["battery_status"] = self._battery.status
-            info["battery_range_steps"] = self._battery.estimated_range_steps
 
         # Mission fields (MC-1, MC-3)
         if self._mission is not None:

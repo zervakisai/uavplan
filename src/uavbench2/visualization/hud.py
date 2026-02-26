@@ -201,7 +201,7 @@ def render_hud_text(
     scale = max(1, min(W // 200, 3))
 
     # HUD background area
-    hud_h = (_CHAR_H * scale + 2) * (2 if minimal else 5) + 4
+    hud_h = (_CHAR_H * scale + 2) * (2 if minimal else 4) + 4
     hud_y = 2
     hud_x = 2
     hud_w = min(W - 4, W)
@@ -245,25 +245,10 @@ def render_hud_text(
     _render_text(frame, row3, tx, ty, (232, 232, 232), scale)
     ty += line_h
 
-    # Row 4: Battery (BC-1)
-    battery_pct = state.get("battery_percent", 100.0)
-    battery_status = state.get("battery_status", "OK")
-    battery_range = state.get("battery_range_steps", 0)
-    row4 = f"BAT: {battery_pct:.0f}%  {battery_status}  RNG: {battery_range}"
-    # Color by status
-    if battery_status == "CRITICAL":
-        bat_color = (255, 80, 80)
-    elif battery_status == "LOW":
-        bat_color = (255, 200, 80)
-    else:
-        bat_color = (80, 220, 120)
-    _render_text(frame, row4, tx, ty, bat_color, scale)
-    ty += line_h
-
-    # Row 5: Mission
+    # Row 4: Mission
     obj_label = state.get("objective_label", "")
     dist = state.get("distance_to_task", 0)
     progress = state.get("task_progress", "")
     deliverable = state.get("deliverable_name", "")
-    row5 = f"OBJ: {obj_label}  D: {int(dist)}  P: {progress}"
-    _render_text(frame, row5, tx, ty, (180, 200, 220), scale)
+    row4 = f"OBJ: {obj_label}  D: {int(dist)}  P: {progress}"
+    _render_text(frame, row4, tx, ty, (180, 200, 220), scale)

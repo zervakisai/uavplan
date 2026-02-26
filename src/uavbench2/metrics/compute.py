@@ -25,20 +25,6 @@ def compute_episode_metrics(
     planned_len = len(plan_result.path) if plan_result and plan_result.success else 0
     replans = plan_result.replans if plan_result else 0
 
-    # Energy metrics (BC-1, BC-3)
-    battery_capacity = final_info.get("battery_wh", None)
-    battery_remaining = final_info.get("battery_wh", 0.0)
-    battery_percent = final_info.get("battery_percent", 100.0)
-    energy_consumed = 0.0
-    if "battery_wh" in final_info:
-        # Compute from capacity (available from config via briefing)
-        briefing_events = [e for e in events if e.get("type") == "mission_briefing"]
-        if briefing_events:
-            capacity = briefing_events[0].get("battery_capacity_wh", 150.0)
-            energy_consumed = capacity - battery_remaining
-        else:
-            energy_consumed = 150.0 - battery_remaining  # fallback
-
     return {
         "scenario_id": scenario_id,
         "planner_id": planner_id,
@@ -52,6 +38,4 @@ def compute_episode_metrics(
         "replans": replans,
         "collision_count": 0,
         "nfz_violations": 0,
-        "energy_consumed_wh": round(energy_consumed, 4),
-        "battery_remaining_percent": round(battery_percent, 2),
     }

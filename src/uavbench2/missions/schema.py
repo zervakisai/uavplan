@@ -35,7 +35,6 @@ class MissionBriefing:
     objective: str
     deliverable: str
     constraints: list[str] = field(default_factory=list)
-    battery_capacity_wh: float = 150.0
     service_time_steps: int = 0
     priority: str = "normal"
     max_time_steps: int = 2000
@@ -52,7 +51,6 @@ class MissionBriefing:
             "objective": self.objective,
             "deliverable": self.deliverable,
             "constraints": list(self.constraints),
-            "battery_capacity_wh": self.battery_capacity_wh,
             "service_time_steps": self.service_time_steps,
             "priority": self.priority,
             "max_time_steps": self.max_time_steps,

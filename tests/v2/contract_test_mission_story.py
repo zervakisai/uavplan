@@ -630,3 +630,72 @@ def test_successful_episode_objective_completed():
         f"MC-4: objective_completed should be True after successful episode, "
         f"got {final_info['objective_completed']!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# MC-3 Extension: Mission Briefing Tests
+# ---------------------------------------------------------------------------
+
+
+def test_briefing_event_present():
+    """MC-3: First events after reset include a mission_briefing event."""
+    env = _make_minimal_env()
+    _obs, info = env.reset(seed=FIXED_SEED)
+
+    briefing_events = [
+        e for e in env.events if e.get("type") == "mission_briefing"
+    ]
+    assert len(briefing_events) >= 1, (
+        "MC-3: no mission_briefing event found"
+    )
+
+
+def test_briefing_fields_complete():
+    """MC-3: Mission briefing has all required fields."""
+    env = _make_minimal_env()
+    _obs, info = env.reset(seed=FIXED_SEED)
+
+    briefing = next(
+        (e for e in env.events if e.get("type") == "mission_briefing"),
+        None,
+    )
+    assert briefing is not None
+
+    required_fields = [
+        "type", "step_idx", "mission_type", "domain",
+        "origin_name", "destination_name", "objective",
+        "deliverable", "constraints",
+        "service_time_steps", "priority", "max_time_steps",
+    ]
+    for fld in required_fields:
+        assert fld in briefing, (
+            f"MC-3: mission_briefing missing field '{fld}'"
+        )
+
+
+def test_briefing_at_step_zero():
+    """MC-3: Mission briefing step_idx is 0."""
+    env = _make_minimal_env()
+    _obs, info = env.reset(seed=FIXED_SEED)
+
+    briefing = next(
+        (e for e in env.events if e.get("type") == "mission_briefing"),
+        None,
+    )
+    assert briefing is not None
+    assert briefing["step_idx"] == 0
+
+
+def test_briefing_constraints_is_list():
+    """MC-3: Briefing constraints field is a list of strings."""
+    env = _make_minimal_env()
+    _obs, info = env.reset(seed=FIXED_SEED)
+
+    briefing = next(
+        (e for e in env.events if e.get("type") == "mission_briefing"),
+        None,
+    )
+    assert briefing is not None
+    assert isinstance(briefing["constraints"], list)
+    for c in briefing["constraints"]:
+        assert isinstance(c, str)
