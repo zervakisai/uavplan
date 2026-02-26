@@ -162,10 +162,8 @@ class MissionEngine:
 
     def generate_briefing(self) -> MissionBriefing:
         """Generate a MissionBriefing for this episode (MC-3)."""
-        battery_wh = 150.0
         max_steps = 2000
         if self._config is not None:
-            battery_wh = self._config.battery_capacity_wh
             max_steps = self._config.effective_max_steps
 
         return MissionBriefing(
@@ -176,7 +174,6 @@ class MissionEngine:
             objective=str(self._meta.get("briefing_objective", self._meta["objective_reason"])),
             deliverable=str(self._meta["deliverable_name"]),
             constraints=list(self._meta.get("constraints", [])),
-            battery_capacity_wh=battery_wh,
             service_time_steps=int(self._meta["default_service_time"]),
             priority=str(self._meta.get("priority", "normal")),
             max_time_steps=max_steps,

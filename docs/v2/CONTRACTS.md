@@ -55,15 +55,6 @@ When implementing, reference contracts by ID (e.g., "Enforces DC-1").
 | PC-1 | Executed motion is legal under action model (4-connected; any-angle planned → explicit grid expansion) | `integration_test_runner_e2e.py` |
 | PC-2 | Metrics separate `planned_waypoints_len` vs `executed_steps_len` | `integration_test_runner_e2e.py` |
 
-## BC — Battery Contract
-| ID   | Requirement | Test File |
-|------|------------|-----------|
-| BC-1 | Battery decreases monotonically every step (MOVE=base_cost+wind_penalty, STAY=hover_cost); never increases | `contract_test_battery.py` |
-| BC-2 | Battery <= 0 → immediate `BATTERY_DEPLETED` termination; battery never reported negative | `contract_test_battery.py` |
-| BC-3 | Same seed → bit-identical battery trace (deterministic from env state, no internal RNG) | `contract_test_battery.py` |
-
----
-
 ## Cross-cutting
 | ID    | Requirement | Test File |
 |-------|------------|-----------|
