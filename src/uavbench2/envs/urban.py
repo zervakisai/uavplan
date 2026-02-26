@@ -1,6 +1,6 @@
-"""UrbanEnvV2 — minimal Phase 2 urban navigation environment.
+"""UrbanEnvV2 — urban navigation environment with dynamics.
 
-Enforces: DC-1 (one RNG), EN-1..EN-9, MC-1..MC-4.
+Enforces: DC-1 (one RNG), EN-1..EN-9, MC-1..MC-4, MP-1.
 Action space: Discrete(5) — UP(0), DOWN(1), LEFT(2), RIGHT(3), STAY(4).
 """
 
@@ -13,6 +13,10 @@ import numpy as np
 from gymnasium import spaces
 
 from uavbench2.blocking import compute_blocking_mask
+from uavbench2.dynamics.fire_ca import FireSpreadModel
+from uavbench2.dynamics.interaction_engine import InteractionEngine
+from uavbench2.dynamics.restriction_zones import RestrictionZoneModel
+from uavbench2.dynamics.traffic import TrafficModel
 from uavbench2.envs.base import RejectReason, TerminationReason
 from uavbench2.missions.engine import MissionEngine
 from uavbench2.scenarios.schema import ScenarioConfig
@@ -66,6 +70,7 @@ class UrbanEnvV2(gym.Env):
         # State (set during reset)
         self._heightmap: np.ndarray = np.zeros((0, 0))
         self._no_fly: np.ndarray = np.zeros((0, 0), dtype=bool)
+        self._roads: np.ndarray = np.zeros((0, 0), dtype=bool)
         self._agent_xy: tuple[int, int] = (0, 0)
         self._goal_xy: tuple[int, int] = (0, 0)
         self._step_idx: int = 0
@@ -75,6 +80,17 @@ class UrbanEnvV2(gym.Env):
         self._truncated: bool = False
         self._termination_reason = TerminationReason.IN_PROGRESS
         self._objective_completed: bool = False
+
+        # Dynamics (set during reset, None when disabled)
+        self._fire: FireSpreadModel | None = None
+        self._traffic: TrafficModel | None = None
+        self._nfz: RestrictionZoneModel | None = None
+        self._interaction: InteractionEngine | None = None
+        self._use_dynamics: bool = (
+            config.enable_fire
+            or config.enable_traffic
+            or config.enable_dynamic_nfz
+        )
 
     # -- Public properties (EN-5) --
 
@@ -104,16 +120,17 @@ class UrbanEnvV2(gym.Env):
         """
         super().reset(seed=seed)
 
-        # DC-1: ONE RNG source
+        # DC-1: ONE RNG source — all children via spawn()
         root_rng = np.random.default_rng(seed)
-        env_rng = root_rng.spawn(1)[0]
-        # Future phases will spawn more children for fire, traffic, etc.
+        children = root_rng.spawn(5)
+        env_rng, fire_rng, traffic_rng, nfz_rng, _reserved_rng = children
 
         # Generate heightmap (synthetic)
         self._heightmap = self._generate_heightmap(env_rng)
         self._no_fly = np.zeros(
             (self._map_size, self._map_size), dtype=bool
         )
+        self._roads = self._generate_roads(env_rng)
 
         # Place agent and goal
         if self.config.fixed_start_xy is not None:
@@ -154,6 +171,43 @@ class UrbanEnvV2(gym.Env):
             if 0 <= px < self._map_size and 0 <= py < self._map_size:
                 self._heightmap[py, px] = 0.0
 
+        # Initialize dynamics (Phase 4)
+        map_shape = (self._map_size, self._map_size)
+        self._fire = None
+        self._traffic = None
+        self._nfz = None
+        self._interaction = None
+
+        if self.config.enable_fire and self.config.fire_ignition_points > 0:
+            self._fire = FireSpreadModel(
+                map_shape=map_shape,
+                rng=fire_rng,
+                n_ignition=self.config.fire_ignition_points,
+                wind_speed=self.config.wind_speed,
+            )
+
+        if self.config.enable_traffic and self.config.num_emergency_vehicles > 0:
+            self._traffic = TrafficModel(
+                roads_mask=self._roads,
+                num_vehicles=self.config.num_emergency_vehicles,
+                rng=traffic_rng,
+            )
+
+        if self.config.enable_dynamic_nfz and self.config.num_nfz_zones > 0:
+            self._nfz = RestrictionZoneModel(
+                map_shape=map_shape,
+                rng=nfz_rng,
+                num_zones=self.config.num_nfz_zones,
+                event_t1=self.config.event_t1 or 30,
+                event_t2=self.config.event_t2 or 80,
+            )
+
+        if self._fire is not None or self._traffic is not None:
+            self._interaction = InteractionEngine(
+                map_shape=map_shape,
+                roads_mask=self._roads,
+            )
+
         self._events.append({
             "type": "reset",
             "step_idx": 0,
@@ -174,9 +228,13 @@ class UrbanEnvV2(gym.Env):
         """
         self._step_idx += 1
 
-        # Compute blocking mask (MP-1)
+        # Step dynamics BEFORE computing blocking mask
+        self._step_dynamics()
+
+        # Compute blocking mask with dynamic state (MP-1)
+        dyn_state = self.get_dynamic_state()
         blocked = compute_blocking_mask(
-            self._heightmap, self._no_fly, self.config
+            self._heightmap, self._no_fly, self.config, dyn_state
         )
 
         # Propose move
@@ -195,20 +253,19 @@ class UrbanEnvV2(gym.Env):
             reject_reason = RejectReason.OUT_OF_BOUNDS
             reject_cell = (nx, ny)
         elif blocked[ny, nx]:
-            # Blocked cell
-            if self._heightmap[ny, nx] > 0:
-                reject_reason = RejectReason.BUILDING
-                if self.config.terminate_on_collision:
-                    self._terminated = True
-                    self._termination_reason = TerminationReason.COLLISION_BUILDING
-                    reward += -25.0  # terminal penalty
-            else:
-                reject_reason = RejectReason.NO_FLY
-                if self.config.terminate_on_collision:
-                    self._terminated = True
-                    self._termination_reason = TerminationReason.COLLISION_NFZ
-                    reward += -25.0
+            # Classify reject reason from layers (EC-1)
+            reject_reason = self._classify_block(ny, nx, dyn_state)
             reject_cell = (nx, ny)
+
+            # Terminal collision only for static obstacles (building/NFZ)
+            if reject_reason in (RejectReason.BUILDING, RejectReason.NO_FLY):
+                if self.config.terminate_on_collision:
+                    self._terminated = True
+                    if reject_reason == RejectReason.BUILDING:
+                        self._termination_reason = TerminationReason.COLLISION_BUILDING
+                    else:
+                        self._termination_reason = TerminationReason.COLLISION_NFZ
+                    reward += -25.0  # terminal penalty
         else:
             accepted = True
             self._agent_xy = (nx, ny)
@@ -278,22 +335,113 @@ class UrbanEnvV2(gym.Env):
     def get_dynamic_state(self) -> dict[str, Any]:
         """Return dynamic layer state (EN-9).
 
-        For Phase 2, all dynamic layers are disabled → all None.
+        Returns actual dynamic masks when dynamics are enabled.
         """
+        shape = (self._map_size, self._map_size)
         return {
-            "fire_mask": None,
-            "smoke_mask": None,
-            "traffic_positions": None,
-            "forced_block_mask": None,
-            "risk_cost_map": None,
-            "traffic_closure_mask": None,
-            "traffic_occupancy_mask": None,
-            "moving_target_buffer": None,
-            "intruder_buffer": None,
-            "dynamic_nfz_mask": None,
+            "fire_mask": (
+                self._fire.fire_mask if self._fire is not None else None
+            ),
+            "smoke_mask": (
+                self._fire.smoke_mask if self._fire is not None else None
+            ),
+            "traffic_positions": (
+                self._traffic.vehicle_positions
+                if self._traffic is not None
+                else None
+            ),
+            "forced_block_mask": None,  # Phase 5
+            "risk_cost_map": None,  # Phase 4+
+            "traffic_closure_mask": (
+                self._interaction.traffic_closure_mask
+                if self._interaction is not None
+                else None
+            ),
+            "traffic_occupancy_mask": (
+                self._traffic.get_occupancy_mask(shape)
+                if self._traffic is not None
+                else None
+            ),
+            "moving_target_buffer": None,  # Phase 4+
+            "intruder_buffer": None,  # Phase 4+
+            "dynamic_nfz_mask": (
+                self._nfz.get_nfz_mask() if self._nfz is not None else None
+            ),
         }
 
     # -- Internal --
+
+    def _step_dynamics(self) -> None:
+        """Advance all dynamic layers by one timestep."""
+        fire_mask = self._fire.fire_mask if self._fire is not None else None
+
+        if self._fire is not None:
+            self._fire.step()
+
+        if self._traffic is not None:
+            self._traffic.step(fire_mask=fire_mask)
+
+        if self._nfz is not None:
+            self._nfz.step(fire_mask=fire_mask)
+
+        if self._interaction is not None:
+            self._interaction.update(
+                fire_mask=self._fire.fire_mask if self._fire else None,
+                traffic_positions=(
+                    self._traffic.vehicle_positions
+                    if self._traffic
+                    else None
+                ),
+                nfz_mask=(
+                    self._nfz.get_nfz_mask() if self._nfz else None
+                ),
+            )
+
+    def _classify_block(
+        self,
+        ny: int,
+        nx: int,
+        dyn_state: dict[str, Any],
+    ) -> RejectReason:
+        """Classify which layer blocked cell (ny, nx) (EC-1).
+
+        Priority: building > no_fly > fire > smoke > traffic_closure >
+        traffic_buffer > dynamic_nfz > forced_block.
+        """
+        if self._heightmap[ny, nx] > 0:
+            return RejectReason.BUILDING
+        if self._no_fly[ny, nx]:
+            return RejectReason.NO_FLY
+        if dyn_state.get("fire_mask") is not None and dyn_state["fire_mask"][ny, nx]:
+            return RejectReason.FIRE
+        if dyn_state.get("smoke_mask") is not None and dyn_state["smoke_mask"][ny, nx] >= 0.3:
+            return RejectReason.FIRE
+        if dyn_state.get("traffic_closure_mask") is not None and dyn_state["traffic_closure_mask"][ny, nx]:
+            return RejectReason.TRAFFIC_CLOSURE
+        if dyn_state.get("traffic_occupancy_mask") is not None and dyn_state["traffic_occupancy_mask"][ny, nx]:
+            return RejectReason.TRAFFIC_BUFFER
+        if dyn_state.get("dynamic_nfz_mask") is not None and dyn_state["dynamic_nfz_mask"][ny, nx]:
+            return RejectReason.DYNAMIC_NFZ
+        if dyn_state.get("forced_block_mask") is not None and dyn_state["forced_block_mask"][ny, nx]:
+            return RejectReason.FORCED_BLOCK
+        if dyn_state.get("moving_target_buffer") is not None and dyn_state["moving_target_buffer"][ny, nx]:
+            return RejectReason.MOVING_TARGET
+        if dyn_state.get("intruder_buffer") is not None and dyn_state["intruder_buffer"][ny, nx]:
+            return RejectReason.INTRUDER
+        # Fallback (should not happen if blocking mask is consistent)
+        return RejectReason.BUILDING
+
+    def _generate_roads(self, rng: np.random.Generator) -> np.ndarray:
+        """Generate synthetic road network as grid pattern."""
+        roads = np.zeros((self._map_size, self._map_size), dtype=bool)
+        # Place roads on a grid with spacing ~10% of map size
+        spacing = max(3, self._map_size // 8)
+        for i in range(0, self._map_size, spacing):
+            roads[i, :] = True  # horizontal
+            roads[:, i] = True  # vertical
+        # Roads must be on free cells (not buildings)
+        roads = roads & (self._heightmap == 0.0)
+        return roads
 
     def _generate_heightmap(self, rng: np.random.Generator) -> np.ndarray:
         """Generate synthetic heightmap from RNG (DC-1 compliant)."""
