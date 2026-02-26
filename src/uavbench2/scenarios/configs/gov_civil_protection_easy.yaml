@@ -1,0 +1,27 @@
+name: gov_civil_protection_easy
+mission_type: civil_protection
+difficulty: easy
+domain: urban
+regime: naturalistic
+paper_track: static
+
+map_size: 500
+map_source: synthetic
+osm_tile_id: penteli
+building_density: 0.18
+
+fixed_start_xy: [50, 50]
+fixed_goal_xy: [450, 450]
+min_start_goal_l1: 100
+
+enable_fire: false
+enable_traffic: false
+enable_dynamic_nfz: false
+fire_blocks_movement: false
+traffic_blocks_movement: false
+terminate_on_collision: true
+
+wind_speed: 0.2
+fire_ignition_points: 0
+num_emergency_vehicles: 0
+force_replan_count: 0

@@ -50,6 +50,12 @@ all = [
   "uavbench[viz,dev,pipeline]",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py", "contract_test_*.py", "unit_test_*.py", "integration_test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
