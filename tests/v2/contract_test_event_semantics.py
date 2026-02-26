@@ -82,10 +82,13 @@ class TestEV1_AuthoritativeStepIdx:
         env = UrbanEnvV2(config)
         env.reset(seed=SEED)
 
-        # Verify reset event
-        assert len(env.events) == 1
+        # Verify reset events (reset + mission_briefing)
+        assert len(env.events) >= 1
         assert env.events[0]["type"] == "reset"
         assert env.events[0]["step_idx"] == 0
+        # All reset-phase events should have step_idx=0
+        for evt in env.events:
+            assert evt["step_idx"] == 0
 
         # Step until goal_reached or timeout
         step_count = 0
@@ -96,9 +99,9 @@ class TestEV1_AuthoritativeStepIdx:
             step_count += 1
             _, _, terminated, truncated, info = env.step(ACTION_RIGHT)
 
-        # Check all events emitted during step N have step_idx == N
+        # Check all events have valid step_idx
         for event in env.events:
-            if event["type"] == "reset":
+            if event["type"] in ("reset", "mission_briefing"):
                 assert event["step_idx"] == 0
             else:
                 # step_idx should be a positive integer matching the step
@@ -115,12 +118,13 @@ class TestEV1_AuthoritativeStepIdx:
         env = UrbanEnvV2(config)
         env.reset(seed=SEED)
 
-        # After reset: one event with step_idx=0
-        assert len(env.events) == 1
-        assert env.events[0]["step_idx"] == 0, (
-            f"EV-1: reset event should have step_idx=0, "
-            f"got {env.events[0]['step_idx']}"
-        )
+        # After reset: events at step_idx=0 (reset + mission_briefing)
+        assert len(env.events) >= 1
+        for evt in env.events:
+            assert evt["step_idx"] == 0, (
+                f"EV-1: reset-phase event should have step_idx=0, "
+                f"got {evt['step_idx']}"
+            )
 
         # First step: step_idx=1
         _, _, _, _, info = env.step(ACTION_RIGHT)

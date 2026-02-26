@@ -6,15 +6,15 @@ Tracks task queue, completion via service_time, and generates events.
 from __future__ import annotations
 
 from uavbench2.envs.base import TaskStatus
-from uavbench2.missions.schema import TaskSpec
-from uavbench2.scenarios.schema import MissionType
+from uavbench2.missions.schema import MissionBriefing, TaskSpec
+from uavbench2.scenarios.schema import MissionType, ScenarioConfig
 
 
 # ---------------------------------------------------------------------------
 # Mission metadata per mission type (MC-1, MC-3)
 # ---------------------------------------------------------------------------
 
-_MISSION_META: dict[str, dict[str, str | int]] = {
+_MISSION_META: dict[str, dict] = {
     "fire_delivery": {
         "objective_label": "Emergency Medical Supply Delivery",
         "objective_reason": (
@@ -23,6 +23,13 @@ _MISSION_META: dict[str, dict[str, str | int]] = {
         "deliverable_name": "medical_supplies",
         "default_service_time": 0,
         "task_category": "delivery_point",
+        "origin_name": "Hospital Depot Alpha",
+        "destination_name": "Fire-Isolated Settlement",
+        "briefing_objective": (
+            "Deliver emergency medical supplies to cut-off settlement"
+        ),
+        "constraints": ["Avoid active fire zones", "Respect firefighting NFZs"],
+        "priority": "critical",
     },
     "flood_rescue": {
         "objective_label": "Flood Search & Rescue Assessment",
@@ -32,6 +39,13 @@ _MISSION_META: dict[str, dict[str, str | int]] = {
         "deliverable_name": "rescue_assessment",
         "default_service_time": 2,
         "task_category": "rescue_site",
+        "origin_name": "Emergency Operations Center",
+        "destination_name": "Flood-Stranded Area",
+        "briefing_objective": (
+            "Locate and assess flood-stranded population for rescue coordination"
+        ),
+        "constraints": ["Avoid flooded road corridors", "Maintain safe altitude over water"],
+        "priority": "critical",
     },
     "fire_surveillance": {
         "objective_label": "Aerial Fire Perimeter Survey",
@@ -41,6 +55,13 @@ _MISSION_META: dict[str, dict[str, str | int]] = {
         "deliverable_name": "perimeter_report",
         "default_service_time": 3,
         "task_category": "survey_point",
+        "origin_name": "Fire Command Post",
+        "destination_name": "Active Fire Perimeter",
+        "briefing_objective": (
+            "Survey active fire perimeter and report coverage to command post"
+        ),
+        "constraints": ["Avoid manned aircraft corridors", "Stay clear of active fire front"],
+        "priority": "high",
     },
 }
 
@@ -57,11 +78,13 @@ class MissionEngine:
         mission_type: MissionType,
         start_xy: tuple[int, int],
         goal_xy: tuple[int, int],
+        config: ScenarioConfig | None = None,
         rng: "numpy.random.Generator | None" = None,
     ) -> None:
         self.mission_type = mission_type
         self.start_xy = start_xy
         self.goal_xy = goal_xy
+        self._config = config
         self._meta = _MISSION_META[mission_type.value]
         self._events: list[dict] = []
         self._tasks: list[TaskSpec] = []
@@ -136,6 +159,28 @@ class MissionEngine:
         """Manhattan distance to current objective POI."""
         poi = self.objective_poi
         return float(abs(agent_xy[0] - poi[0]) + abs(agent_xy[1] - poi[1]))
+
+    def generate_briefing(self) -> MissionBriefing:
+        """Generate a MissionBriefing for this episode (MC-3)."""
+        battery_wh = 150.0
+        max_steps = 2000
+        if self._config is not None:
+            battery_wh = self._config.battery_capacity_wh
+            max_steps = self._config.effective_max_steps
+
+        return MissionBriefing(
+            mission_type=self.mission_type.value,
+            domain=self.mission_type.value,
+            origin_name=str(self._meta.get("origin_name", "Base")),
+            destination_name=str(self._meta.get("destination_name", "Objective")),
+            objective=str(self._meta.get("briefing_objective", self._meta["objective_reason"])),
+            deliverable=str(self._meta["deliverable_name"]),
+            constraints=list(self._meta.get("constraints", [])),
+            battery_capacity_wh=battery_wh,
+            service_time_steps=int(self._meta["default_service_time"]),
+            priority=str(self._meta.get("priority", "normal")),
+            max_time_steps=max_steps,
+        )
 
     def step(
         self,
