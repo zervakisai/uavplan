@@ -1,0 +1,29 @@
+name: gov_fire_surveillance_hard
+mission_type: fire_surveillance
+difficulty: hard
+domain: urban
+regime: stress_test
+paper_track: dynamic
+
+map_size: 500
+map_source: synthetic
+building_density: 0.22
+
+min_start_goal_l1: 100
+
+enable_fire: true
+enable_traffic: true
+enable_dynamic_nfz: true
+fire_blocks_movement: true
+traffic_blocks_movement: true
+terminate_on_collision: true
+
+event_t1: 25
+event_t2: 80
+
+wind_speed: 0.6
+fire_ignition_points: 5
+num_emergency_vehicles: 3
+num_nfz_zones: 3
+force_replan_count: 2
+replan_every_steps: 6

@@ -28,7 +28,7 @@ def _make_dynamic_config(**overrides) -> ScenarioConfig:
     """Config with forced interdictions enabled."""
     defaults = dict(
         name="test_fairness",
-        mission_type=MissionType.CIVIL_PROTECTION,
+        mission_type=MissionType.FIRE_DELIVERY,
         difficulty=Difficulty.MEDIUM,
         map_size=20,
         building_density=0.10,

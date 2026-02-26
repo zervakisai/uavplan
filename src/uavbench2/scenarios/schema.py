@@ -27,9 +27,9 @@ class Difficulty(str, Enum):
 
 
 class MissionType(str, Enum):
-    CIVIL_PROTECTION = "civil_protection"
-    MARITIME_DOMAIN = "maritime_domain"
-    CRITICAL_INFRASTRUCTURE = "critical_infrastructure"
+    FIRE_DELIVERY = "fire_delivery"
+    FLOOD_RESCUE = "flood_rescue"
+    FIRE_SURVEILLANCE = "fire_surveillance"
 
 
 class Regime(str, Enum):

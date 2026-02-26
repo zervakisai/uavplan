@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # --- run subcommand (RU-5) ---
     run_parser = sub.add_parser("run", help="Run benchmark episodes")
-    run_parser.add_argument("--scenarios", type=str, default="gov_civil_protection_easy")
+    run_parser.add_argument("--scenarios", type=str, default="gov_fire_delivery_easy")
     run_parser.add_argument("--planners", type=str, default="astar")
     run_parser.add_argument("--trials", type=int, default=1)
     run_parser.add_argument("--seed-base", type=int, default=0)

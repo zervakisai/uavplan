@@ -17,7 +17,7 @@ from uavbench2.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 # Helpers
 # ---------------------------------------------------------------------------
 
-SCENARIO_ID = "gov_civil_protection_easy"
+SCENARIO_ID = "gov_fire_delivery_easy"
 PLANNER_ID = "astar"
 SEED = 42
 
@@ -26,7 +26,7 @@ def _make_config(**overrides) -> ScenarioConfig:
     """Create a minimal ScenarioConfig for event semantics tests."""
     defaults = dict(
         name="test_event_semantics",
-        mission_type=MissionType.CIVIL_PROTECTION,
+        mission_type=MissionType.FIRE_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=10,
         building_density=0.0,
@@ -165,7 +165,7 @@ class TestEV1_AuthoritativeStepIdx:
         result = run_episode(SCENARIO_ID, PLANNER_ID, SEED)
 
         task_events = [e for e in result.events if e["type"] == "task_completed"]
-        # civil_protection has service_time=0 (fly-through),
+        # fire_delivery has service_time=0 (fly-through),
         # so task completion should happen
         for event in task_events:
             assert "step_idx" in event

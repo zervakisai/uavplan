@@ -15,32 +15,32 @@ from uavbench2.scenarios.schema import MissionType
 # ---------------------------------------------------------------------------
 
 _MISSION_META: dict[str, dict[str, str | int]] = {
-    "civil_protection": {
-        "objective_label": "Wildfire SA + Evacuation Corridor",
+    "fire_delivery": {
+        "objective_label": "Emergency Medical Supply Delivery",
         "objective_reason": (
-            "Survey active fire perimeter and verify evacuation corridor viability"
+            "Emergency medical supply delivery to fire-isolated settlement"
         ),
-        "deliverable_name": "fire_perimeter.geojson",
+        "deliverable_name": "medical_supplies",
         "default_service_time": 0,
-        "task_category": "perimeter_point",
+        "task_category": "delivery_point",
     },
-    "maritime_domain": {
-        "objective_label": "Coastal Patrol + Distress Response",
+    "flood_rescue": {
+        "objective_label": "Flood Search & Rescue Assessment",
         "objective_reason": (
-            "Patrol coastal corridor and respond to maritime distress events"
+            "Search and rescue assessment of flood-stranded population"
         ),
-        "deliverable_name": "corridor_coverage.csv",
+        "deliverable_name": "rescue_assessment",
         "default_service_time": 2,
-        "task_category": "distress_event",
+        "task_category": "rescue_site",
     },
-    "critical_infrastructure": {
-        "objective_label": "Infrastructure Inspection Tour",
+    "fire_surveillance": {
+        "objective_label": "Aerial Fire Perimeter Survey",
         "objective_reason": (
-            "Inspect critical infrastructure sites under evolving security restrictions"
+            "Aerial survey of active fire perimeter for command post"
         ),
-        "deliverable_name": "inspection_log.csv",
+        "deliverable_name": "perimeter_report",
         "default_service_time": 3,
-        "task_category": "inspection_site",
+        "task_category": "survey_point",
     },
 }
 
