@@ -61,3 +61,33 @@ Do NOT skip phases. Each phase has a gate test. Read `@docs/v2/PHASE_GATES.md` b
 
 ## Decisions Log
 All assumptions and design decisions go in `docs/v2/V2_DECISIONS.md`. If a question is blocking, ask. Otherwise assume safest default and log it.
+
+---
+
+# CLAUDE.md — Mission Upgrade Addendum
+
+## Current Task
+Upgrading v1 UAVBench with mission-driven concepts. See V1_MISSION_UPGRADE_SUPERPROMPT.md for full spec.
+
+## Critical Rules
+- NEVER rewrite planners, dynamics, envs, or runner from scratch
+- ALL existing tests must pass after every change
+- One commit per phase, branch: mission-upgrade
+- Read V1_MISSION_UPGRADE_SUPERPROMPT.md before writing ANY code
+
+## Quick Reference
+- v1 source: src/uavbench/
+- v2 prototype (reference only): src/uavbench2/
+- Tests: pytest tests/ -x -q
+- Scenarios: src/uavbench/scenarios/configs/*.yaml
+- Maps: data/maps/ (downtown, penteli, piraeus)
+- Existing results: results/paper/
+
+## Phase Checklist
+- [ ] Phase 1: Mission Briefings
+- [ ] Phase 2: Decision Record
+- [ ] Phase 3: HUD
+- [ ] Phase 4: Forced Interdictions
+- [ ] Phase 5: Feasibility Guardrail
+- [ ] Phase 6: Contract Tests (20 contracts)
+- [ ] Phase 7: Paper Pipeline

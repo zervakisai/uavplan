@@ -22,6 +22,8 @@ import numpy as np
 
 from uavbench.missions.spec import (
     MissionSpec,
+    MissionBriefing,
+    BRIEFING_TEMPLATES,
     TaskSpec,
     TaskStatus,
     MissionProduct,
@@ -355,3 +357,84 @@ class MissionEngine:
             "event_detections": self.event_detections,
             "step_count": self.step_count,
         }
+
+
+# ── Briefing generation ──────────────────────────────────────────────
+
+
+def generate_briefing(
+    scenario_config: Any,
+    mission_spec: MissionSpec | None = None,
+) -> MissionBriefing:
+    """Generate a human-readable mission briefing from scenario config.
+
+    Uses BRIEFING_TEMPLATES for the mission family and enriches with
+    scenario-level metadata (difficulty, incident provenance, map tile).
+
+    Args:
+        scenario_config: ScenarioConfig instance (or any object with
+            ``mission_type``, ``difficulty``, ``description``, etc.)
+        mission_spec: Optional MissionSpec for service_time and time_budget.
+
+    Returns:
+        Frozen MissionBriefing dataclass.
+    """
+    # Resolve mission_type string from enum or plain str
+    mt_raw = getattr(scenario_config, "mission_type", "point_to_point")
+    mt = getattr(mt_raw, "value", str(mt_raw))
+
+    template = BRIEFING_TEMPLATES.get(mt, {})
+
+    # Difficulty → priority mapping
+    diff_raw = getattr(scenario_config, "difficulty", "easy")
+    diff = getattr(diff_raw, "value", str(diff_raw))
+    priority_map = {"hard": "critical", "medium": "high", "easy": "routine"}
+    priority = priority_map.get(diff, "routine")
+
+    # Domain
+    domain_raw = getattr(scenario_config, "domain", "urban")
+    domain = getattr(domain_raw, "value", str(domain_raw))
+
+    # Build constraints from active dynamic layers
+    constraints: list[str] = []
+    if getattr(scenario_config, "enable_fire", False):
+        constraints.append("Avoid active fire zones")
+    if getattr(scenario_config, "enable_dynamic_nfz", False):
+        constraints.append("Respect dynamic no-fly restrictions")
+    if getattr(scenario_config, "enable_traffic", False):
+        constraints.append("Maintain safe distance from emergency vehicles")
+    if getattr(scenario_config, "fire_blocks_movement", False):
+        constraints.append("Burning cells are impassable")
+    if getattr(scenario_config, "traffic_blocks_movement", False):
+        constraints.append("Vehicle buffer zones reject entry")
+
+    # Enrich origin/destination with tile name if available
+    tile = getattr(scenario_config, "osm_tile_id", None) or ""
+    origin = template.get("origin_name", "Operations Base")
+    destination = template.get("destination_name", "Mission Target")
+    if tile and tile.lower() not in origin.lower():
+        origin = f"{origin} ({tile.title()})"
+
+    # Max time steps from mission spec or scenario extra
+    max_steps = 0
+    service_time = 0
+    if mission_spec is not None:
+        max_steps = mission_spec.knobs.time_budget
+        if mission_spec.initial_tasks:
+            service_time = mission_spec.initial_tasks[0].service_time
+    else:
+        extra = getattr(scenario_config, "extra", None) or {}
+        max_steps = int(extra.get("time_budget", 4 * getattr(scenario_config, "map_size", 100)))
+
+    return MissionBriefing(
+        mission_type=mt,
+        domain=domain,
+        origin_name=origin,
+        destination_name=destination,
+        objective=template.get("objective", "Navigate to destination"),
+        deliverable=template.get("deliverable", "Navigation completion"),
+        constraints=tuple(constraints),
+        service_time_steps=service_time,
+        priority=priority,
+        max_time_steps=max_steps,
+    )

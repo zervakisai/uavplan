@@ -163,6 +163,67 @@ class MissionSpec:
     description: str = ""
 
 
+# ── Mission briefing ──────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class MissionBriefing:
+    """Human-readable mission briefing generated at episode start.
+
+    Logged as the first event (step_idx=0) of every episode so that
+    results are self-documenting.  Enforces MC-1 (mission objective)
+    and MC-4 (briefing in results).
+    """
+    mission_type: str           # "civil_protection", "maritime_domain", ...
+    domain: str                 # "urban"
+    origin_name: str            # e.g. "Penteli Fire Station"
+    destination_name: str       # e.g. "Evacuation Zone Alpha"
+    objective: str              # e.g. "Deliver medical supplies to evacuation zone"
+    deliverable: str            # e.g. "Thermal-sealed medical kit"
+    constraints: tuple[str, ...] = ()  # e.g. ("Avoid active fire zones",)
+    service_time_steps: int = 0
+    priority: str = "routine"   # "critical", "high", "routine"
+    max_time_steps: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe serialisation for event logging."""
+        return {
+            "mission_type": self.mission_type,
+            "domain": self.domain,
+            "origin_name": self.origin_name,
+            "destination_name": self.destination_name,
+            "objective": self.objective,
+            "deliverable": self.deliverable,
+            "constraints": list(self.constraints),
+            "service_time_steps": self.service_time_steps,
+            "priority": self.priority,
+            "max_time_steps": self.max_time_steps,
+        }
+
+
+# ── Briefing templates per mission family ─────────────────────────────
+
+BRIEFING_TEMPLATES: dict[str, dict[str, str]] = {
+    "civil_protection": {
+        "objective": "Emergency medical delivery during wildfire crisis",
+        "deliverable": "Thermal-sealed medical kit",
+        "origin_name": "Penteli Fire Station",
+        "destination_name": "Evacuation Zone Alpha",
+    },
+    "critical_infrastructure": {
+        "objective": "Critical infrastructure inspection under restricted airspace",
+        "deliverable": "Structural integrity assessment report",
+        "origin_name": "HCAA Operations Centre (Downtown Athens)",
+        "destination_name": "Infrastructure Inspection Site",
+    },
+    "maritime_domain": {
+        "objective": "Maritime search and rescue in multi-hazard zone",
+        "deliverable": "Survivor location and status report",
+        "origin_name": "Piraeus Coast Guard Station",
+        "destination_name": "Maritime Distress Zone",
+    },
+}
+
+
 # ── Common metric keys ────────────────────────────────────────────────
 
 COMMON_METRICS = (
