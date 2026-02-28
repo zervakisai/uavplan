@@ -407,6 +407,12 @@ class OperationalRenderer:
         plan_reason: str = "none",
         forced_block_active: bool = False,
         forced_block_cleared: bool = False,
+        # Mission HUD overlay
+        mission_objective: str = "",
+        mission_destination: str = "",
+        mission_status: str = "",
+        distance_to_goal: int = 0,
+        mission_max_steps: int = 0,
     ) -> np.ndarray:
         """Render one frame with all operational layers.
 
@@ -1004,6 +1010,30 @@ class OperationalRenderer:
             forced_block_active=forced_block_active,
             forced_block_cleared=forced_block_cleared,
         )
+        # ── Mission HUD (top-right) ──
+        if mission_objective or mission_destination:
+            from uavbench.visualization.hud import (
+                MissionHUD,
+                MissionHUDState,
+                derive_plan_status,
+            )
+            _mhud = MissionHUD(has_briefing=True, bg_color=PALETTE["hud_bg"],
+                               text_color=PALETTE["hud_text"],
+                               accent_color=PALETTE["hud_accent"],
+                               warn_color=PALETTE["hud_warn"])
+            _mhud.draw(ax, MissionHUDState(
+                objective=mission_objective,
+                destination_name=mission_destination,
+                mission_status=mission_status or "EN_ROUTE",
+                distance_to_goal=distance_to_goal,
+                plan_status=derive_plan_status(
+                    plan_len=plan_len, plan_stale=plan_stale,
+                    plan_reason=plan_reason,
+                ),
+                step=step,
+                max_steps=mission_max_steps or total_steps,
+            ))
+
         self._draw_legend(
             ax, fire_mask, smoke_mask, traffic_closure_mask,
             risk_map, intruder_positions, comms_coverage_map,
