@@ -27,6 +27,7 @@ from uavbench.metrics.comprehensive import (
     aggregate_episode_metrics, save_episode_metrics_jsonl, save_aggregate_metrics_csv,
     print_aggregate_metrics_table
 )
+from uavbench.missions.engine import generate_briefing
 from uavbench.planners import PLANNERS
 from uavbench.planners.astar import AStarPlanner
 from uavbench.scenarios.loader import load_scenario
@@ -166,6 +167,14 @@ class BenchmarkRunner:
         if planner_id not in PLANNERS:
             raise ValueError(f"Unknown planner '{planner_id}'")
 
+        # Generate mission briefing (MC-1: every episode has a mission objective)
+        briefing = generate_briefing(cfg)
+        briefing_event = {
+            "step": 0,
+            "type": "mission_briefing",
+            "payload": briefing.to_dict(),
+        }
+
         use_dynamic = (
             cfg.paper_track == "dynamic"
             or int(cfg.force_replan_count) > 0
@@ -195,7 +204,7 @@ class BenchmarkRunner:
             termination_reason = str(res.get("termination_reason", "unknown"))
             success = bool(res.get("success", False))
             replans = int(res.get("total_replans", 0))
-            env_events = list(res.get("events", []))
+            env_events = [briefing_event] + list(res.get("events", []))
         else:
             res = run_planner_once(scenario_id, planner_id, seed=seed)
             path = list(res.get("path") or [res.get("start")])
@@ -210,7 +219,7 @@ class BenchmarkRunner:
             termination_reason = "success" if bool(res.get("success", False)) else "static_validation_failed"
             success = bool(res.get("success", False))
             replans = 0
-            env_events = []
+            env_events = [briefing_event]
 
         return compute_episode_metrics(
             scenario_id=scenario_id,
