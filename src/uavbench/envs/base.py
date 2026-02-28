@@ -1,12 +1,33 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any, Mapping
 
 import gymnasium as gym
 import numpy as np
 
 from uavbench.scenarios.schema import ScenarioConfig
+
+
+class RejectReason(str, Enum):
+    """Why a proposed move was rejected.  Enforces EC-1.
+
+    String values match the existing info["reject_reason"] convention
+    for backward compatibility with downstream code and tests.
+    """
+    NONE = "none"
+    BUILDING = "building"
+    NO_FLY = "no_fly"
+    FIRE = "fire"
+    TRAFFIC = "traffic"
+    RESTRICTION_ZONE = "restriction_zone"
+    FORCED_BLOCK = "forced_block"
+    OUT_OF_BOUNDS = "out_of_bounds"
+    INTRUDER = "intruder"
+    MOVING_TARGET = "moving_target"
+    DYNAMIC_NFZ = "dynamic_nfz"
+    TRAFFIC_CLOSURE = "traffic_closure"
 
 
 class UAVBenchEnv(gym.Env, ABC):
