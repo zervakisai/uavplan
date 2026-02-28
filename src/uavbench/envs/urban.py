@@ -8,7 +8,7 @@ import numpy as np
 from gymnasium import spaces
 
 from uavbench.dynamics.adversarial_uav import AdversarialUAVModel
-from uavbench.envs.base import UAVBenchEnv
+from uavbench.envs.base import UAVBenchEnv, RejectReason
 from uavbench.dynamics.fire_spread import FireSpreadModel
 from uavbench.dynamics.interaction_engine import InteractionEngine
 from uavbench.dynamics.population_risk import PopulationRiskModel
@@ -612,15 +612,21 @@ class UrbanEnv(UAVBenchEnv):
         terrain_h = float(self._heightmap[ny, nx])  # levels-only: 0..max_altitude
         attempted_building_collision = bool(nz <= terrain_h)
 
-        # Decide whether to accept the move
+        # Decide whether to accept the move — track reason as enum (EC-1)
         accepted = True
+        reject_reason_enum = RejectReason.NONE
+        reject_layer = "none"
         attempted_forced_block = False
         attempted_traffic_closure = False
         if attempted_no_fly:
             accepted = False
+            reject_reason_enum = RejectReason.NO_FLY
+            reject_layer = "no_fly_mask"
             self.log_event("no_fly_violation_attempt", x=nx, y=ny, z=nz)
         elif attempted_building_collision:
             accepted = False
+            reject_reason_enum = RejectReason.BUILDING
+            reject_layer = "heightmap"
             self.log_event(
                 "collision_building_attempt",
                 x=nx, y=ny, z=nz, height=terrain_h
@@ -630,12 +636,16 @@ class UrbanEnv(UAVBenchEnv):
         if accepted and self._forced_block_mask[ny, nx]:
             accepted = False
             attempted_forced_block = True
+            reject_reason_enum = RejectReason.FORCED_BLOCK
+            reject_layer = "forced_block_mask"
             self.log_event("forced_interdiction_block", x=nx, y=ny, z=nz)
 
         # Road-closure mask from interaction engine
         if accepted and self._traffic_closure_mask[ny, nx]:
             accepted = False
             attempted_traffic_closure = True
+            reject_reason_enum = RejectReason.TRAFFIC_CLOSURE
+            reject_layer = "traffic_closure_mask"
             self.log_event("traffic_closure_block", x=nx, y=ny, z=nz)
 
         # Fire blocks movement (only when config flag is set)
@@ -645,6 +655,8 @@ class UrbanEnv(UAVBenchEnv):
                 and self._fire_model.fire_mask[ny, nx]):
             accepted = False
             attempted_fire_block = True
+            reject_reason_enum = RejectReason.FIRE
+            reject_layer = "fire_mask"
             self.log_event("fire_block", x=nx, y=ny, z=nz)
 
         # Traffic blocks movement (vehicle buffer zones reject movement)
@@ -656,6 +668,8 @@ class UrbanEnv(UAVBenchEnv):
                 if dist <= 5:
                     accepted = False
                     attempted_traffic_block = True
+                    reject_reason_enum = RejectReason.TRAFFIC
+                    reject_layer = "traffic_buffer"
                     self.log_event("traffic_block", x=nx, y=ny, z=nz,
                                    vx=int(vx), vy=int(vy), dist=dist)
                     break
@@ -668,6 +682,8 @@ class UrbanEnv(UAVBenchEnv):
             if dist <= self._moving_target.buffer_radius:
                 accepted = False
                 attempted_target_block = True
+                reject_reason_enum = RejectReason.MOVING_TARGET
+                reject_layer = "moving_target_buffer"
                 self.log_event("target_block", x=nx, y=ny, z=nz)
 
         # Intruder buffer blocks movement
@@ -678,6 +694,8 @@ class UrbanEnv(UAVBenchEnv):
                 if dist <= self._intruder_model.buffer_radius:
                     accepted = False
                     attempted_intruder_block = True
+                    reject_reason_enum = RejectReason.INTRUDER
+                    reject_layer = "intruder_buffer"
                     self.log_event("intruder_block", x=nx, y=ny, z=nz)
                     break
 
@@ -688,6 +706,8 @@ class UrbanEnv(UAVBenchEnv):
             if nfz_mask[ny, nx]:
                 accepted = False
                 attempted_nfz_block = True
+                reject_reason_enum = RejectReason.DYNAMIC_NFZ
+                reject_layer = "dynamic_nfz_mask"
                 self._dynamic_nfz.zone_violations += 1
                 self.log_event("dynamic_nfz_block", x=nx, y=ny, z=nz)
 
@@ -962,19 +982,10 @@ class UrbanEnv(UAVBenchEnv):
             "attempted_intruder_block": attempted_intruder_block,
             "attempted_nfz_block": attempted_nfz_block,
             "accepted_move": bool(accepted),
-            # Unified rejection reason (first blocking layer; "none" if move accepted)
-            "reject_reason": (
-                "building" if attempted_building_collision else
-                "no_fly" if attempted_no_fly else
-                "forced_block" if attempted_forced_block else
-                "traffic_closure" if attempted_traffic_closure else
-                "fire" if attempted_fire_block else
-                "traffic" if attempted_traffic_block else
-                "moving_target" if attempted_target_block else
-                "intruder" if attempted_intruder_block else
-                "dynamic_nfz" if attempted_nfz_block else
-                "none"
-            ),
+            # Decision record (EC-1, EC-2): enum + backward-compat string
+            "reject_reason": reject_reason_enum.value,  # string for backward compat
+            "reject_reason_enum": reject_reason_enum,    # RejectReason enum (EC-1)
+            "reject_layer": reject_layer,                # blocking layer name (EC-1)
             "reject_cell": (int(nx), int(ny)) if not accepted else None,
 
             # State for metrics (path length, energy proxy κ.λπ. τα χτίζεις έξω)
