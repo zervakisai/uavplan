@@ -1259,7 +1259,8 @@ class UrbanEnv(UAVBenchEnv):
         """Ensure dynamic updates do not make path permanently unreachable.
 
         Returns guardrail_depth: 0=no action, 1=forced blocks cleared,
-        2=NFZ/closures relaxed, 3=emergency corridor fallback.
+        2=NFZ/closures relaxed, 3=emergency corridor fallback,
+        4=nuclear deconfliction (all dynamics cleared along wide corridor).
 
         Optimization: skips BFS when the topology change counter has not
         been incremented since the last check AND that check confirmed
@@ -1391,6 +1392,40 @@ class UrbanEnv(UAVBenchEnv):
                 free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
                 reachable = self._is_reachable(free, current_xy, goal_xy)
                 relaxation["hard_deconfliction"] = True
+
+        if reachable:
+            status["relaxation_applied"] = relaxation
+            status["feasible_after_guardrail"] = True
+            status["guardrail_depth"] = depth
+            self._guardrail_unreachable_streak = 0
+            self._guardrail_prev_topo_version = None
+            self._guardrail_last_reachable = True
+            self._last_guardrail_status = status
+            return depth
+
+        # Step 4 (depth=4): nuclear deconfliction — wide corridor, clear ALL dynamics.
+        # Last resort: open a width-5 corridor and forcibly remove every dynamic
+        # obstacle along it.  If still infeasible → episode flagged infeasible.
+        depth = 4
+        wide_corridor = self._build_emergency_corridor_mask(current_xy, goal_xy, width=5)
+        self._emergency_corridor_mask |= wide_corridor
+        self._emergency_corridor_active = True
+        self._forced_block_mask[:] = False
+        self._traffic_closure_mask[:] = False
+        if self._dynamic_nfz is not None:
+            if hasattr(self._dynamic_nfz, "radii"):
+                self._dynamic_nfz.radii = np.full_like(self._dynamic_nfz.radii, 2.0)
+        # Clear fire blocks in the wide corridor if fire blocks movement
+        if self.config.fire_blocks_movement and self._fire_model is not None:
+            fire_state = self._fire_model.state
+            fire_state[wide_corridor & (fire_state > 0)] = 0
+        relaxation["nuclear_deconfliction"] = True
+        relaxation["corridor_width"] = 5
+        status["corridor_fallback_used"] = True
+
+        runtime_mask = self._build_runtime_blocking_mask()
+        free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
+        reachable = self._is_reachable(free, current_xy, goal_xy)
 
         status["relaxation_applied"] = relaxation
         status["feasible_after_guardrail"] = bool(reachable)
