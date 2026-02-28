@@ -1035,6 +1035,13 @@ class StakeholderRenderer:
         events: list[dict[str, Any]] | None = None,
         # Flags
         is_keyframe: bool = False,
+        # Mission HUD overlay
+        mission_objective: str = "",
+        mission_destination: str = "",
+        mission_status: str = "",
+        distance_to_goal: int = 0,
+        plan_status: str = "",
+        mission_max_steps: int = 0,
     ) -> np.ndarray:
         """Render one frame of the 4-pane stakeholder visualization.
 
@@ -1079,6 +1086,26 @@ class StakeholderRenderer:
                           conflict_markers, violation_flash,
                           replan_annotations)
         self._draw_cartographic()                                     # Z10
+
+        # ── Mission HUD overlay (top-left of map pane) ──
+        if mission_objective or mission_destination:
+            from uavbench.visualization.hud import MissionHUD, MissionHUDState
+            _mhud = MissionHUD(
+                has_briefing=True,
+                bg_color=STAKEHOLDER_PALETTE.get("panel_bg", "#1A1A2E")[:7],
+                text_color=STAKEHOLDER_PALETTE.get("panel_text", "#E8E8E8"),
+                accent_color=self.profile.accent_color,
+                warn_color="#FF6B35",
+            )
+            _mhud.draw(self._ax_map, MissionHUDState(
+                objective=mission_objective,
+                destination_name=mission_destination,
+                mission_status=mission_status or "EN_ROUTE",
+                distance_to_goal=distance_to_goal,
+                plan_status=plan_status or "ACTIVE",
+                step=step,
+                max_steps=mission_max_steps or max_steps,
+            ), x=0.01, ha="left")
 
         # ── HUD panels ──
         self._draw_metrics_panel(step, max_steps, metrics)            # Z11

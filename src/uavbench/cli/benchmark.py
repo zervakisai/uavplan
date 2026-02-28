@@ -406,6 +406,14 @@ def run_dynamic_episode(
     env.reset(seed=seed)
     heightmap, no_fly, start_xy, goal_xy = env.export_planner_inputs()
 
+    # Generate mission briefing for HUD (MC-1: every episode has a mission objective)
+    _briefing = None
+    try:
+        from uavbench.missions.engine import generate_briefing
+        _briefing = generate_briefing(cfg)
+    except Exception:
+        pass  # legacy scenario without mission support
+
     # Auto-create renderer if render_dir or render_gif requested
     if renderer is None and (render_dir or render_gif):
         try:
@@ -643,6 +651,14 @@ def run_dynamic_episode(
                 plan_reason=str(info.get("plan_reason", "none")),
                 forced_block_active=bool(info.get("forced_block_active", False)),
                 forced_block_cleared=bool(info.get("forced_block_cleared_by_guardrail", False)),
+                # Mission HUD
+                mission_objective=_briefing.objective if _briefing else "",
+                mission_destination=_briefing.destination_name if _briefing else "",
+                mission_status="COMPLETED" if info.get("reached_goal") else (
+                    "FAILED" if terminated else "EN_ROUTE"
+                ),
+                distance_to_goal=abs(current_xy[0] - goal_xy[0]) + abs(current_xy[1] - goal_xy[1]),
+                mission_max_steps=_briefing.max_time_steps if _briefing else max_steps,
             )
 
         if terminated:
