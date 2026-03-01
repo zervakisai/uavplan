@@ -58,3 +58,11 @@ extra:
   dynamics_intensity: moderate
   time_budget: 260
   energy_budget: 0.85
+  safety_buffers:
+    fire_buffer_cells: 5
+    nfz_buffer_cells: 3
+  sensitive_locations:
+    - {x: 200, y: 180, type: school, label: "Plaka Primary School"}
+    - {x: 320, y: 250, type: hospital, label: "Evangelismos Hospital"}
+    - {x: 150, y: 300, type: church, label: "Metropolis Cathedral"}
+    - {x: 380, y: 120, type: playground, label: "Pedion Areos Park"}

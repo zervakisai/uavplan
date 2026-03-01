@@ -62,3 +62,11 @@ extra:
   dynamics_intensity: severe
   time_budget: 280
   energy_budget: 0.70
+  safety_buffers:
+    fire_buffer_cells: 5
+    nfz_buffer_cells: 3
+  sensitive_locations:
+    - {x: 180, y: 150, type: school, label: "Piraeus Naval Academy"}
+    - {x: 300, y: 200, type: hospital, label: "Piraeus General Hospital"}
+    - {x: 130, y: 350, type: church, label: "Ag. Spyridon Cathedral"}
+    - {x: 350, y: 380, type: playground, label: "Mikrolimano Park"}
