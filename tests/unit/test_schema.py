@@ -60,14 +60,14 @@ def _base_config(**overrides) -> ScenarioConfig:
 # ── Scenario Registry ────────────────────────────────────────
 
 class TestScenarioRegistry:
-    def test_registry_has_nine_scenarios(self):
-        assert len(SCENARIO_REGISTRY) == 9
+    def test_registry_has_six_scenarios(self):
+        assert len(SCENARIO_REGISTRY) == 6
 
     def test_list_scenarios(self):
         all_scen = list_scenarios()
-        assert len(all_scen) == 9
+        assert len(all_scen) == 6
         gov = [s for s in all_scen if s.startswith("gov_")]
-        assert len(gov) == 9
+        assert len(gov) == 6
 
     def test_naturalistic_plus_stress_equals_all(self):
         n = list_scenarios_by_regime(Regime.NATURALISTIC)
@@ -78,25 +78,24 @@ class TestScenarioRegistry:
         dynamic = list_scenarios_with_dynamics()
         assert isinstance(dynamic, list)
 
-    def test_scenario_metadata_civil_protection_easy(self):
-        sid = "gov_civil_protection_easy"
+    def test_scenario_metadata_civil_protection_medium(self):
+        sid = "gov_civil_protection_medium"
         assert sid in SCENARIO_REGISTRY
         meta = SCENARIO_REGISTRY[sid]
         assert meta.mission_type == MissionType.CIVIL_PROTECTION
-        assert meta.regime == Regime.NATURALISTIC
+        assert meta.regime == Regime.STRESS_TEST
 
 
 # ── Track Partition ───────────────────────────────────────────
 
 class TestTrackPartition:
-    def test_partition_complete_and_disjoint(self):
+    def test_all_scenarios_are_dynamic(self):
+        """All 6 gov scenarios are dynamic (stress_test regime)."""
         all_ids = set(list_scenarios())
         static_ids = set(list_scenarios_by_track("static"))
         dynamic_ids = set(list_scenarios_by_track("dynamic"))
-        assert static_ids
-        assert dynamic_ids
-        assert static_ids.isdisjoint(dynamic_ids)
-        assert static_ids | dynamic_ids == all_ids
+        assert len(static_ids) == 0, "No static scenarios after easy removal"
+        assert dynamic_ids == all_ids
 
 
 # ── Scenario Config Load ─────────────────────────────────────
@@ -104,10 +103,10 @@ class TestTrackPartition:
 class TestScenarioConfigLoad:
     _CONFIGS = _PROJECT_ROOT / "src" / "uavbench" / "scenarios" / "configs"
 
-    def test_gov_civil_protection_easy(self):
-        cfg = load_scenario(self._CONFIGS / "gov_civil_protection_easy.yaml")
+    def test_gov_civil_protection_medium(self):
+        cfg = load_scenario(self._CONFIGS / "gov_civil_protection_medium.yaml")
         assert cfg.domain.value == "urban"
-        assert cfg.difficulty.value == "easy"
+        assert cfg.difficulty.value == "medium"
 
     def test_gov_civil_protection_hard(self):
         cfg = load_scenario(self._CONFIGS / "gov_civil_protection_hard.yaml")
@@ -366,7 +365,7 @@ class TestPhysicsConstants:
         from pathlib import Path
         configs_dir = Path(__file__).resolve().parents[2] / "src" / "uavbench" / "scenarios" / "configs"
         from uavbench.scenarios.loader import load_scenario
-        cfg = load_scenario(configs_dir / "gov_civil_protection_easy.yaml")
+        cfg = load_scenario(configs_dir / "gov_civil_protection_medium.yaml")
         # Defaults applied: 5.0 m / cell, 1.0 s / step
         assert cfg.cell_size_m == 5.0
         assert cfg.dt_s == 1.0

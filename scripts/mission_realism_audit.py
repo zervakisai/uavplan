@@ -45,11 +45,7 @@ DYNAMIC_SCENARIOS = [
     "gov_critical_infrastructure_hard",
 ]
 
-EASY_SCENARIOS = [
-    "gov_civil_protection_easy",
-    "gov_maritime_domain_easy",
-    "gov_critical_infrastructure_easy",
-]
+EASY_SCENARIOS = []  # Easy scenarios removed — all 6 remaining are dynamic
 
 SAMPLE_STEPS = 300  # enough to see t1, t2 fire, and interdictions
 SEED = 42

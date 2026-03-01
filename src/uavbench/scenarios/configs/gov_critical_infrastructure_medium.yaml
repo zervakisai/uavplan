@@ -19,8 +19,8 @@ fixed_goal_xy: [450, 450]
 enable_fire: true
 enable_traffic: true
 enable_dynamic_nfz: true
-fire_blocks_movement: false
-traffic_blocks_movement: false
+fire_blocks_movement: true
+traffic_blocks_movement: true
 wind_level: medium
 wind_speed: 0.3
 fire_ignition_points: 2

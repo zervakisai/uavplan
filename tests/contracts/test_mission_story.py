@@ -26,13 +26,10 @@ from uavbench.scenarios.loader import load_scenario
 CONFIGS_DIR = Path("src/uavbench/scenarios/configs")
 
 ALL_GOV_SCENARIOS = [
-    "gov_civil_protection_easy",
     "gov_civil_protection_medium",
     "gov_civil_protection_hard",
-    "gov_maritime_domain_easy",
     "gov_maritime_domain_medium",
     "gov_maritime_domain_hard",
-    "gov_critical_infrastructure_easy",
     "gov_critical_infrastructure_medium",
     "gov_critical_infrastructure_hard",
 ]
@@ -79,9 +76,8 @@ class TestMC1_MissionObjective:
         assert briefing.mission_type == mt
 
     def test_briefing_priority_scales_with_difficulty(self):
-        """Priority escalates: easy=routine, medium=high, hard=critical."""
+        """Priority escalates: medium=high, hard=critical."""
         priority_expected = {
-            "easy": "routine",
             "medium": "high",
             "hard": "critical",
         }
@@ -136,12 +132,12 @@ class TestMC3_BriefingAtStep0:
             "Hard scenario with fire+traffic+NFZ should have constraints"
         )
 
-    def test_briefing_easy_has_no_dynamic_constraints(self):
-        """Easy scenarios (no dynamics) should have empty constraints."""
-        cfg = load_scenario(CONFIGS_DIR / "gov_civil_protection_easy.yaml")
+    def test_briefing_medium_has_dynamic_constraints(self):
+        """Medium scenarios with all dynamics should have constraints."""
+        cfg = load_scenario(CONFIGS_DIR / "gov_civil_protection_medium.yaml")
         briefing = generate_briefing(cfg)
-        assert len(briefing.constraints) == 0, (
-            "Easy scenario with no dynamics should have no constraints"
+        assert len(briefing.constraints) > 0, (
+            "Medium scenario with fire+traffic+NFZ should have constraints"
         )
 
 
