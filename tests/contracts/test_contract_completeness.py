@@ -33,13 +33,10 @@ from pathlib import Path
 CONFIGS_DIR = Path(__file__).resolve().parents[2] / "src" / "uavbench" / "scenarios" / "configs"
 
 ALL_GOV_SCENARIOS = [
-    "gov_civil_protection_easy",
     "gov_civil_protection_medium",
     "gov_civil_protection_hard",
-    "gov_maritime_domain_easy",
     "gov_maritime_domain_medium",
     "gov_maritime_domain_hard",
-    "gov_critical_infrastructure_easy",
     "gov_critical_infrastructure_medium",
     "gov_critical_infrastructure_hard",
 ]

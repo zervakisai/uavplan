@@ -6,7 +6,7 @@ This module provides:
 - get_scenario_metadata(): lookup metadata for a scenario
 - Various filter functions: by mission type, regime, difficulty, dynamics, etc.
 
-9 government-ready mission scenarios are loaded dynamically from YAML config files.
+6 government-ready mission scenarios (3 missions × 2 difficulties) loaded from YAML.
 """
 
 from __future__ import annotations
@@ -188,7 +188,7 @@ def print_scenario_registry() -> None:
     
     print("\n" + "=" * 140)
     print(f"{'UAVBench Scenario Registry':^140}")
-    print(f"{f'({len(SCENARIO_REGISTRY)} scenarios — 3 missions × 3 difficulties)':^140}")
+    print(f"{f'({len(SCENARIO_REGISTRY)} scenarios — 3 missions × 2 difficulties)':^140}")
     print("=" * 140)
     print()
     

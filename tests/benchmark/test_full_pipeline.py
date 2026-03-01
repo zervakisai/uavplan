@@ -66,7 +66,7 @@ class TestWaypointAction:
 
 class TestScenarioPath:
     def test_scenario_path_exists(self):
-        path = scenario_path("gov_civil_protection_easy")
+        path = scenario_path("gov_civil_protection_medium")
         assert path.exists() and path.suffix == ".yaml"
 
     def test_all_gov_scenarios_resolve(self):
@@ -75,8 +75,8 @@ class TestScenarioPath:
 
 
 class TestScenarioRegistryBenchmark:
-    def test_nine_scenarios(self):
-        assert len(SCENARIO_REGISTRY) == 9
+    def test_six_scenarios(self):
+        assert len(SCENARIO_REGISTRY) == 6
 
     def test_all_have_required_fields(self):
         for sid, meta in SCENARIO_REGISTRY.items():
@@ -90,17 +90,17 @@ class TestScenarioRegistryBenchmark:
 
     def test_difficulties_coverage(self):
         diffs = {m.difficulty for m in SCENARIO_REGISTRY.values()}
-        assert {"EASY", "MEDIUM", "HARD"}.issubset(diffs)
+        assert {"MEDIUM", "HARD"}.issubset(diffs)
 
-    def test_both_regimes(self):
+    def test_stress_test_regime(self):
         regimes = {m.regime for m in SCENARIO_REGISTRY.values()}
-        assert {Regime.NATURALISTIC, Regime.STRESS_TEST}.issubset(regimes)
+        assert Regime.STRESS_TEST in regimes
 
     def test_filter_civil_protection(self):
-        assert len(list_scenarios_by_mission(MissionType.CIVIL_PROTECTION)) == 3
+        assert len(list_scenarios_by_mission(MissionType.CIVIL_PROTECTION)) == 2
 
     def test_filter_maritime(self):
-        assert len(list_scenarios_by_mission(MissionType.MARITIME_DOMAIN)) == 3
+        assert len(list_scenarios_by_mission(MissionType.MARITIME_DOMAIN)) == 2
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -109,25 +109,25 @@ class TestScenarioRegistryBenchmark:
 
 class TestRunPlannerOnce:
     def test_astar_gov_easy(self):
-        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
+        result = run_planner_once("gov_civil_protection_medium", "astar", seed=0)
         assert isinstance(result, dict)
         for k in ("scenario_id", "planner_id", "seed", "success", "path_length", "planning_time"):
             assert k in result
-        assert result["scenario_id"] == "gov_civil_protection_easy"
+        assert result["scenario_id"] == "gov_civil_protection_medium"
         assert result["planner_id"] == "astar"
 
     def test_theta_star_gov_easy(self):
-        result = run_planner_once("gov_civil_protection_easy", "theta_star", seed=0)
+        result = run_planner_once("gov_civil_protection_medium", "theta_star", seed=0)
         assert result["planner_id"] == "theta_star"
         assert "success" in result
 
     def test_deterministic_seed(self):
-        r1 = run_planner_once("gov_civil_protection_easy", "astar", seed=42)
-        r2 = run_planner_once("gov_civil_protection_easy", "astar", seed=42)
+        r1 = run_planner_once("gov_civil_protection_medium", "astar", seed=42)
+        r2 = run_planner_once("gov_civil_protection_medium", "astar", seed=42)
         assert r1["path_length"] == r2["path_length"]
 
     def test_result_serializable(self):
-        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
+        result = run_planner_once("gov_civil_protection_medium", "astar", seed=0)
         serializable = {k: v for k, v in result.items() if k not in ("heightmap", "no_fly", "config")}
         parsed = json.loads(json.dumps(serializable))
         assert parsed["scenario_id"] == result["scenario_id"]
@@ -139,13 +139,13 @@ class TestRunPlannerOnce:
 
 class TestMetricsAggregation:
     def test_compute_all_metrics(self):
-        result = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
+        result = run_planner_once("gov_civil_protection_medium", "astar", seed=0)
         metrics = compute_all_metrics(result)
         assert isinstance(metrics, dict) and len(metrics) > 0
 
     def test_aggregate_multiple(self):
         results = [
-            run_planner_once("gov_civil_protection_easy", "astar", seed=i)
+            run_planner_once("gov_civil_protection_medium", "astar", seed=i)
             for i in range(2)
         ]
         agg = aggregate(results)
@@ -155,8 +155,8 @@ class TestMetricsAggregation:
         assert isinstance(aggregate([]), dict)
 
     def test_result_keys_consistent(self):
-        ra = run_planner_once("gov_civil_protection_easy", "astar", seed=0)
-        rt = run_planner_once("gov_civil_protection_easy", "theta_star", seed=0)
+        ra = run_planner_once("gov_civil_protection_medium", "astar", seed=0)
+        rt = run_planner_once("gov_civil_protection_medium", "theta_star", seed=0)
         common = {"scenario_id", "planner_id", "seed", "success", "path_length", "planning_time"}
         assert common.issubset(set(ra.keys()))
         assert common.issubset(set(rt.keys()))
@@ -169,7 +169,7 @@ class TestMetricsAggregation:
 class TestMiniBenchmark:
     def test_2_scenarios_2_planners(self):
         results = []
-        for sid in ("gov_civil_protection_easy", "gov_maritime_domain_easy"):
+        for sid in ("gov_civil_protection_medium", "gov_maritime_domain_medium"):
             for pid in ("astar", "theta_star"):
                 results.append(run_planner_once(sid, pid, seed=0))
         assert len(results) == 4
@@ -177,7 +177,7 @@ class TestMiniBenchmark:
 
     def test_first_3_paper_planners(self):
         for pid in list(PAPER_PLANNERS)[:3]:
-            r = run_planner_once("gov_civil_protection_easy", pid, seed=0)
+            r = run_planner_once("gov_civil_protection_medium", pid, seed=0)
             assert r["planner_id"] == pid
 
 
@@ -190,7 +190,7 @@ class TestUrbanEnvOSM:
         from uavbench.scenarios.loader import load_scenario
         from uavbench.envs.urban import UrbanEnv
 
-        cfg = load_scenario(scenario_path("gov_civil_protection_easy"))
+        cfg = load_scenario(scenario_path("gov_civil_protection_medium"))
         env = UrbanEnv(cfg)
         obs, info = env.reset(seed=0)
         assert env.observation_space.contains(obs)
@@ -202,7 +202,7 @@ class TestUrbanEnvOSM:
         from uavbench.scenarios.loader import load_scenario
         from uavbench.envs.urban import UrbanEnv
 
-        cfg = load_scenario(scenario_path("gov_civil_protection_easy"))
+        cfg = load_scenario(scenario_path("gov_civil_protection_medium"))
         env = UrbanEnv(cfg)
         env.reset(seed=0)
         for _ in range(3):
@@ -219,7 +219,7 @@ class TestFairProtocol:
     def test_protocol_defaults_present(self):
         from uavbench.scenarios.loader import load_scenario
 
-        cfg = load_scenario(scenario_path("gov_civil_protection_easy"))
+        cfg = load_scenario(scenario_path("gov_civil_protection_medium"))
         assert cfg.interdiction_reference_planner == InterdictionReferencePlanner.ASTAR
         assert cfg.plan_budget_static_ms > 0.0
         assert cfg.replan_every_steps >= 1
@@ -295,7 +295,7 @@ class TestP1RealismBenchmark:
         from uavbench.cli.benchmark import run_dynamic_episode
 
         result = run_dynamic_episode(
-            "gov_civil_protection_easy",
+            "gov_civil_protection_medium",
             "astar",
             seed=0,
             config_overrides={
@@ -318,7 +318,7 @@ class TestMissionEpisode:
     def test_basic_civil_protection(self):
         from uavbench.cli.benchmark import run_mission_episode
 
-        result = run_mission_episode("gov_civil_protection_easy", "astar", seed=42)
+        result = run_mission_episode("gov_civil_protection_medium", "astar", seed=42)
         for k in ("success", "path_length", "episode_steps", "mission_id",
                    "mission_score", "task_completion_rate", "mission_metrics"):
             assert k in result
@@ -327,7 +327,7 @@ class TestMissionEpisode:
     def test_keys_superset_of_dynamic(self):
         from uavbench.cli.benchmark import run_mission_episode
 
-        result = run_mission_episode("gov_civil_protection_easy", "astar", seed=0)
+        result = run_mission_episode("gov_civil_protection_medium", "astar", seed=0)
         required = [
             "scenario", "planner", "seed", "success", "path_length",
             "planning_time_ms", "episode_steps", "total_replans",
@@ -340,20 +340,20 @@ class TestMissionEpisode:
     def test_maritime_domain(self):
         from uavbench.cli.benchmark import run_mission_episode
 
-        result = run_mission_episode("gov_maritime_domain_easy", "astar", seed=42)
+        result = run_mission_episode("gov_maritime_domain_medium", "astar", seed=42)
         assert result["mission_id"] == "maritime_domain"
 
     def test_critical_infrastructure(self):
         from uavbench.cli.benchmark import run_mission_episode
 
-        result = run_mission_episode("gov_critical_infrastructure_easy", "astar", seed=42)
+        result = run_mission_episode("gov_critical_infrastructure_medium", "astar", seed=42)
         assert result["mission_id"] == "critical_infrastructure"
 
     def test_greedy_policy(self):
         from uavbench.cli.benchmark import run_mission_episode
 
         result = run_mission_episode(
-            "gov_civil_protection_easy", "astar", seed=1, policy_id="greedy",
+            "gov_civil_protection_medium", "astar", seed=1, policy_id="greedy",
         )
         assert result["policy_id"] == "greedy" and result["path_length"] > 1
 
@@ -361,7 +361,7 @@ class TestMissionEpisode:
         from uavbench.cli.benchmark import run_mission_episode
 
         result = run_mission_episode(
-            "gov_civil_protection_easy", "astar", seed=1, policy_id="lookahead",
+            "gov_civil_protection_medium", "astar", seed=1, policy_id="lookahead",
         )
         assert result["policy_id"] == "lookahead"
 
@@ -369,7 +369,7 @@ class TestMissionEpisode:
         from uavbench.cli.benchmark import run_mission_episode
 
         result = run_mission_episode(
-            "gov_civil_protection_easy", "periodic_replan", seed=42,
+            "gov_civil_protection_medium", "periodic_replan", seed=42,
         )
         assert result["replan_mode"] == "native"
 
@@ -377,22 +377,22 @@ class TestMissionEpisode:
         from uavbench.cli.benchmark import run_mission_episode
 
         mm = run_mission_episode(
-            "gov_civil_protection_easy", "astar", seed=42,
+            "gov_civil_protection_medium", "astar", seed=42,
         )["mission_metrics"]
         assert "mission_score" in mm and "task_completion_rate" in mm
 
     def test_p1_realism_fields_propagate(self):
         from uavbench.cli.benchmark import run_mission_episode
 
-        result = run_mission_episode("gov_civil_protection_easy", "astar", seed=42)
+        result = run_mission_episode("gov_civil_protection_medium", "astar", seed=42)
         assert result["constraint_latency_steps"] == 0
         assert result["comms_dropout_prob"] == 0.0
 
     def test_deterministic(self):
         from uavbench.cli.benchmark import run_mission_episode
 
-        r1 = run_mission_episode("gov_civil_protection_easy", "astar", seed=99)
-        r2 = run_mission_episode("gov_civil_protection_easy", "astar", seed=99)
+        r1 = run_mission_episode("gov_civil_protection_medium", "astar", seed=99)
+        r2 = run_mission_episode("gov_civil_protection_medium", "astar", seed=99)
         assert r1["path_length"] == r2["path_length"]
         assert r1["mission_score"] == r2["mission_score"]
 

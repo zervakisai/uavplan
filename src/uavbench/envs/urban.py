@@ -1417,7 +1417,7 @@ class UrbanEnv(UAVBenchEnv):
                 self._dynamic_nfz.radii = np.full_like(self._dynamic_nfz.radii, 2.0)
         # Clear fire blocks in the wide corridor if fire blocks movement
         if self.config.fire_blocks_movement and self._fire_model is not None:
-            fire_state = self._fire_model.state
+            fire_state = self._fire_model._state
             fire_state[wide_corridor & (fire_state > 0)] = 0
         relaxation["nuclear_deconfliction"] = True
         relaxation["corridor_width"] = 5

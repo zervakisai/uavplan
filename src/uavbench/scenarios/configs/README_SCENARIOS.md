@@ -1,44 +1,43 @@
-# UAVBench — Greece Government-Ready Mission Bank (9 Scenarios)
+# UAVBench — Greece Government-Ready Mission Bank (6 Scenarios)
 
-This folder contains the 9 canonical mission scenario YAMLs:
-3 missions × 3 difficulty levels (easy / medium / hard).
+This folder contains the 6 canonical mission scenario YAMLs:
+3 missions × 2 difficulty levels (medium / hard).
+
+All scenarios have real dynamic blocking: fire, traffic, and NFZ all block drone movement.
 
 ## Missions
 
 ### Mission 1 — Civil Protection (ΓΓ Πολιτικής Προστασίας)
 Wildfire Crisis Situational Awareness + Evacuation Corridor Monitoring
 
-- `gov_civil_protection_easy.yaml` — 4 tasks, low injection, static dynamics
 - `gov_civil_protection_medium.yaml` — 6 tasks, medium injection, moderate dynamics
 - `gov_civil_protection_hard.yaml` — 8 tasks, high injection, severe dynamics + comms dropouts
 
 ### Mission 2 — Maritime Domain Awareness (ΛΣ-ΕΛΑΚΤ)
 Coastal Search Corridor Patrol + Distress Event Injection
 
-- `gov_maritime_domain_easy.yaml` — 4 waypoints, 1 event, static dynamics
 - `gov_maritime_domain_medium.yaml` — 6 waypoints, 1–2 events, moderate dynamics
 - `gov_maritime_domain_hard.yaml` — 8 waypoints, 2 events, severe dynamics + comms latency
 
 ### Mission 3 — Critical Infrastructure & Public Safety (ΥΠΕΘΑ/ISR-support)
 Time-Critical Inspection Tour under Dynamic Restrictions
 
-- `gov_critical_infrastructure_easy.yaml` — 4 sites, low restriction updates
 - `gov_critical_infrastructure_medium.yaml` — 6 sites, medium updates, tighter windows
 - `gov_critical_infrastructure_hard.yaml` — 8 sites, high updates + strict compliance
 
 ## Difficulty Knobs
 
-All three difficulty levels share the SAME map; only these knobs change:
+Both difficulty levels share the SAME map; only these knobs change:
 
-| Knob | Easy | Medium | Hard |
-|------|------|--------|------|
-| Number of tasks | 4 | 6 | 8 |
-| Injection rate | low | medium | high |
-| Dynamics intensity | static | moderate | severe |
-| Time budget | relaxed | moderate | tight |
-| Energy budget | 1.0 | 0.85 | 0.70 |
-| Comms dropout prob | 0.0 | 0.05 | 0.15 |
-| Comms latency (steps) | 0 | 2 | 4 |
+| Knob | Medium | Hard |
+|------|--------|------|
+| Number of tasks | 6 | 8 |
+| Injection rate | medium | high |
+| Dynamics intensity | moderate | severe |
+| Time budget | moderate | tight |
+| Energy budget | 0.85 | 0.70 |
+| Comms dropout prob | 0.05 | 0.15 |
+| Comms latency (steps) | 2 | 4 |
 
 ## Usage
 
