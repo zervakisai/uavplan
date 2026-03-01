@@ -265,7 +265,10 @@ def run_planner_once(
     if planner_id not in PLANNERS:
         raise ValueError(f"Unknown planner '{planner_id}'. Available: {list(PLANNERS.keys())}")
 
-    planner = PLANNERS[planner_id](heightmap, no_fly)
+    try:
+        planner = PLANNERS[planner_id](heightmap, no_fly, seed=seed)
+    except TypeError:
+        planner = PLANNERS[planner_id](heightmap, no_fly)
     t0 = time.perf_counter()
     plan_result = planner.plan(start_xy, goal_xy)  # Returns PlanResult object
     planning_time = time.perf_counter() - t0
@@ -468,13 +471,21 @@ def run_dynamic_episode(
                 mission_pois=mission_pois,
                 active_incidents=incidents,
             )
+            # Pass sensitive locations from scenario extra
+            _sl = extra.get("sensitive_locations")
+            if _sl:
+                renderer._sensitive_locations = list(_sl)
         except ImportError:
             pass  # matplotlib not available
 
     if planner_id not in PLANNERS:
         raise ValueError(f"Unknown planner '{planner_id}'. Available: {list(PLANNERS.keys())}")
 
-    planner = PLANNERS[planner_id](heightmap, no_fly)
+    # Pass seed to planners that accept it (e.g. MPPI needs episode-varying RNG)
+    try:
+        planner = PLANNERS[planner_id](heightmap, no_fly, seed=seed)
+    except TypeError:
+        planner = PLANNERS[planner_id](heightmap, no_fly)
     t0 = time.perf_counter()
     plan_result = planner.plan(start_xy, goal_xy)
     planning_time = time.perf_counter() - t0
@@ -658,7 +669,8 @@ def run_dynamic_episode(
                     "FAILED" if terminated else "EN_ROUTE"
                 ),
                 distance_to_goal=abs(current_xy[0] - goal_xy[0]) + abs(current_xy[1] - goal_xy[1]),
-                mission_max_steps=_briefing.max_time_steps if _briefing else max_steps,
+                mission_max_steps=max_steps,
+                stuck_counter=stuck_counter,
             )
 
         if terminated:
@@ -828,6 +840,7 @@ def run_dynamic_episode(
                     env.set_plan_info(len(path), False, _replan_reason, _snapshot_age)
             elif stuck_counter >= 10:
                 # All planners: give up if stuck too long AND no replan triggered
+                termination_reason = "stuck"
                 break
 
     # Count real constraint violations (NFZ, building) — fire blocks are expected
@@ -995,6 +1008,22 @@ def run_dynamic_episode(
         "guardrail_depth_distribution": _compute_guardrail_depth_distribution(events),
         "events": events,
     }
+
+    # ── Post-episode: render end card ──────────────────────────────────
+    if renderer is not None:
+        try:
+            renderer.render_end_card(
+                drone_pos=final_xy,
+                trajectory=actual_trajectory,
+                success=success,
+                termination_reason=termination_reason,
+                total_steps=episode_steps,
+                total_replans=enforced_replans,
+                path_length=len(actual_trajectory),
+                hold_frames=30,
+            )
+        except Exception:
+            pass  # graceful degradation
 
     # ── Post-episode: export visualization artifacts ──────────────────
     if renderer is not None:

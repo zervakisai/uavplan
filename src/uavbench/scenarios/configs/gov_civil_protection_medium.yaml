@@ -57,3 +57,10 @@ extra:
   dynamics_intensity: moderate
   time_budget: 300
   energy_budget: 0.85
+  safety_buffers:
+    fire_buffer_cells: 5
+    nfz_buffer_cells: 3
+  sensitive_locations:
+    - {x: 120, y: 180, type: school, label: "Nea Penteli Primary"}
+    - {x: 350, y: 100, type: hospital, label: "Penteli Children's Hospital"}
+    - {x: 200, y: 320, type: church, label: "Ag. Triada Church"}

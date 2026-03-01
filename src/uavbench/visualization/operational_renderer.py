@@ -118,7 +118,7 @@ PALETTE = {
     # Risk heatmap
     "risk_high":            "#FC4E2A",
     # Drone
-    "drone_safe":           "#0066FF",
+    "drone_safe":           "#4488FF",
     "drone_caution":        "#FF8C00",
     "drone_danger":         "#FF0000",
     "safety_bubble":        "#0088FF",
@@ -127,8 +127,17 @@ PALETTE = {
     "comms_denied":         "#888888",
     # Corridor (guardrail depth 3)
     "emergency_corridor":   "#00E5FF",
+    # Trail / Plan
+    "trail_executed":       "#00FF88",
+    "trail_planned":        "#00BFFF",
+    "trail_conflict":       "#FF0000",
+    # Sensitive locations
+    "sensitive_school":     "#BB88FF",
+    "sensitive_hospital":   "#FF6688",
+    "sensitive_church":     "#88BBFF",
+    "sensitive_playground": "#FFDD44",
     # Markers
-    "start":                "#00CC44",
+    "start":                "#00FF88",
     "goal":                 "#FFD700",
     "interdiction_x":       "#1A1A1A",
     "replan_pulse":         "#FFFFFF",
@@ -341,6 +350,12 @@ class OperationalRenderer:
         # Keyframe indices (event-driven high-DPI export)
         self._keyframe_indices: list[int] = []
 
+        # Camera lock: fixed axes margins to prevent jitter
+        self._axes_margins = dict(left=0.06, right=0.92, top=0.96, bottom=0.06)
+
+        # Sensitive locations from scenario config extra
+        self._sensitive_locations: list[dict[str, Any]] = []
+
     # ── Static pre-computation ───────────────────────────────────────────
 
     def _build_base_map(self) -> np.ndarray:
@@ -413,6 +428,8 @@ class OperationalRenderer:
         mission_status: str = "",
         distance_to_goal: int = 0,
         mission_max_steps: int = 0,
+        stuck_counter: int = 0,
+        sensitive_locations: Optional[list[dict[str, Any]]] = None,
     ) -> np.ndarray:
         """Render one frame with all operational layers.
 
@@ -515,6 +532,18 @@ class OperationalRenderer:
             except ImportError:
                 pass
             ax.imshow(fire_rgba, interpolation="nearest", zorder=4)
+
+        # ═══════════════════════ Z 4.5: Fire safety buffer halo ════════
+        if fire_mask is not None and np.any(fire_mask):
+            try:
+                from scipy.ndimage import binary_dilation as _bd
+                _fire_buf = _bd(fire_mask, iterations=5) & ~fire_mask
+                if np.any(_fire_buf):
+                    _fb_rgba = np.zeros((self.H, self.W, 4), dtype=np.float32)
+                    _fb_rgba[_fire_buf] = _hex_rgba("#FF8C00", 0.20)
+                    ax.imshow(_fb_rgba, interpolation="nearest", zorder=4.5)
+            except ImportError:
+                pass
 
         # ═══════════════════════ Z 4.9: Static no-fly (permanent) ══════
         if np.any(self.no_fly):
@@ -680,6 +709,27 @@ class OperationalRenderer:
                     zorder=5.5,
                 )
 
+        # ═══════════════════════ Z 5.7: NFZ safety buffer halo ═════════
+        _merged_nfz_for_buf = np.zeros((self.H, self.W), dtype=bool)
+        if dynamic_nfz_mask is not None:
+            _merged_nfz_for_buf |= dynamic_nfz_mask
+        if restriction_zones:
+            for _rz in restriction_zones:
+                if getattr(_rz, "active", False):
+                    _rzm = getattr(_rz, "mask", None)
+                    if _rzm is not None:
+                        _merged_nfz_for_buf |= _rzm
+        if np.any(_merged_nfz_for_buf):
+            try:
+                from scipy.ndimage import binary_dilation as _bd2
+                _nfz_buf = _bd2(_merged_nfz_for_buf, iterations=3) & ~_merged_nfz_for_buf
+                if np.any(_nfz_buf):
+                    _nb_rgba = np.zeros((self.H, self.W, 4), dtype=np.float32)
+                    _nb_rgba[_nfz_buf] = _hex_rgba("#BB88FF", 0.20)
+                    ax.imshow(_nb_rgba, interpolation="nearest", zorder=5.7)
+            except ImportError:
+                pass
+
         # ═══════════════════════ Z 6: Traffic closures ═══════════════════
         if traffic_closure_mask is not None and np.any(traffic_closure_mask):
             tc_rgba = np.zeros((self.H, self.W, 4), dtype=np.float32)
@@ -841,76 +891,155 @@ class OperationalRenderer:
             # White outline for contrast against busy overlays
             ax.plot(
                 txs, tys, "-", color="white",
-                linewidth=4.5, alpha=0.7, zorder=9.4,
+                linewidth=5.5, alpha=0.7, zorder=9.4,
                 solid_capstyle="round",
             )
             ax.plot(
-                txs, tys, "-", color=PALETTE["drone_safe"],
-                linewidth=2.5, alpha=0.9, zorder=9.5,
+                txs, tys, "-", color=PALETTE["trail_executed"],
+                linewidth=3.5, alpha=0.9, zorder=9.5,
                 solid_capstyle="round",
             )
 
         # ═══════════════════════ Z 9.55: Planned lookahead path ══════════════
-        # Drawn above trajectory so the blue planned line is always visible.
+        # Drawn above trajectory so the planned line is always visible.
         if planned_path and len(planned_path) > 1:
             pxs = [p[0] for p in planned_path]
             pys = [p[1] for p in planned_path]
+            # Replan flash: WHITE for first 2 frames after replan, then cyan
+            if self._replan_flash_remaining > (_REPLAN_FLASH_DURATION - 2):
+                plan_color = "#FFFFFF"
+                plan_alpha = 1.0
+            else:
+                plan_color = PALETTE["trail_planned"]
+                plan_alpha = 0.6
             # Black outline for legibility over fire / smoke
             ax.plot(
                 pxs, pys, "-", color="black",
-                linewidth=3.5, alpha=0.6, zorder=9.55,
+                linewidth=2.5, alpha=0.5, zorder=9.55,
                 solid_capstyle="round",
             )
             ax.plot(
-                pxs, pys, "--", color="#4FC3F7",
-                linewidth=1.8, alpha=0.95, zorder=9.56,
+                pxs, pys, "--", color=plan_color,
+                linewidth=1.5, alpha=plan_alpha, zorder=9.56,
                 solid_capstyle="round",
+                dashes=(8, 4),
                 label="planned_path",
                 path_effects=[
-                    path_effects.withStroke(linewidth=3.0, foreground="black", alpha=0.4)
+                    path_effects.withStroke(linewidth=2.5, foreground="black", alpha=0.3)
                 ],
             )
 
-        # Start & goal — large markers with halo
+        # ═══════════════════════ Z 9.57: Path-dynamics conflict ════════════
+        # Red segments + X markers where planned path crosses active hazards
+        if planned_path and len(planned_path) > 1:
+            _conflict_mask = np.zeros((self.H, self.W), dtype=bool)
+            if fire_mask is not None:
+                _conflict_mask |= fire_mask
+            if dynamic_nfz_mask is not None:
+                _conflict_mask |= dynamic_nfz_mask
+            if traffic_closure_mask is not None:
+                _conflict_mask |= traffic_closure_mask
+            if np.any(_conflict_mask):
+                _cxs, _cys = [], []
+                for wx, wy in planned_path:
+                    if 0 <= wy < self.H and 0 <= wx < self.W and _conflict_mask[wy, wx]:
+                        _cxs.append(wx)
+                        _cys.append(wy)
+                if _cxs:
+                    # Red line segments connecting blocked waypoints
+                    ax.plot(
+                        _cxs, _cys, "-", color=PALETTE["trail_conflict"],
+                        linewidth=2.5, alpha=0.8, zorder=9.57,
+                        solid_capstyle="round",
+                    )
+                    ax.scatter(
+                        _cxs, _cys, marker="X",
+                        c=PALETTE["trail_conflict"], s=30,
+                        edgecolors="white", linewidths=0.5,
+                        zorder=9.58, alpha=0.9,
+                    )
+
+        # Start — green triangle with pulse animation
         _marker_sz = max(180, self.W * 0.6)
+        _start_alpha = 0.7 + 0.3 * math.sin(2.0 * math.pi * step / 20.0)
         ax.scatter(
             *self.start, c=PALETTE["start"], s=_marker_sz, zorder=9.6,
-            edgecolors="white", linewidth=2.5, marker="o", label="Start",
+            edgecolors="white", linewidth=2.5, marker="^",
+            alpha=_start_alpha, label="Start",
         )
+        # Goal — bullseye (3 concentric circles + gold star)
+        gx, gy = self.goal
+        _goal_r = max(6, self.W / 50)
+        for r_frac, alpha_v in [(1.0, 0.35), (0.65, 0.50), (0.35, 0.70)]:
+            ax.add_patch(plt.Circle(
+                (gx, gy), _goal_r * r_frac,
+                facecolor=PALETTE["goal"], edgecolor="white",
+                linewidth=1.2 if r_frac == 1.0 else 0.0,
+                alpha=alpha_v, zorder=9.59 + r_frac * 0.01,
+            ))
         ax.scatter(
-            *self.goal, c=PALETTE["goal"], s=_marker_sz * 1.2, zorder=9.6,
-            edgecolors="white", linewidth=2.5, marker="*", label="Goal",
+            gx, gy, c=PALETTE["goal"], s=_marker_sz * 0.4, zorder=9.62,
+            edgecolors="white", linewidth=1.5, marker="*", label="Goal",
         )
 
         # ═══════════════════════ Z 9.7: Mission POIs ══════════════════════
         if self.mission_type:
             self._draw_mission_pois(ax, step)
 
+        # ═══════════════════════ Z 4.8: Sensitive locations ═══════════════
+        _sens_locs = sensitive_locations or self._sensitive_locations
+        if _sens_locs:
+            self._draw_sensitive_locations(ax, _sens_locs, drone_pos)
+
         # ═══════════════════════ Z 10: UAV ═══════════════════════════════
         dx, dy = drone_pos
-        in_fire = (
-            fire_mask is not None
-            and 0 <= dy < self.H
-            and 0 <= dx < self.W
-            and fire_mask[min(dy, self.H - 1), min(dx, self.W - 1)]
-        )
-        if risk_value > 0.7 or in_fire:
+        # Color: stuck awareness takes priority over risk
+        if stuck_counter > 10:
             drone_color = PALETTE["drone_danger"]
-        elif risk_value > 0.4:
+        elif stuck_counter > 5:
             drone_color = PALETTE["drone_caution"]
         else:
-            drone_color = PALETTE["drone_safe"]
+            in_fire = (
+                fire_mask is not None
+                and 0 <= dy < self.H
+                and 0 <= dx < self.W
+                and fire_mask[min(dy, self.H - 1), min(dx, self.W - 1)]
+            )
+            if risk_value > 0.7 or in_fire:
+                drone_color = PALETTE["drone_danger"]
+            elif risk_value > 0.4:
+                drone_color = PALETTE["drone_caution"]
+            else:
+                drone_color = PALETTE["drone_safe"]
 
-        verts = _drone_verts(dx, dy, heading_deg, size=max(3, self.W / 55))
+        # White glow halo behind drone for contrast
+        glow = plt.Circle(
+            (dx, dy), max(14, self.W / 25),
+            facecolor="white", edgecolor="none",
+            alpha=0.6, zorder=10.2,
+        )
+        ax.add_patch(glow)
+
+        _drone_sz = max(8, self.W / 25)
+        verts = _drone_verts(dx, dy, heading_deg, size=_drone_sz)
         tri = plt.Polygon(
             verts,
             closed=True,
             facecolor=drone_color,
             edgecolor="white",
-            linewidth=1.6,
+            linewidth=2.0,
             zorder=10.5,
         )
         ax.add_patch(tri)
+
+        # Direction indicator line
+        _dir_len = max(8, self.W / 50)
+        _dir_rad = math.radians(heading_deg)
+        ax.plot(
+            [dx, dx + _dir_len * math.sin(_dir_rad)],
+            [dy, dy - _dir_len * math.cos(_dir_rad)],
+            "-", color="white", linewidth=1.0, alpha=0.5, zorder=10.4,
+        )
         # Safety bubble
         bubble = plt.Circle(
             (dx, dy),
@@ -942,18 +1071,23 @@ class OperationalRenderer:
                 zorder=11,
             )
             ax.add_patch(pulse)
-            if self._last_replan_reason:
+            # REPLAN label near drone (3-frame duration, yellow on dark bbox)
+            if self._replan_flash_remaining >= (_REPLAN_FLASH_DURATION - 3):
                 ax.text(
                     dx + 4,
                     dy - 5,
-                    f"REPLAN: {self._last_replan_reason}",
-                    fontsize=6,
-                    color="#FF4444",
+                    "\u27f3 REPLAN",
+                    fontsize=7,
+                    color="#FFDD00",
                     fontweight="bold",
                     zorder=11.1,
-                    path_effects=[
-                        path_effects.withStroke(linewidth=2, foreground="white")
-                    ],
+                    bbox=dict(
+                        boxstyle="round,pad=0.2",
+                        facecolor="#1A1A1A",
+                        alpha=0.8,
+                        edgecolor="#FFDD00",
+                        linewidth=0.8,
+                    ),
                 )
             if self._last_invalidated_waypoint is not None:
                 iwx, iwy = self._last_invalidated_waypoint
@@ -1038,9 +1172,22 @@ class OperationalRenderer:
             ax, fire_mask, smoke_mask, traffic_closure_mask,
             risk_map, intruder_positions, comms_coverage_map,
             restriction_zones=restriction_zones,
+            has_sensitive=bool(_sens_locs),
         )
         if total_steps > 0:
             self._draw_timeline(ax, step, total_steps, event_t1, event_t2)
+
+        # ═══════════════════════ Frame counter ═════════════════════════
+        _total_f = total_steps if total_steps > 0 else step
+        ax.text(
+            0.99, 0.015,
+            f"Frame: {step}/{_total_f}",
+            transform=ax.transAxes,
+            fontsize=5.5, fontfamily="monospace",
+            color="#888888", alpha=0.6,
+            ha="right", va="bottom",
+            zorder=26, clip_on=False,
+        )
 
         # ═══════════════════════ Cartographic overlay ════════════════════
         self._draw_cartographic_overlay(ax, drone_pos)
@@ -1050,11 +1197,8 @@ class OperationalRenderer:
         ax.set_ylim(self.H - 0.5, -0.5)
         ax.set_aspect("equal")
 
-        # ── Rasterize ──
-        try:
-            fig.tight_layout(pad=0.5)
-        except Exception:
-            pass  # skip tight_layout if axes can't accommodate decorations
+        # ── Rasterize (fixed margins → no camera jitter) ──
+        fig.subplots_adjust(**self._axes_margins)
         fig.canvas.draw()
         buf = np.asarray(fig.canvas.buffer_rgba())
         frame = buf[:, :, :3].copy()  # drop alpha channel
@@ -1088,8 +1232,7 @@ class OperationalRenderer:
         forced_block_active: bool = False,
         forced_block_cleared: bool = False,
     ) -> None:
-        """C2-style HUD: scenario + planner info, metrics, guardrail status."""
-        depth_labels = {0: "G0 ●", 1: "G1 ▬", 2: "G2 ▲", 3: "G3 ◆"}
+        """Compact 2-row HUD: identity + live status. Guardrail depth as border color."""
         depth_colors = {
             0: PALETTE["hud_text"],
             1: PALETTE["hud_accent"],
@@ -1101,53 +1244,21 @@ class OperationalRenderer:
         r1 = []
         if self.scenario_id:
             r1.append(f"SCN: {self.scenario_id}")
-        if self.mission_type:
-            r1.append(f"MSN: {self.mission_type.upper()}")
-        if self.track:
-            r1.append(f"TRK: {self.track.upper()}")
-        row1 = "  │  ".join(r1) if r1 else ""
-
-        # Row 2 — planner / mode
-        r2 = []
         if planner_name:
-            r2.append(f"PLN: {planner_name}")
-        if mode_label:
-            r2.append(f"MOD: {mode_label}")
-        row2 = "  │  ".join(r2) if r2 else ""
+            r1.append(f"PLN: {planner_name}")
+        row1 = "  |  ".join(r1) if r1 else ""
 
-        # Row 3 — live metrics
-        elapsed = f"{mission_elapsed_s:.1f}s" if mission_elapsed_s > 0 else "—"
-        risk_tag = "!" if risk_value > 0.5 else ""
-        depth_str = depth_labels.get(guardrail_depth, f"G{guardrail_depth}")
-        feas_str = "FEAS" if feasible else "INFEAS"
-        r3 = [
-            f"T: {step}",
-            f"Δt: {elapsed}",
-            f"REP: {replans}",
-            f"RISK: {risk_value:.2f}{risk_tag}",
-            f"Σrisk: {risk_integral:.1f}",
-            f"HITS: {dynamic_block_hits}",
-            depth_str,
-            feas_str,
-        ]
-        if comms_coverage_map is not None:
-            uptime = float(np.mean(comms_coverage_map > 0.5)) * 100.0
-            r3.append(f"COMM: {uptime:.0f}%")
-        if plan_len > 1 and not plan_stale:
-            r3.append(f"PLAN: {plan_len}wp")
-        elif plan_stale:
-            r3.append(f"STALE PLAN ({plan_reason})")
-        elif plan_len <= 1 and plan_reason not in ("none", "initial", ""):
-            r3.append("NO PLAN")
+        # Row 2 — live status
+        r2 = [f"STEP: {step}"]
+        r2.append(f"REPLANS: {replans}")
+        r2.append(status_text if status_text else "OK")
         if forced_block_cleared:
-            r3.append("FORCED BLOCK: CLEARED")
+            r2.append("BLOCK: CLEARED")
         elif forced_block_active:
-            r3.append("FORCED BLOCK: ACTIVE")
-        if status_text:
-            r3.append(status_text)
-        row3 = "  │  ".join(r3)
+            r2.append("BLOCK: ACTIVE")
+        row2 = "  |  ".join(r2)
 
-        rows = [r for r in [row1, row2, row3] if r]
+        rows = [r for r in [row1, row2] if r]
         hud_text = "\n".join(rows)
         border_color = depth_colors.get(guardrail_depth, PALETTE["hud_accent"])
 
@@ -1156,10 +1267,11 @@ class OperationalRenderer:
             0.995,
             hud_text,
             transform=ax.transAxes,
-            fontsize=7,
+            fontsize=8,
             fontfamily="monospace",
             fontweight="bold",
             verticalalignment="top",
+            clip_on=False,
             bbox=dict(
                 boxstyle="round,pad=0.35",
                 facecolor=PALETTE["hud_bg"],
@@ -1294,6 +1406,13 @@ class OperationalRenderer:
         bar_x1 = bar_x0 + bar_cells
         bar_thickness = max(1.5, self.H * 0.007)
 
+        # White drop shadow for contrast
+        ax.plot(
+            [bar_x0, bar_x1],
+            [bar_y0 + 0.8, bar_y0 + 0.8],
+            "-", color="white", linewidth=5.0,
+            solid_capstyle="butt", zorder=25.9, alpha=0.7,
+        )
         # Solid black bar
         ax.plot(
             [bar_x0, bar_x1],
@@ -1447,10 +1566,12 @@ class OperationalRenderer:
         intruder_positions: Optional[np.ndarray],
         comms_coverage_map: Optional[np.ndarray],
         restriction_zones: Optional[list] = None,
+        has_sensitive: bool = False,
     ) -> None:
         """Context-aware legend — only active layers shown."""
         patches: list[Any] = [
-            mpatches.Patch(color=PALETTE["building_fill"], label="Building"),
+            mpatches.Patch(color=PALETTE["trail_executed"], label="Executed Trail"),
+            mpatches.Patch(color=PALETTE["trail_planned"], label="Planned Path"),
         ]
         # Static no-fly always shown if present
         if np.any(self.no_fly):
@@ -1476,22 +1597,16 @@ class OperationalRenderer:
                     patches.append(
                         mpatches.Patch(color=clr, alpha=0.5, label=lbl)
                     )
-        # Landuse entries when landuse_map is present
-        if self.landuse_map is not None:
-            if np.any(self.landuse_map == 4):
+            if _seen_types:
                 patches.append(
-                    mpatches.Patch(color=PALETTE["water"], label="Water")
-                )
-            if np.any(self.landuse_map == 3):
-                patches.append(
-                    mpatches.Patch(
-                        color=self.basemap_style.color_vegetation,
-                        label="Vegetation",
-                    )
+                    mpatches.Patch(color="#BB88FF", alpha=0.3, label="NFZ Buffer")
                 )
         if fire_mask is not None and np.any(fire_mask):
             patches.append(
                 mpatches.Patch(color=PALETTE["fire_core"], label="Fire")
+            )
+            patches.append(
+                mpatches.Patch(color="#FF8C00", alpha=0.3, label="Fire Buffer")
             )
         if smoke_mask is not None and np.any(smoke_mask > 0.05):
             patches.append(
@@ -1505,23 +1620,13 @@ class OperationalRenderer:
                     label="Road closure",
                 )
             )
-        if risk_map is not None:
-            patches.append(
-                mpatches.Patch(
-                    color=PALETTE["risk_high"], alpha=0.5, label="Risk"
-                )
-            )
         if intruder_positions is not None and len(intruder_positions) > 0:
             patches.append(
                 mpatches.Patch(color=PALETTE["intruder"], label="Intruder")
             )
-        if comms_coverage_map is not None:
+        if has_sensitive:
             patches.append(
-                mpatches.Patch(
-                    color=PALETTE["comms_denied"],
-                    alpha=0.4,
-                    label="Comms denied",
-                )
+                mpatches.Patch(color=PALETTE["sensitive_school"], alpha=0.7, label="Sensitive Area")
             )
         patches.extend([
             mpatches.Patch(color=PALETTE["drone_safe"], label="UAV"),
@@ -1531,11 +1636,11 @@ class OperationalRenderer:
         ax.legend(
             handles=patches,
             loc="lower right",
-            fontsize=6,
+            fontsize=5.5,
             framealpha=0.85,
             fancybox=True,
             edgecolor="#555555",
-            ncol=2 if len(patches) > 6 else 1,
+            ncol=2,
         )
 
     # ── Mission POIs ───────────────────────────────────────────────────
@@ -1605,14 +1710,76 @@ class OperationalRenderer:
                 color=color, label=label, zorder=_z,
             )
 
+    # ── Sensitive locations ─────────────────────────────────────────────
+
+    _SENSITIVE_ICONS: dict[str, tuple[str, str]] = {
+        "school":     ("S",  "sensitive_school"),
+        "hospital":   ("H+", "sensitive_hospital"),
+        "church":     ("\u2020", "sensitive_church"),
+        "playground": ("P",  "sensitive_playground"),
+    }
+
+    def _draw_sensitive_locations(
+        self,
+        ax: Any,
+        locations: list[dict[str, Any]],
+        drone_pos: tuple[int, int],
+    ) -> None:
+        """Draw sensitive area icons at Z 4.8 with buffer circles."""
+        _z = 4.8
+        _buf_r = 15
+        dx, dy = drone_pos
+
+        for loc in locations:
+            lx = int(loc.get("x", 0))
+            ly = int(loc.get("y", 0))
+            ltype = str(loc.get("type", "school"))
+            label = str(loc.get("label", ""))
+            icon_char, pal_key = self._SENSITIVE_ICONS.get(
+                ltype, ("?", "sensitive_school")
+            )
+            color = PALETTE.get(pal_key, "#BB88FF")
+
+            # Icon circle
+            ax.add_patch(plt.Circle(
+                (lx, ly), max(4, self.W / 80),
+                facecolor=color, edgecolor="white",
+                linewidth=1.0, alpha=0.7, zorder=_z,
+            ))
+            ax.text(
+                lx, ly, icon_char,
+                fontsize=6, fontweight="bold",
+                color="white", ha="center", va="center",
+                zorder=_z + 0.01,
+            )
+            # Label below
+            if label:
+                ax.text(
+                    lx, ly + max(5, self.H / 60), label,
+                    fontsize=4.5, color=color,
+                    ha="center", va="top", alpha=0.8,
+                    zorder=_z + 0.01,
+                    path_effects=[
+                        path_effects.withStroke(linewidth=1.0, foreground="black")
+                    ],
+                )
+            # Dotted buffer circle
+            ax.add_patch(plt.Circle(
+                (lx, ly), _buf_r,
+                fill=False, edgecolor=color,
+                linewidth=0.8, linestyle=":",
+                alpha=0.5, zorder=_z - 0.01,
+            ))
+
     # ── Title card ────────────────────────────────────────────────────
 
-    def _render_title_card(self, num_frames: int = 18) -> list[np.ndarray]:
-        """Render an animated COP briefing-style title card.
+    def _render_title_card(self, num_frames: int = 60) -> list[np.ndarray]:
+        """Render an animated COP briefing-style title card (4 phases, ~4s at 15fps).
 
-        Phase 1 (frames 0-5):   Mission name fades in
-        Phase 2 (frames 6-11):  Incident chips appear one by one
-        Phase 3 (frames 12-17): Metadata + disclaimer + version pin
+        Phase 1 (frames 0-14):  Mission name + Greek subtitle fade-in
+        Phase 2 (frames 15-29): Incident chips (staggered reveal)
+        Phase 3 (frames 30-44): Map tile name, difficulty, planner, seed
+        Phase 4 (frames 45-59): Disclaimer, attribution, version
         """
         # Resolve mission profile
         profile = None
@@ -1670,6 +1837,18 @@ class OperationalRenderer:
                     return c
             return PALETTE["hud_accent"]
 
+        # Extract difficulty from scenario_id
+        _difficulty = ""
+        if "_hard" in self.scenario_id:
+            _difficulty = "HARD"
+        elif "_medium" in self.scenario_id:
+            _difficulty = "MEDIUM"
+
+        # Phase boundaries (scale to actual num_frames)
+        p1_end = num_frames // 4
+        p2_end = num_frames // 2
+        p3_end = 3 * num_frames // 4
+
         frames: list[np.ndarray] = []
         for i in range(num_frames):
             fig, ax = plt.subplots(figsize=self.figsize, dpi=self.dpi)
@@ -1681,17 +1860,16 @@ class OperationalRenderer:
             for spine in ax.spines.values():
                 spine.set_visible(False)
 
-            # ── Phase 1: Mission name fade-in (frames 0-5) ──────────
-            name_alpha = min(1.0, (i + 1) / 6.0)
+            # ── Phase 1: Mission name + Greek subtitle (0 → p1_end) ──
+            name_alpha = min(1.0, (i + 1) / max(p1_end, 1))
             ax.text(
                 0.5, 0.72, mission_name,
                 fontsize=30, fontweight="bold", ha="center", va="center",
                 color=accent, alpha=name_alpha,
                 transform=ax.transAxes,
             )
-            # Greek subtitle (appears from frame 2)
-            if profile and profile.name_el and i >= 2:
-                greek_alpha = min(1.0, (i - 1) / 5.0)
+            if profile and profile.name_el and i >= 3:
+                greek_alpha = min(1.0, (i - 2) / max(p1_end, 1))
                 ax.text(
                     0.5, 0.63, profile.name_el,
                     fontsize=14, ha="center", va="center",
@@ -1699,23 +1877,22 @@ class OperationalRenderer:
                     transform=ax.transAxes,
                 )
 
-            # ── Phase 2: Incident chips (frames 6-11) ───────────────
-            if i >= 6 and self._active_incidents:
+            # ── Phase 2: Incident chips (p1_end → p2_end) ───────────
+            if i >= p1_end and self._active_incidents:
                 total = len(self._active_incidents)
-                # Progressive reveal: show more chips each frame
+                phase_len = max(p2_end - p1_end, 1)
                 chips_to_show = min(
                     total,
-                    int((i - 5) * total / 6) + 1,
+                    int((i - p1_end) * total / phase_len) + 1,
                 )
                 chip_width = min(0.18, 0.90 / max(total, 1))
                 start_x = 0.5 - (total * chip_width) / 2
 
                 for ci in range(chips_to_show):
                     cx = start_x + ci * chip_width + chip_width / 2
-                    # Staggered fade per chip
                     chip_alpha = min(
                         1.0,
-                        max(0.0, (i - 5 - ci * 6.0 / total) / 2.0),
+                        max(0.0, (i - p1_end - ci * phase_len / total) / 3.0),
                     )
                     cc = _chip_color(self._active_incidents[ci])
                     ax.text(
@@ -1733,19 +1910,27 @@ class OperationalRenderer:
                         ),
                     )
 
-            # ── Phase 3: Metadata + disclaimer + version (frames 12-17)
-            if i >= 12:
-                meta_alpha = min(1.0, (i - 11) / 6.0)
+            # ── Phase 3: Map, difficulty, planner, seed (p2_end → p3_end)
+            if i >= p2_end:
+                phase_len = max(p3_end - p2_end, 1)
+                meta_alpha = min(1.0, (i - p2_end + 1) / phase_len)
 
-                # Subtitle (agency | scenario | planner | tile)
+                # Tile + difficulty + planner
+                meta_parts = []
+                if self.osm_tile_id:
+                    meta_parts.append(f"Tile: {self.osm_tile_id}")
+                if _difficulty:
+                    meta_parts.append(f"Difficulty: {_difficulty}")
+                if self.planner_name:
+                    meta_parts.append(f"Planner: {self.planner_name}")
+                meta_line = "  |  ".join(meta_parts)
                 ax.text(
-                    0.5, 0.38, subtitle,
+                    0.5, 0.38, meta_line,
                     fontsize=11, ha="center", va="center",
                     color=PALETTE["hud_text"], alpha=meta_alpha,
                     transform=ax.transAxes,
                 )
 
-                # Mission description
                 if profile and profile.description:
                     ax.text(
                         0.5, 0.30, profile.description,
@@ -1755,34 +1940,34 @@ class OperationalRenderer:
                         transform=ax.transAxes,
                     )
 
-                # Claimed realism disclaimer
+            # ── Phase 4: Disclaimer + attribution + version (p3_end → end)
+            if i >= p3_end:
+                phase_len = max(num_frames - p3_end, 1)
+                fin_alpha = min(1.0, (i - p3_end + 1) / phase_len)
+
                 ax.text(
                     0.5, 0.18, disclaimer,
                     fontsize=8, ha="center", va="center",
                     color="#888888", fontstyle="italic",
-                    alpha=meta_alpha,
+                    alpha=fin_alpha,
                     transform=ax.transAxes,
                 )
-
-                # ODbL attribution
                 ax.text(
                     0.5, 0.08, self.basemap_style.attribution_text,
                     fontsize=7, ha="center", va="center",
                     color="#666666", fontstyle="italic",
-                    alpha=meta_alpha,
+                    alpha=fin_alpha,
                     transform=ax.transAxes,
                 )
-
-                # Version pin (bottom-right)
                 ax.text(
                     0.97, 0.03, version_str,
                     fontsize=7, ha="right", va="bottom",
                     fontfamily="monospace",
-                    color="#555555", alpha=meta_alpha,
+                    color="#555555", alpha=fin_alpha,
                     transform=ax.transAxes,
                 )
 
-            fig.tight_layout(pad=0)
+            fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
             fig.canvas.draw()
             buf = np.asarray(fig.canvas.buffer_rgba())
             frame = buf[:, :, :3].copy()
@@ -1790,6 +1975,109 @@ class OperationalRenderer:
             frames.append(frame)
 
         return frames
+
+    # ── End card ──────────────────────────────────────────────────────────
+
+    def render_end_card(
+        self,
+        *,
+        drone_pos: tuple[int, int],
+        trajectory: list[tuple[int, int]],
+        success: bool,
+        termination_reason: str = "",
+        total_steps: int = 0,
+        total_replans: int = 0,
+        path_length: int = 0,
+        hold_frames: int = 30,
+    ) -> None:
+        """Render a SUCCESS/FAILURE end card and append to frame buffer.
+
+        Draws the basemap + full trajectory (frozen), a dark overlay, and
+        a large verdict symbol with stats.
+        """
+        for fi in range(hold_frames):
+            fig, ax = plt.subplots(figsize=self.figsize, dpi=self.dpi)
+            # Basemap
+            ax.imshow(self._base_rgb, interpolation="nearest", zorder=1)
+
+            # Draw trajectory
+            if trajectory and len(trajectory) > 1:
+                txs = [p[0] for p in trajectory]
+                tys = [p[1] for p in trajectory]
+                ax.plot(
+                    txs, tys, "-", color=PALETTE["trail_executed"],
+                    linewidth=2.0, alpha=0.8, zorder=5,
+                    solid_capstyle="round",
+                )
+
+            # Start / Goal markers
+            ax.scatter(
+                *self.start, c=PALETTE["start"], s=120, zorder=6,
+                edgecolors="white", linewidth=2.0, marker="^",
+            )
+            ax.scatter(
+                *self.goal, c=PALETTE["goal"], s=150, zorder=6,
+                edgecolors="white", linewidth=2.0, marker="*",
+            )
+
+            # Semi-transparent dark overlay
+            overlay = np.zeros((self.H, self.W, 4), dtype=np.float32)
+            overlay[:, :, 3] = 0.4
+            ax.imshow(overlay, interpolation="nearest", zorder=8)
+
+            # Verdict
+            if success:
+                symbol = "\u2713"  # check mark
+                sym_color = "#00FF88"
+                title = "MISSION COMPLETE"
+                title_color = "#00FF88"
+            else:
+                symbol = "\u2717"  # X mark
+                sym_color = "#FF4444"
+                reason_short = termination_reason.replace("_", " ").upper()
+                title = f"MISSION FAILED: {reason_short}"
+                title_color = "#FF4444"
+
+            # Symbol (large)
+            ax.text(
+                0.5, 0.55, symbol,
+                transform=ax.transAxes,
+                fontsize=80, fontweight="bold",
+                color=sym_color, ha="center", va="center",
+                zorder=10,
+            )
+            # Title
+            ax.text(
+                0.5, 0.35, title,
+                transform=ax.transAxes,
+                fontsize=24 if success else 18,
+                fontweight="bold",
+                color=title_color, ha="center", va="center",
+                zorder=10,
+            )
+            # Stats line
+            stats = f"Steps: {total_steps}  |  Replans: {total_replans}  |  Path: {path_length}"
+            ax.text(
+                0.5, 0.25, stats,
+                transform=ax.transAxes,
+                fontsize=12, fontfamily="monospace",
+                color=PALETTE["hud_text"], ha="center", va="center",
+                zorder=10,
+            )
+
+            ax.set_xlim(-0.5, self.W - 0.5)
+            ax.set_ylim(self.H - 0.5, -0.5)
+            ax.set_aspect("equal")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+            fig.canvas.draw()
+            buf = np.asarray(fig.canvas.buffer_rgba())
+            frame = buf[:, :, :3].copy()
+            plt.close(fig)
+            self._frames.append(frame)
 
     # ── Export helpers ────────────────────────────────────────────────────
 
@@ -1812,7 +2100,7 @@ class OperationalRenderer:
         path: Path,
         fps: int = 10,
         frames: Optional[list[np.ndarray]] = None,
-        title_card_seconds: float = 1.8,
+        title_card_seconds: float = 4.0,
         max_frames: int = 200,
     ) -> None:
         """Export frames as animated GIF (Pillow writer).

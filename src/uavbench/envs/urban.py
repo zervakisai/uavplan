@@ -1230,8 +1230,23 @@ class UrbanEnv(UAVBenchEnv):
         mask = np.zeros((self.map_size, self.map_size), dtype=bool)
         mask |= self._forced_block_mask
         mask |= self._traffic_closure_mask
+
+        # Safety buffer sizes from scenario config (extra.safety_buffers)
+        _extra = self.config.extra or {}
+        _sb = _extra.get("safety_buffers") or {}
+        _fire_buf = int(_sb.get("fire_buffer_cells", 5))
+        _nfz_buf = int(_sb.get("nfz_buffer_cells", 3))
+
         if self._fire_model is not None and self.config.fire_blocks_movement:
-            mask |= self._fire_model.fire_mask
+            _fire_mask = self._fire_model.fire_mask
+            mask |= _fire_mask
+            # Fire safety buffer: block cells NEAR fire for heat/turbulence
+            if _fire_buf > 0 and _fire_mask.any():
+                try:
+                    from scipy.ndimage import binary_dilation
+                    mask |= binary_dilation(_fire_mask, iterations=_fire_buf)
+                except ImportError:
+                    pass
         if self._traffic_model is not None and self.config.traffic_blocks_movement:
             mask |= self._traffic_model.get_occupancy_mask((self.map_size, self.map_size), buffer_radius=5)
         if self._moving_target is not None:
@@ -1250,7 +1265,15 @@ class UrbanEnv(UAVBenchEnv):
         if self._intruder_model is not None:
             mask |= self._intruder_model.get_buffer_mask((self.map_size, self.map_size))
         if self._dynamic_nfz is not None:
-            mask |= self._dynamic_nfz.get_nfz_mask()
+            _nfz_mask = self._dynamic_nfz.get_nfz_mask()
+            mask |= _nfz_mask
+            # NFZ safety buffer: keep clearance from restricted zones
+            if _nfz_buf > 0 and _nfz_mask.any():
+                try:
+                    from scipy.ndimage import binary_dilation
+                    mask |= binary_dilation(_nfz_mask, iterations=_nfz_buf)
+                except ImportError:
+                    pass
         if self._emergency_corridor_active and self.config.emergency_corridor_enabled:
             mask &= ~self._emergency_corridor_mask
         return mask
