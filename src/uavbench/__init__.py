@@ -1,4 +1,3 @@
-__all__ = ["__version__"]
+"""UAVBench v2 — UAV navigation benchmark framework (clean-room rewrite)."""
 
-__version__ = "0.0.1"
-
+__version__ = "2.0.0-dev"

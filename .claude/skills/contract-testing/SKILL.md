@@ -6,8 +6,8 @@ description: Patterns for writing and running contract tests in UAVBench v2. Use
 # Contract Testing Patterns for UAVBench v2
 
 ## When to Use
-- Writing any test in `tests/v2/contract_test_*.py`
-- Verifying an architectural invariant from `docs/v2/CONTRACTS.md`
+- Writing any test in `tests/contract_test_*.py`
+- Verifying an architectural invariant from `docs/CONTRACTS.md`
 - Checking phase gate criteria
 
 ## Core Pattern: Hash Equality for Determinism

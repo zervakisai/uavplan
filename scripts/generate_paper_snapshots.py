@@ -6,11 +6,12 @@ For each of the 3 scenario families:
 For one hard scenario:
   - 6-panel figure showing all planner trajectories on the same map
 
-Outputs 300dpi PNG + vector PDF to outputs/v2/paper_figures/.
+Outputs 300dpi PNG + vector PDF to outputs/paper_figures/.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from typing import Any
@@ -21,18 +22,18 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from uavbench2.envs.urban import UrbanEnvV2
-from uavbench2.planners import PLANNERS
-from uavbench2.planners.base import PlanResult
-from uavbench2.scenarios.loader import load_scenario
-from uavbench2.scenarios.schema import ScenarioConfig
-from uavbench2.visualization.renderer import Renderer
+from uavbench.envs.urban import UrbanEnvV2
+from uavbench.planners import PLANNERS
+from uavbench.planners.base import PlanResult
+from uavbench.scenarios.loader import load_scenario
+from uavbench.scenarios.schema import ScenarioConfig
+from uavbench.visualization.renderer import Renderer
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-FIG_DIR = "outputs/v2/paper_figures"
+FIG_DIR = "outputs/paper_figures"
 SEED = 42
 
 # One representative scenario per family (hard = most visual dynamics)
@@ -329,14 +330,86 @@ def _save_fig(fig: plt.Figure, name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Generate UAVBench v2 paper snapshots.")
+    p.add_argument(
+        "--scenario", type=str, default=None,
+        help="Single scenario ID for a quick snapshot (skips full family/comparison)",
+    )
+    p.add_argument(
+        "--planner", type=str, default=None,
+        help="Single planner ID (used with --scenario, default: astar)",
+    )
+    p.add_argument(
+        "--seed", type=int, default=None,
+        help="Override seed (default: 42)",
+    )
+    p.add_argument(
+        "--skip-families", action="store_true",
+        help="Skip family snapshot generation",
+    )
+    p.add_argument(
+        "--skip-comparison", action="store_true",
+        help="Skip 6-panel planner comparison generation",
+    )
+    p.add_argument(
+        "--output", type=str, default=None,
+        help="Output directory for figures (default: outputs/paper_figures)",
+    )
+    return p.parse_args()
+
+
 def main() -> None:
+    global FIG_DIR, SEED  # noqa: PLW0603
+    args = _parse_args()
+
+    if args.output:
+        FIG_DIR = args.output
+    if args.seed is not None:
+        SEED = args.seed
+
     os.makedirs(FIG_DIR, exist_ok=True)
     print("UAVBench v2 Paper Snapshots")
     print(f"  Output: {FIG_DIR}/")
     print()
 
-    generate_family_snapshots()
-    generate_planner_comparison()
+    if args.scenario:
+        # Quick single-scenario mode
+        planner_id = args.planner or "astar"
+        print(f"Quick snapshot: {args.scenario} / {planner_id} / seed={SEED}")
+        config = load_scenario(args.scenario)
+        result = _run_episode_with_frames(
+            config, planner_id, SEED, capture_steps={0},
+        )
+        total = result["total_steps"]
+        mid = max(1, total // 2)
+        capture = {0, mid, total}
+        result = _run_episode_with_frames(
+            config, planner_id, SEED, capture_steps=capture,
+        )
+        for label, step in [("t0", 0), ("mid", mid), ("end", total)]:
+            if step in result["frames"]:
+                frame, meta = result["frames"][step]
+            else:
+                closest = min(result["frames"].keys(), key=lambda k: abs(k - step))
+                frame, meta = result["frames"][closest]
+            fig, ax = plt.subplots(figsize=(8, 8))
+            ax.imshow(frame)
+            ax.set_title(
+                f"{args.scenario} / {planner_id} — {label} (step {step})",
+                fontsize=11, fontweight="bold",
+            )
+            ax.axis("off")
+            fig.tight_layout()
+            name = f"snapshot_{args.scenario}_{planner_id}_{label}"
+            _save_fig(fig, name)
+        print(f"\nDone. {len(capture)} snapshots in {FIG_DIR}/")
+        return
+
+    if not args.skip_families:
+        generate_family_snapshots()
+    if not args.skip_comparison:
+        generate_planner_comparison()
 
     print(f"\nDone. All snapshots in {FIG_DIR}/")
 

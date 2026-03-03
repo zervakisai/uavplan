@@ -1,1632 +1,567 @@
+"""UrbanEnvV2 — urban navigation environment with dynamics.
+
+Enforces: DC-1 (one RNG), EN-1..EN-9, MC-1..MC-4, MP-1.
+Action space: Discrete(5) — UP(0), DOWN(1), LEFT(2), RIGHT(3), STAY(4).
+"""
+
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from uavbench.dynamics.adversarial_uav import AdversarialUAVModel
-from uavbench.envs.base import UAVBenchEnv, RejectReason
-from uavbench.dynamics.fire_spread import FireSpreadModel
+from uavbench.blocking import compute_blocking_mask
+from uavbench.dynamics.fire_ca import FireSpreadModel
+from uavbench.dynamics.forced_block import ForcedBlockManager, bfs_shortest_path
 from uavbench.dynamics.interaction_engine import InteractionEngine
-from uavbench.dynamics.population_risk import PopulationRiskModel
+from uavbench.dynamics.restriction_zones import RestrictionZoneModel
 from uavbench.dynamics.traffic import TrafficModel
-from uavbench.planners.astar import AStarPlanner
-from uavbench.scenarios.schema import ScenarioConfig, Domain, Difficulty
+from uavbench.envs.base import RejectReason, TerminationReason
+from uavbench.missions.engine import MissionEngine
+from uavbench.scenarios.schema import ScenarioConfig
 
-GridPos = tuple[int, int]
+# Action constants
+ACTION_UP = 0
+ACTION_DOWN = 1
+ACTION_LEFT = 2
+ACTION_RIGHT = 3
+ACTION_STAY = 4
+
+# Movement deltas: (dx, dy) for each action
+_DELTAS = {
+    ACTION_UP: (0, -1),
+    ACTION_DOWN: (0, 1),
+    ACTION_LEFT: (-1, 0),
+    ACTION_RIGHT: (1, 0),
+    ACTION_STAY: (0, 0),
+}
 
 
-class UrbanEnv(UAVBenchEnv):
-    """Urban 2.5D SAR environment for UAVBench.
+class UrbanEnvV2(gym.Env):
+    """2D grid navigation environment (EN-1).
 
-    - 2D grid (x, y) με διακριτό ύψος z
-    - Buildings ως heightmap h(y, x)
-    - Collision αν z <= h(y, x) ή αν είμαστε σε no-fly κελί
-    - Easy/Medium/Hard μοιράζονται την ίδια πόλη, αλλάζουν density/blocks/wind
+    Deterministic from seed via a single np.random.default_rng() call
+    in reset() (DC-1).
     """
 
-    def __init__(self, config: ScenarioConfig):
-        assert config.domain == Domain.URBAN
-        super().__init__(config)
+    metadata = {"render_modes": ["rgb_array"]}
 
-        self.map_size = config.map_size
-        self.max_altitude = config.max_altitude
-        self.max_building_height = 50.0
+    def __init__(self, config: ScenarioConfig) -> None:
+        super().__init__()
+        self.config = config
+        self._map_size = config.map_size
+        self._max_steps = config.effective_max_steps
 
-        # State: [x, y, z, gx, gy, gz, h(x,y)]
+        # Action space: Discrete(5) (EN-2)
+        self.action_space = spaces.Discrete(5)
+
+        # Observation space: [ax, ay, gx, gy, terrain_h] (EN-3)
+        high = np.array(
+            [self._map_size, self._map_size, self._map_size, self._map_size, 10.0],
+            dtype=np.float32,
+        )
         self.observation_space = spaces.Box(
-            low=np.array(
-                [0, 0, 0, 0, 0, 0, 0],
-                dtype=np.float32,
-            ),
-            high=np.array(
-                [
-                    self.map_size - 1,
-                    self.map_size - 1,
-                    self.max_altitude,
-                    self.map_size - 1,
-                    self.map_size - 1,
-                    self.max_altitude,
-                    self.max_building_height,
-                ],
-                dtype=np.float32,
-            ),
+            low=np.zeros(5, dtype=np.float32),
+            high=high,
             dtype=np.float32,
         )
 
-        # Actions: 0 up, 1 down, 2 left, 3 right, 4/5 change altitude
-        self.action_space = spaces.Discrete(6)
+        # State (set during reset)
+        self._heightmap: np.ndarray = np.zeros((0, 0))
+        self._no_fly: np.ndarray = np.zeros((0, 0), dtype=bool)
+        self._roads: np.ndarray = np.zeros((0, 0), dtype=bool)
+        self._agent_xy: tuple[int, int] = (0, 0)
+        self._goal_xy: tuple[int, int] = (0, 0)
+        self._step_idx: int = 0
+        self._events: list[dict] = []
+        self._mission: MissionEngine | None = None
+        self._terminated: bool = False
+        self._truncated: bool = False
+        self._termination_reason = TerminationReason.IN_PROGRESS
+        self._objective_completed: bool = False
 
-        # Internal state
-        self._agent_pos: np.ndarray  # [x, y, z]
-        self._goal_pos: np.ndarray   # [x, y, z]
-        self._heightmap: np.ndarray  # [H, W]
-        self._no_fly_mask: np.ndarray  # [H, W], bool
-
-    # --------------- Domain-specific reset/step ----------------
-
-    def _reset_impl(self, options: dict[str, Any] | None = None):
-        """Build or load a map + sample start/goal for a new episode."""
-        options = options or {}
-        cfg = self.config
-
-        # ---------- Build / load the map ----------
-        if cfg.map_source == "osm":
-            if cfg.osm_tile_id is None:
-                raise ValueError("map_source='osm' requires osm_tile_id")
-            self._load_osm_tile(cfg.osm_tile_id)
-        else:
-            self._generate_synthetic_map(options)
-
-        H, W = self._heightmap.shape
-
-        # Runtime paper-protocol layers
-        self._traffic_closure_mask = np.zeros((H, W), dtype=bool)
-        self._forced_block_mask = np.zeros((H, W), dtype=bool)
-        self._emergency_corridor_mask = np.zeros((H, W), dtype=bool)
-        self._risk_cost_map = np.zeros((H, W), dtype=np.float32)
-        self._forced_replans_triggered = 0
-        self._forced_interdictions: list[dict[str, Any]] = []
-        self._interdiction_hits = 0
-        self._interdiction_total = 0
-        self._reference_corridor_mask = np.zeros((H, W), dtype=bool)
-        self._reference_path: list[GridPos] = []
-        self._interaction_metrics_last: dict[str, float] = {}
-        self._interaction_metrics_history: list[dict[str, float]] = []
-        self._last_guardrail_status: dict[str, Any] = {
-            "reachability_failed_before_relax": False,
-            "relaxation_applied": {},
-            "corridor_fallback_used": False,
-            "feasible_after_guardrail": True,
-        }
-        self._guardrail_unreachable_streak = 0
-        self._emergency_corridor_active = False
-
-        # Guardrail topology-change tracking: only run BFS when blocking
-        # mask has changed since last check.  Uses an integer counter
-        # (incremented whenever a dynamic layer steps or a mask is
-        # mutated) instead of hashing the full mask array.
-        self._topology_change_counter: int = 0
-        self._guardrail_prev_topo_version: int | None = None
-        self._guardrail_last_reachable: bool = True
-        self._guardrail_bfs_calls: int = 0
-        self._guardrail_bfs_skips: int = 0
-
-        # Plan instrumentation — updated by benchmark runner via set_plan_info()
-        self._plan_len: int = 0
-        self._plan_stale: bool = False
-        self._plan_reason: str = "none"
-        self._plan_snapshot_age: int = 0
-
-        # Forced interdiction lifecycle tracking (paper V&V)
-        self._forced_interdiction_triggered_steps: list[int] = []
-        self._forced_block_cleared_by_guardrail: bool = False
-
-        # ---------- Initialize dynamic layers ----------
-        self._fire_model: FireSpreadModel | None = None
-        self._traffic_model: TrafficModel | None = None
-        self._moving_target = None
-        self._intruder_model = None
-        self._dynamic_nfz = None
-
-        if cfg.enable_fire:
-            landuse = getattr(self, "_landuse_map", np.zeros((H, W), dtype=np.int8))
-            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
-            self._fire_model = FireSpreadModel(
-                landuse_map=landuse,
-                roads_mask=roads,
-                wind_dir=cfg.wind_direction,
-                wind_speed=cfg.wind_speed,
-                rng=self._rng,
-                n_ignition=cfg.fire_ignition_points,
-            )
-
-        if cfg.enable_traffic:
-            mt_val = getattr(cfg.mission_type, "value", str(cfg.mission_type))
-            if "maritime" in mt_val:
-                # Maritime: vessels move on water cells, not roads
-                landuse = getattr(self, "_landuse_map", None)
-                if landuse is not None:
-                    movement_mask = (landuse == 4)  # water cells
-                else:
-                    movement_mask = np.zeros((H, W), dtype=bool)
-            else:
-                movement_mask = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
-            self._traffic_model = TrafficModel(
-                roads_mask=movement_mask,
-                num_vehicles=cfg.num_emergency_vehicles,
-                rng=self._rng,
-            )
-
-        # ---------- Parameters for start/goal placement ----------
-        safe_alt = int(getattr(cfg, "safe_altitude", options.get("safe_altitude", self.max_altitude)))
-        safe_alt = int(np.clip(safe_alt, 0, self.max_altitude))
-
-        min_l1 = int(getattr(cfg, "min_start_goal_l1", options.get("min_start_goal_l1", max(2, H // 2))))
-
-        # ---------- Collect free cells ----------
-        free_mask = (self._heightmap == 0.0) & (~self._no_fly_mask)
-        free_cells = np.argwhere(free_mask)  # array of [y, x]
-
-        if free_cells.shape[0] < 2:
-            raise ValueError(
-                "Not enough free cells to place start/goal. "
-                "Reduce building_density / no-fly constraints or increase map_size."
-            )
-
-        def _nearest_free(x: int, y: int, *, endpoint: str) -> tuple[int, int]:
-            """Map fixed endpoints to nearest free cell when exact cell is blocked."""
-            if 0 <= x < W and 0 <= y < H and bool(free_mask[y, x]):
-                return x, y
-            dists = np.abs(free_cells[:, 1] - x) + np.abs(free_cells[:, 0] - y)
-            idx = int(np.argmin(dists))
-            ny, nx = map(int, free_cells[idx])
-            self.log_event(
-                "fixed_endpoint_relaxed",
-                endpoint=endpoint,
-                requested=(x, y),
-                used=(nx, ny),
-            )
-            return nx, ny
-
-        from collections import deque
-
-        largest_component_cells: np.ndarray | None = None
-
-        def _component_mask(seed_xy: tuple[int, int]) -> np.ndarray:
-            sx0, sy0 = seed_xy
-            comp = np.zeros_like(free_mask, dtype=bool)
-            if not (0 <= sx0 < W and 0 <= sy0 < H):
-                return comp
-            if not free_mask[sy0, sx0]:
-                return comp
-            q = deque([(sx0, sy0)])
-            comp[sy0, sx0] = True
-            while q:
-                x, y = q.popleft()
-                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                    nx, ny = x + dx, y + dy
-                    if 0 <= nx < W and 0 <= ny < H:
-                        if free_mask[ny, nx] and not comp[ny, nx]:
-                            comp[ny, nx] = True
-                            q.append((nx, ny))
-            return comp
-
-        def _largest_component() -> np.ndarray:
-            nonlocal largest_component_cells
-            if largest_component_cells is not None:
-                return largest_component_cells
-            visited = np.zeros_like(free_mask, dtype=bool)
-            best_cells = free_cells[:1]
-            best_size = 0
-            for yx in free_cells:
-                sy0, sx0 = map(int, yx)
-                if visited[sy0, sx0]:
-                    continue
-                q = deque([(sx0, sy0)])
-                visited[sy0, sx0] = True
-                cells: list[tuple[int, int]] = [(sy0, sx0)]
-                while q:
-                    x, y = q.popleft()
-                    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                        nx, ny = x + dx, y + dy
-                        if 0 <= nx < W and 0 <= ny < H:
-                            if free_mask[ny, nx] and not visited[ny, nx]:
-                                visited[ny, nx] = True
-                                q.append((nx, ny))
-                                cells.append((ny, nx))
-                if len(cells) > best_size:
-                    best_size = len(cells)
-                    best_cells = np.array(cells, dtype=np.int32)
-            largest_component_cells = best_cells
-            return largest_component_cells
-
-        # ---------- Sample start ----------
-        if cfg.fixed_start_xy is not None:
-            sx, sy = _nearest_free(
-                int(cfg.fixed_start_xy[0]),
-                int(cfg.fixed_start_xy[1]),
-                endpoint="start",
-            )
-        else:
-            start_candidates = _largest_component()
-            si = int(self._rng.integers(0, start_candidates.shape[0]))
-            sy, sx = map(int, start_candidates[si])
-
-        start_component_mask = _component_mask((sx, sy))
-        start_component_cells = np.argwhere(start_component_mask)
-        required_component_cells = 2
-        if cfg.paper_track == "dynamic" or int(cfg.force_replan_count) > 0:
-            required_component_cells = 24
-        if start_component_cells.shape[0] < required_component_cells:
-            start_candidates = _largest_component()
-            if start_candidates.shape[0] < required_component_cells:
-                raise ValueError("No connected free component with at least two cells")
-            prev_start = (sx, sy)
-            si = int(self._rng.integers(0, start_candidates.shape[0]))
-            sy, sx = map(int, start_candidates[si])
-            start_component_mask = _component_mask((sx, sy))
-            start_component_cells = np.argwhere(start_component_mask)
-            self.log_event(
-                "fixed_endpoint_relaxed",
-                endpoint="start",
-                requested=prev_start,
-                used=(sx, sy),
-            )
-
-        # ---------- Sample goal with minimum L1 distance in same component ----------
-        candidate_cells = start_component_cells[
-            (start_component_cells[:, 1] != sx) | (start_component_cells[:, 0] != sy)
-        ]
-        if candidate_cells.shape[0] == 0:
-            raise ValueError("Cannot sample goal: start component has no alternative cells")
-
-        if cfg.fixed_goal_xy is not None:
-            req_goal = (int(cfg.fixed_goal_xy[0]), int(cfg.fixed_goal_xy[1]))
-            goal_x, goal_y = _nearest_free(req_goal[0], req_goal[1], endpoint="goal")
-            if (goal_x, goal_y) == (sx, sy) or (not start_component_mask[goal_y, goal_x]):
-                dists = np.abs(candidate_cells[:, 1] - sx) + np.abs(candidate_cells[:, 0] - sy)
-                idx = int(np.argmax(dists))
-                goal_y, goal_x = map(int, candidate_cells[idx])
-                self.log_event(
-                    "fixed_endpoint_relaxed",
-                    endpoint="goal",
-                    requested=req_goal,
-                    used=(goal_x, goal_y),
-                )
-        else:
-            dists = np.abs(candidate_cells[:, 1] - sx) + np.abs(candidate_cells[:, 0] - sy)
-            eligible = candidate_cells[dists >= min_l1]
-            if eligible.shape[0] > 0:
-                gi = int(self._rng.integers(0, eligible.shape[0]))
-                goal_y, goal_x = map(int, eligible[gi])
-            else:
-                idx = int(np.argmax(dists))
-                goal_y, goal_x = map(int, candidate_cells[idx])
-
-        if cfg.paper_track == "dynamic" or int(cfg.force_replan_count) > 0:
-            l1_goal = abs(goal_x - sx) + abs(goal_y - sy)
-            if l1_goal < 8:
-                dists = np.abs(candidate_cells[:, 1] - sx) + np.abs(candidate_cells[:, 0] - sy)
-                idx = int(np.argmax(dists))
-                goal_y, goal_x = map(int, candidate_cells[idx])
-
-        gx, gy = goal_x, goal_y
-
-        # ---------- Set internal state ----------
-        self._agent_pos = np.array([sx, sy, safe_alt], dtype=np.int32)
-        self._goal_pos = np.array([gx, gy, safe_alt], dtype=np.int32)
-
-        # ---------- Late-init dynamics that need start/goal ----------
-        if cfg.enable_moving_target:
-            from uavbench.dynamics.moving_target import MovingTargetModel
-            roads = getattr(self, "_roads_mask", np.zeros((H, W), dtype=bool))
-            # Spawn target on a road cell far from UAV start
-            road_yx = np.argwhere(roads)
-            if len(road_yx) > 2:
-                dists = np.abs(road_yx[:, 1] - sx) + np.abs(road_yx[:, 0] - sy)
-                far_idx = int(np.argmax(dists))
-                spawn_x, spawn_y = int(road_yx[far_idx, 1]), int(road_yx[far_idx, 0])
-            else:
-                spawn_x, spawn_y = H // 4, W // 4
-            self._moving_target = MovingTargetModel(
-                roads_mask=roads,
-                start_pos=(spawn_x, spawn_y),
-                goal_pos=(gx, gy),
-                speed=cfg.target_speed,
-                buffer_radius=cfg.target_buffer_radius,
-                rng=self._rng,
-            )
-
-        if cfg.enable_intruders:
-            from uavbench.dynamics.intruder import IntruderModel
-            self._intruder_model = IntruderModel(
-                map_shape=(H, W),
-                num_intruders=cfg.num_intruders,
-                spawn_zone=cfg.intruder_spawn_zone,
-                target_area=(gx, gy),
-                speed=cfg.intruder_speed,
-                rng=self._rng,
-            )
-
-        if cfg.enable_dynamic_nfz:
-            restrictions_mode = getattr(cfg, "restrictions_mode", "incident")
-            if restrictions_mode == "disabled":
-                pass  # no dynamic restrictions
-            else:
-                from uavbench.dynamics.restriction_zones import MissionRestrictionModel
-                mt = getattr(cfg.mission_type, "value", str(cfg.mission_type))
-                self._dynamic_nfz = MissionRestrictionModel(
-                    map_shape=(H, W),
-                    mission_type=mt,
-                    roads_mask=getattr(self, "_roads_mask", None),
-                    heightmap=self._heightmap,
-                    num_zones=cfg.num_nfz_zones,
-                    max_coverage=getattr(cfg, "restrictions_max_coverage", 0.30),
-                    buffer_px=getattr(cfg, "restrictions_buffer_px", 15),
-                    event_t1=cfg.event_t1 or 30,
-                    event_t2=cfg.event_t2 or 80,
-                    current_vec=getattr(cfg, "maritime_current_vec", None) or (0.0, 0.3),
-                    incident_point=getattr(cfg, "incident_point", None),
-                    rng=self._rng,
-                )
-
-        # ---------- Non-blocking risk layers + causal interaction engine ----------
-        extra_cfg = cfg.extra or {}
-        self._interactions_enabled = not bool(extra_cfg.get("disable_interactions", False))
-        self._population_risk_enabled = not bool(extra_cfg.get("disable_population_risk", False))
-        self._guardrail_enabled = not bool(extra_cfg.get("disable_feasibility_guardrail", False))
-
-        base_risk = getattr(self, "_risk_map", None)
-        self._population_model = PopulationRiskModel(
-            map_shape=(H, W),
-            base_risk=base_risk,
-            rng=self._rng,
+        # Dynamics (set during reset, None when disabled)
+        self._fire: FireSpreadModel | None = None
+        self._traffic: TrafficModel | None = None
+        self._nfz: RestrictionZoneModel | None = None
+        self._interaction: InteractionEngine | None = None
+        self._forced_block: ForcedBlockManager | None = None
+        self._bfs_corridor: list[tuple[int, int]] = []
+        self._use_dynamics: bool = (
+            config.enable_fire
+            or config.enable_traffic
+            or config.enable_dynamic_nfz
         )
 
-        adv_enabled = bool(extra_cfg.get("enable_adversarial_uav", False))
-        adv_count = int(extra_cfg.get("num_adversarial_uavs", 0))
-        adv_radius = int(extra_cfg.get("adversarial_safety_radius", 6))
-        self._adversarial_uav: AdversarialUAVModel | None = None
-        if adv_enabled and adv_count > 0:
-            self._adversarial_uav = AdversarialUAVModel(
-                map_shape=(H, W),
-                num_uavs=adv_count,
-                safety_radius=adv_radius,
-                rng=self._rng,
-            )
-
-        self._interaction_engine = InteractionEngine(
-            map_shape=(H, W),
-            roads_mask=getattr(self, "_roads_mask", None),
-            coupling_strength=float(extra_cfg.get("interaction_coupling_strength", 1.0)),
-        )
-
-        # ---------- Forced path interdiction scheduler (paper protocol) ----------
-        self._init_forced_interdictions((sx, sy), (gx, gy))
-        self._emergency_corridor_mask = self._build_emergency_corridor_mask((sx, sy), (gx, gy), width=2)
-
-        # ---------- Build observation + info ----------
-        obs = self._build_observation()
-
-        info: dict[str, Any] = {
-            "scenario_name": getattr(cfg, "name", "unknown"),
-            "domain": getattr(cfg.domain, "value", str(cfg.domain)),
-            "difficulty": getattr(cfg.difficulty, "value", str(cfg.difficulty)),
-            "paper_track": cfg.paper_track,
-            "map_source": cfg.map_source,
-            "safe_altitude": int(safe_alt),
-            "min_start_goal_l1": int(min_l1),
-            "free_cells": int(free_cells.shape[0]),
-            "map_shape": (H, W),
-        }
-        self.log_event(
-            "paper_protocol_initialized",
-            paper_track=cfg.paper_track,
-            interdiction_placement="bfs_shortest_path",
-            plan_budget_ms=(
-                cfg.plan_budget_dynamic_ms if cfg.paper_track == "dynamic" else cfg.plan_budget_static_ms
-            ),
-            replan_every_steps=cfg.replan_every_steps,
-            max_replans_per_episode=cfg.max_replans_per_episode,
-            interactions_enabled=self._interactions_enabled,
-            guardrail_enabled=self._guardrail_enabled,
-        )
-        return obs, info
-
-    # --------------- Map generation / loading ----------------
-
-    def _generate_synthetic_map(self, options: dict[str, Any]) -> None:
-        """Generate a synthetic heightmap with random buildings (original behavior)."""
-        cfg = self.config
-        H = W = int(self.map_size)
-
-        if H < 5:
-            raise ValueError("map_size must be >= 5 for meaningful Urban scenarios.")
-        if self.max_altitude < 1:
-            raise ValueError("max_altitude must be >= 1.")
-
-        building_density = float(getattr(cfg, "building_density", options.get("building_density", 0.30)))
-        building_density = float(np.clip(building_density, 0.0, 1.0))
-
-        building_level = int(getattr(cfg, "building_level", options.get("building_level", self.max_altitude)))
-        building_level = int(np.clip(building_level, 0, self.max_altitude))
-
-        extra_density_medium = float(getattr(cfg, "extra_density_medium", options.get("extra_density_medium", 0.10)))
-        extra_density_hard = float(getattr(cfg, "extra_density_hard", options.get("extra_density_hard", 0.20)))
-        no_fly_radius = int(getattr(cfg, "no_fly_radius", options.get("no_fly_radius", max(1, H // 8))))
-
-        # Build base heightmap
-        base_mask = (self._rng.random((H, W)) < building_density)
-        self._heightmap = np.zeros((H, W), dtype=np.float32)
-        self._heightmap[base_mask] = float(building_level)
-        self._no_fly_mask = np.zeros((H, W), dtype=bool)
-
-        # Difficulty-specific tweaks
-        if cfg.difficulty == Difficulty.MEDIUM:
-            extra_mask = (self._rng.random((H, W)) < extra_density_medium)
-            self._heightmap[extra_mask] = float(building_level)
-
-        elif cfg.difficulty == Difficulty.HARD:
-            extra_mask = (self._rng.random((H, W)) < extra_density_hard)
-            self._heightmap[extra_mask] = float(building_level)
-
-            cy, cx = H // 2, W // 2
-            yy, xx = np.ogrid[:H, :W]
-            circle = (yy - cy) ** 2 + (xx - cx) ** 2 <= no_fly_radius ** 2
-            self._no_fly_mask[circle] = True
-
-    def _load_osm_tile(self, tile_id: str) -> None:
-        """Load a pre-rasterized OSM tile from data/maps/{tile_id}.npz.
-
-        Converts meter-based heightmap to altitude levels (10m per level)
-        and stores extra layers for future use.
-        """
-        _project_root = Path(__file__).resolve().parents[3]
-        npz_path = _project_root / "data" / "maps" / f"{tile_id}.npz"
-        if not npz_path.exists():
-            raise FileNotFoundError(
-                f"OSM tile not found: {npz_path}. "
-                f"Run: python -m tools.osm_pipeline.fetch --tile {tile_id} && "
-                f"python -m tools.osm_pipeline.rasterize --tile {tile_id}"
-            )
-
-        data = np.load(str(npz_path))
-
-        # Convert meters → altitude levels (10m per level, clamped to max_altitude)
-        meters_per_level = 10.0
-        raw_m = data["heightmap"]
-        self._heightmap = np.clip(
-            np.ceil(raw_m / meters_per_level), 0, self.max_altitude
-        ).astype(np.float32)
-
-        self._no_fly_mask = data["nfz_mask"].astype(bool)
-
-        # Update map_size to match tile dimensions
-        self.map_size = self._heightmap.shape[0]
-
-        # Store extra layers for future phases (dynamics, visualization)
-        self._roads_mask = data["roads_mask"].astype(bool)
-        self._landuse_map = data["landuse_map"]
-        self._risk_map = data["risk_map"]
-
+    # -- Public properties (EN-5) --
 
     @property
     def agent_xy(self) -> tuple[int, int]:
-        """Current agent position as (x, y) grid cell tuple. Public stable API."""
-        return (int(self._agent_pos[0]), int(self._agent_pos[1]))
+        return self._agent_xy
 
     @property
     def goal_xy(self) -> tuple[int, int]:
-        """Goal position as (x, y) grid cell tuple. Public stable API."""
-        return (int(self._goal_pos[0]), int(self._goal_pos[1]))
+        return self._goal_xy
 
-    def set_plan_info(
+    @property
+    def events(self) -> list[dict]:
+        return self._events
+
+    @property
+    def bfs_corridor(self) -> list[tuple[int, int]]:
+        """BFS reference corridor on static grid (FC-1)."""
+        return list(self._bfs_corridor)
+
+    @property
+    def forced_block_cells(self) -> list[tuple[int, int]]:
+        """Cells selected for forced interdiction (FC-1)."""
+        if self._forced_block is not None:
+            return self._forced_block.forced_cells
+        return []
+
+    # -- Gymnasium API --
+
+    def reset(
         self,
-        plan_len: int,
-        plan_stale: bool = False,
-        plan_reason: str = "initial",
-        snapshot_age_steps: int = 0,
-    ) -> None:
-        """Called by the benchmark runner after each (re)plan to record plan state.
+        *,
+        seed: int | None = None,
+        options: dict | None = None,
+    ) -> tuple[np.ndarray, dict]:
+        """Reset the environment deterministically from seed (DC-1).
 
-        Args:
-            plan_len: Number of waypoints remaining in the current plan
-                      (len(path) for initial plan; len(path) - path_idx after replan).
-            plan_stale: True when the plan could not be refreshed this step
-                        (e.g. budget_exceeded, planner returned empty path).
-            plan_reason: Reason for the last plan/replan call.
-                         Enum: "initial" | "cadence" | "path_invalidated" |
-                               "forced_event" | "stuck" | "budget_exceeded" |
-                               "planner_signal" | "dropout" | "latency" | "none".
-            snapshot_age_steps: Age of the dynamic-state snapshot used for planning
-                                 (0 = current; >0 = stale due to P1 constraint latency
-                                 or comms dropout).
+        ALL randomness flows from ONE np.random.default_rng(seed) root.
         """
-        self._plan_len = int(plan_len)
-        self._plan_stale = bool(plan_stale)
-        self._plan_reason = str(plan_reason)
-        self._plan_snapshot_age = int(snapshot_age_steps)
+        super().reset(seed=seed)
 
-    def _step_impl(self, action: int):
-        """Urban step: 2D moves + explicit altitude up/down, with building/no-fly constraints.
+        # DC-1: ONE RNG source — all children via spawn()
+        root_rng = np.random.default_rng(seed)
+        children = root_rng.spawn(5)
+        env_rng, fire_rng, traffic_rng, nfz_rng, _reserved_rng = children
 
-        Returns:
-            obs, reward, terminated, truncated, info
+        # Generate heightmap (synthetic)
+        self._heightmap = self._generate_heightmap(env_rng)
+        self._no_fly = np.zeros(
+            (self._map_size, self._map_size), dtype=bool
+        )
+        self._roads = self._generate_roads(env_rng)
+
+        # Place agent and goal
+        if self.config.fixed_start_xy is not None:
+            self._agent_xy = self.config.fixed_start_xy
+        else:
+            self._agent_xy = self._random_free_cell(env_rng)
+
+        if self.config.fixed_goal_xy is not None:
+            self._goal_xy = self.config.fixed_goal_xy
+        else:
+            self._goal_xy = self._random_free_cell(env_rng, exclude=self._agent_xy)
+
+        # Ensure start and goal are free (EN-7)
+        sx, sy = self._agent_xy
+        gx, gy = self._goal_xy
+        self._heightmap[sy, sx] = 0.0
+        self._heightmap[gy, gx] = 0.0
+
+        # Reset state
+        self._step_idx = 0
+        self._events = []
+        self._terminated = False
+        self._truncated = False
+        self._termination_reason = TerminationReason.IN_PROGRESS
+        self._objective_completed = False
+
+        # Mission engine (MC-1, MC-2)
+        self._mission = MissionEngine(
+            mission_type=self.config.mission_type,
+            start_xy=self._agent_xy,
+            goal_xy=self._goal_xy,
+            config=self.config,
+        )
+
+        # Ensure task POI is also a free cell
+        poi = self._mission.objective_poi
+        if poi != self._goal_xy and poi != self._agent_xy:
+            px, py = poi
+            if 0 <= px < self._map_size and 0 <= py < self._map_size:
+                self._heightmap[py, px] = 0.0
+
+        # BFS reference corridor — computed BEFORE dynamics so fire can
+        # use it for corridor-aware ignition placement (Bug 4 fix)
+        self._bfs_corridor = bfs_shortest_path(
+            self._heightmap, self._agent_xy, self._goal_xy
+        )
+
+        # Initialize dynamics (Phase 4)
+        map_shape = (self._map_size, self._map_size)
+        self._fire = None
+        self._traffic = None
+        self._nfz = None
+        self._interaction = None
+
+        if self.config.enable_fire and self.config.fire_ignition_points > 0:
+            self._fire = FireSpreadModel(
+                map_shape=map_shape,
+                rng=fire_rng,
+                n_ignition=self.config.fire_ignition_points,
+                corridor_cells=self._bfs_corridor,
+            )
+
+        if self.config.enable_traffic and self.config.num_emergency_vehicles > 0:
+            self._traffic = TrafficModel(
+                roads_mask=self._roads,
+                num_vehicles=self.config.num_emergency_vehicles,
+                rng=traffic_rng,
+            )
+
+        if self.config.enable_dynamic_nfz and self.config.num_nfz_zones > 0:
+            self._nfz = RestrictionZoneModel(
+                map_shape=map_shape,
+                rng=nfz_rng,
+                num_zones=self.config.num_nfz_zones,
+                event_t1=self.config.event_t1 or 30,
+                event_t2=self.config.event_t2 or 80,
+            )
+
+        if self._fire is not None or self._traffic is not None:
+            self._interaction = InteractionEngine(
+                map_shape=map_shape,
+                roads_mask=self._roads,
+            )
+
+        self._forced_block = None
+        if self.config.force_replan_count > 0 and len(self._bfs_corridor) > 2:
+            # Use a dedicated child RNG for forced block cell selection
+            fb_rng = _reserved_rng
+            self._forced_block = ForcedBlockManager(
+                bfs_corridor=self._bfs_corridor,
+                force_replan_count=self.config.force_replan_count,
+                event_t1=self.config.event_t1 or 30,
+                event_t2=self.config.event_t2 or 80,
+                map_shape=map_shape,
+                rng=fb_rng,
+            )
+
+        self._events.append({
+            "type": "reset",
+            "step_idx": 0,
+            "agent_xy": self._agent_xy,
+            "goal_xy": self._goal_xy,
+        })
+
+        # Mission briefing event (MC-3)
+        if self._mission is not None:
+            briefing = self._mission.generate_briefing()
+            self._events.append(briefing.to_event())
+
+        obs = self._get_obs()
+        info = self._get_info()
+        return obs, info
+
+    def step(
+        self, action: int
+    ) -> tuple[np.ndarray, float, bool, bool, dict]:
+        """Execute one step (EN-1).
+
+        Returns (obs, reward, terminated, truncated, info).
         """
+        self._step_idx += 1
 
-        # ---------- 0) Hyperparameters (baseline) ----------
-        w_z = 1.0           # weight for altitude mismatch in distance
-        k_progress = 0.2    # shaping gain
-        step_cost = 1.0     # per-step penalty
-        p_building = 5.0    # penalty for attempted building collision
-        p_no_fly = 8.0      # penalty for attempted no-fly violation
-        r_goal = 50.0       # goal bonus
-        # Episode timeout: 4× map side-length gives ample time for Manhattan
-        # traversal plus dynamic detours on 500×500 grids (max_steps = 2000).
-        max_steps = 4 * int(self.map_size)
-        next_step_idx = self._step_count + 1
+        # FD-3: Compute blocking mask on CURRENT (pre-advance) fire state.
+        # Planner saw this same state; move validated against it.
+        dyn_state = self.get_dynamic_state()
+        blocked = compute_blocking_mask(
+            self._heightmap, self._no_fly, self.config, dyn_state
+        )
 
-        # Paper protocol: deterministic interdictions that force replans.
-        self._maybe_trigger_interdictions(next_step_idx)
+        # Propose move
+        dx, dy = _DELTAS.get(action, (0, 0))
+        nx, ny = self._agent_xy[0] + dx, self._agent_xy[1] + dy
 
-        # ---------- 1) Read current state ----------
-        ax, ay, az = map(int, self._agent_pos)
-        gx, gy, gz = map(int, self._goal_pos)
+        reward = -1.0  # step cost (EN-8)
+        accepted = False
+        reject_reason: RejectReason | None = None
+        reject_cell: tuple[int, int] | None = None
 
-        # Weighted L1 distance BEFORE the move
-        prev_dist = float(abs(ax - gx) + abs(ay - gy) + w_z * abs(az - gz))
+        if action == ACTION_STAY:
+            accepted = True
+        elif not (0 <= nx < self._map_size and 0 <= ny < self._map_size):
+            # Out of bounds
+            reject_reason = RejectReason.OUT_OF_BOUNDS
+            reject_cell = (nx, ny)
+        elif blocked[ny, nx]:
+            # Classify reject reason from layers (EC-1)
+            reject_reason = self._classify_block(ny, nx, dyn_state)
+            reject_cell = (nx, ny)
 
-        # ---------- 2) Propose next position from action ----------
-        # Recommended action mapping (Discrete(6)):
-        # 0: up (y-1), 1: down (y+1), 2: left (x-1), 3: right (x+1),
-        # 4: ascend (z+1), 5: descend (z-1)
-        nx, ny, nz = ax, ay, az
-
-        if action == 0:
-            ny -= 1
-        elif action == 1:
-            ny += 1
-        elif action == 2:
-            nx -= 1
-        elif action == 3:
-            nx += 1
-        elif action == 4:
-            nz += 1
-        elif action == 5:
-            nz -= 1
+            # Terminal collision only for static obstacles (building/NFZ)
+            if reject_reason in (RejectReason.BUILDING, RejectReason.NO_FLY):
+                if self.config.terminate_on_collision:
+                    self._terminated = True
+                    if reject_reason == RejectReason.BUILDING:
+                        self._termination_reason = TerminationReason.COLLISION_BUILDING
+                    else:
+                        self._termination_reason = TerminationReason.COLLISION_NFZ
+                    reward += -25.0  # terminal penalty
         else:
-            raise ValueError(f"Invalid action={action}. Expected 0..5.")
+            accepted = True
+            self._agent_xy = (nx, ny)
 
-        # ---------- 3) Clamp to bounds ----------
-        nx = int(np.clip(nx, 0, self.map_size - 1))
-        ny = int(np.clip(ny, 0, self.map_size - 1))
-        nz = int(np.clip(nz, 0, self.max_altitude))
+        # FD-3: Advance dynamics AFTER move validation and execution.
+        # Fire state was frozen during planner computation and move validation.
+        self._step_dynamics()
 
-        # ---------- 4) Constraint checks (no-fly, buildings) ----------
-        attempted_no_fly = bool(self._no_fly_mask[ny, nx])
+        # Progress shaping (EN-8)
+        if accepted and action != ACTION_STAY:
+            dist_before = abs(
+                (self._agent_xy[0] - dx) - self._goal_xy[0]
+            ) + abs((self._agent_xy[1] - dy) - self._goal_xy[1])
+            dist_after = abs(
+                self._agent_xy[0] - self._goal_xy[0]
+            ) + abs(self._agent_xy[1] - self._goal_xy[1])
+            reward += 0.2 * (dist_before - dist_after)
 
-        terrain_h = float(self._heightmap[ny, nx])  # levels-only: 0..max_altitude
-        attempted_building_collision = bool(nz <= terrain_h)
+        # Mission engine step (MC-2)
+        if self._mission is not None:
+            events_before = len(self._mission.events)
+            self._mission.step(self._agent_xy, action, self._step_idx)
+            # Append any new mission events to env events
+            for evt in self._mission.events[events_before:]:
+                self._events.append(evt)
 
-        # Decide whether to accept the move — track reason as enum (EC-1)
-        accepted = True
-        reject_reason_enum = RejectReason.NONE
-        reject_layer = "none"
-        attempted_forced_block = False
-        attempted_traffic_closure = False
-        if attempted_no_fly:
-            accepted = False
-            reject_reason_enum = RejectReason.NO_FLY
-            reject_layer = "no_fly_mask"
-            self.log_event("no_fly_violation_attempt", x=nx, y=ny, z=nz)
-        elif attempted_building_collision:
-            accepted = False
-            reject_reason_enum = RejectReason.BUILDING
-            reject_layer = "heightmap"
-            self.log_event(
-                "collision_building_attempt",
-                x=nx, y=ny, z=nz, height=terrain_h
+        # Check goal reached
+        if not self._terminated and self._agent_xy == self._goal_xy:
+            self._terminated = True
+            self._termination_reason = TerminationReason.SUCCESS
+            self._objective_completed = (
+                self._mission is not None and self._mission.all_tasks_completed
             )
+            reward += 50.0  # goal bonus (EN-8)
+            self._events.append({
+                "type": "goal_reached",
+                "step_idx": self._step_idx,
+            })
 
-        # Forced interdictions from paper protocol
-        if accepted and self._forced_block_mask[ny, nx]:
-            accepted = False
-            attempted_forced_block = True
-            reject_reason_enum = RejectReason.FORCED_BLOCK
-            reject_layer = "forced_block_mask"
-            self.log_event("forced_interdiction_block", x=nx, y=ny, z=nz)
+        # Check timeout (EN-4)
+        if not self._terminated and self._step_idx >= self._max_steps:
+            self._truncated = True
+            self._termination_reason = TerminationReason.TIMEOUT
 
-        # Road-closure mask from interaction engine
-        if accepted and self._traffic_closure_mask[ny, nx]:
-            accepted = False
-            attempted_traffic_closure = True
-            reject_reason_enum = RejectReason.TRAFFIC_CLOSURE
-            reject_layer = "traffic_closure_mask"
-            self.log_event("traffic_closure_block", x=nx, y=ny, z=nz)
+        # Build info
+        info = self._get_info()
+        info["accepted_move"] = accepted
+        info["dynamics_step"] = self._step_idx
+        if reject_reason is not None:
+            info["reject_reason"] = reject_reason
+            info["reject_layer"] = reject_reason.value
+            info["reject_cell"] = reject_cell
+            info["step_idx"] = self._step_idx
 
-        # Fire blocks movement (only when config flag is set)
-        attempted_fire_block = False
-        if (accepted and self.config.fire_blocks_movement
-                and self._fire_model is not None
-                and self._fire_model.fire_mask[ny, nx]):
-            accepted = False
-            attempted_fire_block = True
-            reject_reason_enum = RejectReason.FIRE
-            reject_layer = "fire_mask"
-            self.log_event("fire_block", x=nx, y=ny, z=nz)
+        obs = self._get_obs()
+        return obs, reward, self._terminated, self._truncated, info
 
-        # Traffic blocks movement (vehicle buffer zones reject movement)
-        attempted_traffic_block = False
-        if (accepted and self.config.traffic_blocks_movement
-                and self._traffic_model is not None):
-            for vy, vx in self._traffic_model.vehicle_positions:
-                dist = abs(nx - int(vx)) + abs(ny - int(vy))
-                if dist <= 5:
-                    accepted = False
-                    attempted_traffic_block = True
-                    reject_reason_enum = RejectReason.TRAFFIC
-                    reject_layer = "traffic_buffer"
-                    self.log_event("traffic_block", x=nx, y=ny, z=nz,
-                                   vx=int(vx), vy=int(vy), dist=dist)
-                    break
+    # -- Export APIs --
 
-        # Moving target buffer blocks movement
-        attempted_target_block = False
-        if accepted and self._moving_target is not None:
-            tp = self._moving_target.current_position
-            dist = abs(nx - int(tp[0])) + abs(ny - int(tp[1]))
-            if dist <= self._moving_target.buffer_radius:
-                accepted = False
-                attempted_target_block = True
-                reject_reason_enum = RejectReason.MOVING_TARGET
-                reject_layer = "moving_target_buffer"
-                self.log_event("target_block", x=nx, y=ny, z=nz)
-
-        # Intruder buffer blocks movement
-        attempted_intruder_block = False
-        if accepted and self._intruder_model is not None:
-            for pos in self._intruder_model.active_positions:
-                dist = abs(nx - int(pos[0])) + abs(ny - int(pos[1]))
-                if dist <= self._intruder_model.buffer_radius:
-                    accepted = False
-                    attempted_intruder_block = True
-                    reject_reason_enum = RejectReason.INTRUDER
-                    reject_layer = "intruder_buffer"
-                    self.log_event("intruder_block", x=nx, y=ny, z=nz)
-                    break
-
-        # Dynamic NFZ blocks movement
-        attempted_nfz_block = False
-        if accepted and self._dynamic_nfz is not None:
-            nfz_mask = self._dynamic_nfz.get_nfz_mask()
-            if nfz_mask[ny, nx]:
-                accepted = False
-                attempted_nfz_block = True
-                reject_reason_enum = RejectReason.DYNAMIC_NFZ
-                reject_layer = "dynamic_nfz_mask"
-                self._dynamic_nfz.zone_violations += 1
-                self.log_event("dynamic_nfz_block", x=nx, y=ny, z=nz)
-
-        if accepted:
-            self._agent_pos = np.array([nx, ny, nz], dtype=np.int32)
-
-        # ---------- 5) Build observation AFTER (potential) move ----------
-        obs = self._build_observation()
-
-        # ---------- 6) Distance AFTER the move ----------
-        ax2, ay2, az2 = map(int, self._agent_pos)
-        new_dist = float(abs(ax2 - gx) + abs(ay2 - gy) + w_z * abs(az2 - gz))
-
-        # ---------- 6b) Advance dynamic layers ----------
-        fire_exposure = False
-        traffic_proximity = False
-        fire_cells = 0
-        vehicles_near = 0
-        H, W = self._heightmap.shape
-
-        smoke_intensity = 0.0
-
-        if self._fire_model is not None:
-            self._fire_model.step(dt=1.0)
-            fire_cells = int(self._fire_model.fire_mask.sum())
-            if self._fire_model.fire_mask[ay2, ax2]:
-                fire_exposure = True
-                self.log_event("fire_exposure", x=ax2, y=ay2, z=az2)
-            # Smoke exposure check
-            smoke_intensity = float(self._fire_model.smoke_mask[ay2, ax2])
-            if smoke_intensity > 0.3:
-                self.log_event("smoke_exposure", x=ax2, y=ay2, z=az2,
-                               intensity=round(smoke_intensity, 3))
-
-        if self._traffic_model is not None:
-            self._traffic_model.step(dt=1.0)
-            traffic_buffer = self._traffic_model.get_occupancy_mask((H, W))
-            if traffic_buffer[ay2, ax2]:
-                traffic_proximity = True
-                vehicles_near = int(len(self._traffic_model.vehicle_positions))
-                self.log_event("traffic_proximity", x=ax2, y=ay2, z=az2)
-
-        # Step new dynamics
-        if self._moving_target is not None:
-            self._moving_target.step(dt=1.0)
-        if self._intruder_model is not None:
-            self._intruder_model.step(dt=1.0)
-        fire_mask = self._fire_model.fire_mask if self._fire_model is not None else None
-        blocking_changed = False
-        if self._dynamic_nfz is not None:
-            self._dynamic_nfz.step(dt=1.0, fire_mask=fire_mask)
-            blocking_changed = True
-
-        # Causal interactions update
-        traffic_positions = (
-            self._traffic_model.vehicle_positions if self._traffic_model is not None else None
-        )
-
-        # Risk layers (non-blocking)
-        if self._population_risk_enabled:
-            self._population_model.step(
-                fire_mask=fire_mask,
-                traffic_positions=traffic_positions,
-            )
-        if self._adversarial_uav is not None:
-            self._adversarial_uav.step(dt=1.0)
-
-        if self._interactions_enabled:
-            self._interaction_metrics_last = self._interaction_engine.update(
-                step_idx=next_step_idx,
-                fire_mask=fire_mask,
-                traffic_positions=traffic_positions,
-                dynamic_nfz=self._dynamic_nfz,
-                risk_map=(self._population_model.risk_map if self._population_risk_enabled else np.zeros((H, W), dtype=np.float32)),
-            )
-            prev_closures = self._traffic_closure_mask
-            self._traffic_closure_mask = self._interaction_engine.traffic_closure_mask
-            if not np.array_equal(prev_closures, self._traffic_closure_mask):
-                blocking_changed = True
-        else:
-            self._interaction_metrics_last = {
-                "step_idx": float(next_step_idx),
-                "fire_cells": float(np.sum(fire_mask)) if fire_mask is not None else 0.0,
-                "fire_fraction": float(np.mean(fire_mask)) if fire_mask is not None else 0.0,
-                "traffic_closure_cells": 0.0,
-                "interaction_fire_nfz_overlap_ratio": 0.0,
-                "interaction_fire_road_closure_rate": 0.0,
-                "interaction_congestion_risk_corr": 0.0,
-                "dynamic_block_entropy": 0.0,
-                "traffic_congestion_cells": 0.0,
-                "nfz_cells": 0.0,
-            }
-            self._traffic_closure_mask.fill(False)
-
-        # Increment topology counter only when blocking layers changed,
-        # so the guardrail can skip redundant BFS on steps with no
-        # topological mutation.
-        if blocking_changed:
-            self._topology_change_counter += 1
-
-        pop_risk = (
-            self._population_model.risk_map
-            if self._population_risk_enabled
-            else np.zeros((H, W), dtype=np.float32)
-        )
-        adv_risk = (
-            self._adversarial_uav.get_risk_map((H, W))
-            if self._adversarial_uav is not None
-            else np.zeros((H, W), dtype=np.float32)
-        )
-        smoke_risk = (
-            self._fire_model.smoke_mask if self._fire_model is not None else np.zeros((H, W), dtype=np.float32)
-        )
-        w_pop = float(self.config.risk_weight_population)
-        w_adv = float(self.config.risk_weight_adversarial)
-        w_smoke = float(self.config.risk_weight_smoke)
-        self._risk_cost_map = np.clip(
-            w_pop * pop_risk + w_adv * adv_risk + w_smoke * smoke_risk,
-            0.0,
-            1.0,
-        ).astype(np.float32, copy=False)
-
-        # Feasibility guardrail: dynamic updates must not make the world unsolvable.
-        guardrail_depth = 0
-        if self._guardrail_enabled:
-            guardrail_depth = self._enforce_feasibility_guardrail((ax2, ay2), (gx, gy))
-            guardrail_status = dict(self._last_guardrail_status)
-            if bool(guardrail_status.get("reachability_failed_before_relax", False)):
-                self.log_event(
-                    "feasibility_relaxation_applied",
-                    step=next_step_idx,
-                    **guardrail_status,
-                )
-        else:
-            runtime_mask = self._build_runtime_blocking_mask()
-            free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
-            guardrail_status = {
-                "reachability_failed_before_relax": False,
-                "relaxation_applied": {},
-                "corridor_fallback_used": False,
-                "feasible_after_guardrail": bool(self._is_reachable(free, (ax2, ay2), (gx, gy))),
-                "guardrail_disabled": True,
-            }
-            self._last_guardrail_status = dict(guardrail_status)
-
-        runtime_mask = self._build_runtime_blocking_mask()
-        layer_weights = np.array(
-            [
-                float(np.mean(self._forced_block_mask)),
-                float(np.mean(self._traffic_closure_mask)),
-                float(np.mean(runtime_mask)),
-                float(np.mean(fire_mask)) if fire_mask is not None else 0.0,
-            ],
-            dtype=np.float64,
-        )
-        layer_weights = layer_weights[layer_weights > 0.0]
-        env_entropy = 0.0
-        if layer_weights.size > 0:
-            probs = layer_weights / float(np.sum(layer_weights))
-            env_entropy = float(
-                -np.sum(probs * np.log(probs)) / np.log(float(max(len(probs), 2)))
-            )
-        self._interaction_metrics_last["dynamic_block_entropy_env"] = float(np.clip(env_entropy, 0.0, 1.0))
-        self._interaction_metrics_last["interdiction_hit_rate"] = float(
-            self._interdiction_hits / max(self._interdiction_total, 1)
-        )
-        self._interaction_metrics_last["interdictions_triggered"] = float(self._interdiction_total)
-        self._interaction_metrics_history.append(dict(self._interaction_metrics_last))
-
-        # ---------- 7) Reward (robust baseline) ----------
-        # Step cost encourages shorter paths.
-        reward = -float(step_cost)
-
-        # Progress shaping (dense signal)
-        reward += float(k_progress) * (prev_dist - new_dist)
-
-        # Safety penalties (only if attempt happened)
-        if attempted_no_fly:
-            reward -= float(p_no_fly)
-        elif attempted_building_collision:
-            reward -= float(p_building)
-
-        # Collision termination penalty (UAV-ON standard)
-        collision = bool(
-            self.config.terminate_on_collision
-            and (attempted_building_collision or attempted_no_fly)
-        )
-        if collision:
-            reward -= 25.0
-            ctype = "collision_building" if attempted_building_collision else "collision_nfz"
-            self.log_event("collision_terminated", x=nx, y=ny, z=nz,
-                           collision_type=ctype)
-
-        # Dynamic layer penalties
-        if fire_exposure:
-            reward -= 20.0
-        if smoke_intensity > 0.3:
-            reward -= 5.0 * smoke_intensity
-        if traffic_proximity:
-            reward -= 5.0
-        reward -= 2.0 * float(self._risk_cost_map[ay2, ax2])
-
-        # Goal achievement
-        reached = bool(np.array_equal(self._agent_pos, self._goal_pos))
-        if reached:
-            reward += float(r_goal)
-
-        # ---------- 8) Termination / truncation ----------
-        terminated = reached or collision
-
-        # IMPORTANT: base.step() increments _step_count AFTER this returns.
-        # So the next step index will be current + 1.
-        truncated = bool((next_step_idx >= max_steps) and (not terminated))
-
-        # ---------- 9) Info ----------
-        # Compute proximity/interaction metrics (Objective 8)
-        hazard_proximity_time = 0.0
-        smoke_exposure_duration = 0.0
-        vehicle_near_miss_count = 0
-        nfz_violation_time = 0.0
-
-        # Fire proximity: blocking + thermal + smoke radii
-        if self._fire_model is not None:
-            fm = self._fire_model.fire_mask
-            # Thermal radius (within 3 cells of fire) — vectorized check
-            y_lo = max(0, ay2 - 3)
-            y_hi = min(H, ay2 + 4)
-            x_lo = max(0, ax2 - 3)
-            x_hi = min(W, ax2 + 4)
-            if np.any(fm[y_lo:y_hi, x_lo:x_hi]):
-                hazard_proximity_time = 1.0
-            if smoke_intensity > 0.1:
-                smoke_exposure_duration = smoke_intensity
-
-        # Vehicle near-miss (within 2 cells)
-        if self._traffic_model is not None:
-            vpos = self._traffic_model._positions  # [N, 2] (y, x) — avoid copy
-            if len(vpos) > 0:
-                dists = np.abs(vpos[:, 1] - ax2) + np.abs(vpos[:, 0] - ay2)
-                vehicle_near_miss_count = int(np.sum(dists <= 2))
-
-        # Dynamic NFZ violation time
-        if self._dynamic_nfz is not None:
-            nfz_mask = self._dynamic_nfz.get_nfz_mask()
-            if nfz_mask[ay2, ax2]:
-                nfz_violation_time = 1.0
-
-        info: dict[str, Any] = {
-            # Episode / task
-            "scenario_name": self.config.name,
-            "domain": self.config.domain.value,
-            "difficulty": self.config.difficulty.value,
-
-            # Goal status
-            "reached_goal": reached,
-            "distance_to_goal": float(new_dist),
-            "collision_terminated": collision,
-            "termination_reason": (
-                ("collision_building" if attempted_building_collision else "collision_nfz")
-                if collision
-                else ("success" if reached else ("timeout" if truncated else "in_progress"))
-            ),
-
-            # Safety / constraints
-            "attempted_building_collision": attempted_building_collision,
-            "attempted_no_fly": attempted_no_fly,
-            "attempted_fire_block": attempted_fire_block,
-            "attempted_traffic_block": attempted_traffic_block,
-            "attempted_forced_block": attempted_forced_block,
-            "attempted_traffic_closure": attempted_traffic_closure,
-            "attempted_target_block": attempted_target_block,
-            "attempted_intruder_block": attempted_intruder_block,
-            "attempted_nfz_block": attempted_nfz_block,
-            "accepted_move": bool(accepted),
-            # Decision record (EC-1, EC-2): enum + backward-compat string
-            "reject_reason": reject_reason_enum.value,  # string for backward compat
-            "reject_reason_enum": reject_reason_enum,    # RejectReason enum (EC-1)
-            "reject_layer": reject_layer,                # blocking layer name (EC-1)
-            "reject_cell": (int(nx), int(ny)) if not accepted else None,
-
-            # State for metrics (path length, energy proxy κ.λπ. τα χτίζεις έξω)
-            "agent_pos": (int(ax2), int(ay2), int(az2)),
-            "goal_pos": (int(gx), int(gy), int(gz)),
-            "terrain_height": float(terrain_h),
-
-            # Dynamic layers
-            "fire_active": self._fire_model is not None,
-            "traffic_active": self._traffic_model is not None,
-            "fire_exposure": fire_exposure,
-            "smoke_intensity": smoke_intensity,
-            "traffic_proximity": traffic_proximity,
-            "fire_cells": fire_cells,
-            "vehicles_near": vehicles_near,
-            "risk_cost": float(self._risk_cost_map[ay2, ax2]),
-            "forced_replans_triggered": int(self._forced_replans_triggered),
-            "interdiction_hit_rate": float(self._interdiction_hits / max(self._interdiction_total, 1)),
-            "forced_block_active": bool(np.any(self._forced_block_mask)),
-            "forced_block_area": int(np.sum(self._forced_block_mask)),
-            "forced_block_cleared_by_guardrail": bool(self._forced_block_cleared_by_guardrail),
-            "forced_interdiction_triggered_steps": list(self._forced_interdiction_triggered_steps),
-            "feasible_after_guardrail": bool(guardrail_status.get("feasible_after_guardrail", True)),
-            "guardrail_corridor_fallback_used": bool(guardrail_status.get("corridor_fallback_used", False)),
-            "guardrail_depth": int(guardrail_status.get("guardrail_depth", 0)),
-
-            # Drone-dynamic interaction metrics (Objective 8)
-            "hazard_proximity_time": float(hazard_proximity_time),
-            "smoke_exposure_duration": float(smoke_exposure_duration),
-            "vehicle_near_miss_count": int(vehicle_near_miss_count),
-            "nfz_violation_time": float(nfz_violation_time),
-
-            # Plan instrumentation (set by benchmark runner via set_plan_info)
-            "plan_len": int(self._plan_len),
-            "plan_stale": bool(self._plan_stale),
-            "plan_reason": self._plan_reason,
-            "snapshot_age_steps": int(self._plan_snapshot_age),
-
-            # Optional debugging
-            "step_index": int(self._step_count + 1),
-        }
-        return obs, float(reward), terminated, truncated, info
-
-    def _init_forced_interdictions(self, start_xy: GridPos, goal_xy: GridPos) -> None:
-        """Prepare deterministic 1-2 path interdictions for dynamic paper track.
-
-        This is the canonical inline implementation used by the benchmark
-        pipeline.  It intentionally does NOT delegate to
-        ``ForcedReplanScheduler`` (which is used only by the experimental
-        ``runner_v2`` demo module) in order to keep the canonical path
-        free of UpdateBus/adapter dependencies and to guarantee
-        deterministic interdiction placement with zero overhead.
-
-        Interdiction placement uses a planner-agnostic BFS shortest path
-        on the traversable grid (buildings + NFZ removed).  This is the
-        graph-theoretic shortest path — not tied to any named planner —
-        so interdiction placement is fair across all planner algorithms.
-
-        The ``interdiction_reference_planner`` config field is accepted
-        for backward compatibility but has no effect on placement.
-        """
-        from collections import deque
-
-        cfg = self.config
-        self._forced_interdictions = []
-        self._reference_path = []
-        self._reference_corridor_mask.fill(False)
-        if bool((cfg.extra or {}).get("disable_forced_interdictions", False)):
-            return
-
-        force_count = int(cfg.force_replan_count)
-        if force_count == 0 and cfg.paper_track == "dynamic":
-            force_count = 2
-        force_count = int(np.clip(force_count, 0, 2))
-        if force_count == 0:
-            return
-
-        # ── Planner-agnostic BFS shortest path ──────────────────────
-        # Build traversability mask: cell is passable iff not building
-        # (height <= agent altitude 0) and not NFZ.
-        sz = self.map_size
-        passable = np.ones((sz, sz), dtype=bool)
-        passable[self._heightmap > 0] = False
-        passable[self._no_fly_mask] = False
-
-        # BFS from start to goal (4-connected, deterministic N/E/S/W order)
-        sx, sy = start_xy
-        gx, gy = goal_xy
-        if not passable[sy, sx] or not passable[gy, gx]:
-            return  # start or goal not passable — cannot place interdictions
-
-        visited = np.zeros((sz, sz), dtype=bool)
-        parent: dict[tuple[int, int], tuple[int, int] | None] = {start_xy: None}
-        visited[sy, sx] = True
-        queue: deque[tuple[int, int]] = deque([start_xy])
-        found = False
-
-        while queue:
-            cx, cy = queue.popleft()
-            if (cx, cy) == goal_xy:
-                found = True
-                break
-            # Deterministic neighbor order: N(y-1), E(x+1), S(y+1), W(x-1)
-            for dx, dy in ((0, -1), (1, 0), (0, 1), (-1, 0)):
-                nx, ny = cx + dx, cy + dy
-                if 0 <= nx < sz and 0 <= ny < sz and not visited[ny, nx] and passable[ny, nx]:
-                    visited[ny, nx] = True
-                    parent[(nx, ny)] = (cx, cy)
-                    queue.append((nx, ny))
-
-        if found:
-            # Reconstruct path
-            base_path: list[GridPos] = []
-            cur: tuple[int, int] | None = goal_xy
-            while cur is not None:
-                base_path.append(cur)
-                cur = parent[cur]
-            base_path.reverse()
-        else:
-            # Deterministic fallback corridor to keep forced-replan protocol active.
-            x0, y0 = start_xy
-            x1, y1 = goal_xy
-            steps = max(abs(x1 - x0), abs(y1 - y0), 1)
-            line_path: list[GridPos] = []
-            for k in range(steps + 1):
-                t = k / steps
-                px = int(round(x0 + (x1 - x0) * t))
-                py = int(round(y0 + (y1 - y0) * t))
-                if not line_path or line_path[-1] != (px, py):
-                    line_path.append((px, py))
-            if len(line_path) < 6:
-                return
-            base_path = line_path
-            self.log_event(
-                "interdiction_path_fallback",
-                reason="bfs_path_unavailable",
-                path_length=len(base_path),
-            )
-
-        if len(base_path) < 6:
-            return
-
-        self._reference_path = list(base_path)
-        for x, y in base_path:
-            if 0 <= x < sz and 0 <= y < sz:
-                self._reference_corridor_mask[y, x] = True
-
-        cut_a = int(0.30 * (len(base_path) - 1))
-        cut_b = int(0.65 * (len(base_path) - 1))
-        cut_a = int(np.clip(cut_a, 2, len(base_path) - 3))
-        cut_b = int(np.clip(cut_b, cut_a + 2, len(base_path) - 2))
-        cut_points = [base_path[cut_a], base_path[cut_b]]
-
-        t1 = cfg.event_t1 if cfg.event_t1 is not None else 12
-        t2 = cfg.event_t2 if cfg.event_t2 is not None else 28
-        times = [int(t1), int(t2)]
-
-        for idx in range(force_count):
-            radius_scale = float((cfg.extra or {}).get("interdiction_radius_scale", 1.0))
-            base_radius = 3 if idx == 0 else 4
-            radius = int(np.clip(round(base_radius * radius_scale), 2, 8))
-            self._forced_interdictions.append(
-                {
-                    "name": f"path_interdiction_{idx + 1}",
-                    "step": times[idx],
-                    "point": cut_points[idx],
-                    "radius": radius,
-                    "triggered": False,
-                    "reference_planner": "bfs_shortest_path",
-                }
-            )
-
-    def _maybe_trigger_interdictions(self, step_idx: int) -> None:
-        if not self._forced_interdictions:
-            return
-
-        for event in self._forced_interdictions:
-            if event["triggered"] or step_idx < int(event["step"]):
-                continue
-            cx, cy = event["point"]
-            radius = int(event["radius"])
-            hit_reference = False
-            for dy in range(-radius, radius + 1):
-                for dx in range(-radius, radius + 1):
-                    if abs(dx) + abs(dy) <= radius:
-                        ny, nx = cy + dy, cx + dx
-                        if 0 <= ny < self.map_size and 0 <= nx < self.map_size:
-                            self._forced_block_mask[ny, nx] = True
-                            if self._reference_corridor_mask[ny, nx]:
-                                hit_reference = True
-            event["triggered"] = True
-            self._forced_replans_triggered += 1
-            self._interdiction_total += 1
-            self._topology_change_counter += 1  # forced block mask mutated
-            if hit_reference:
-                self._interdiction_hits += 1
-            self._forced_interdiction_triggered_steps.append(int(step_idx))
-            self.log_event(
-                event["name"],
-                _step_override=step_idx,  # authoritative: exact step scheduled in paper protocol
-                x=int(cx),
-                y=int(cy),
-                radius=int(radius),
-                reference_planner=event.get("reference_planner", "bfs_shortest_path"),
-                reference_hit=bool(hit_reference),
-            )
-            self.log_event("forced_replan_triggered", _step_override=step_idx, reason=event["name"])
-
-    def _build_emergency_corridor_mask(
+    def export_planner_inputs(
         self,
-        start_xy: GridPos,
-        goal_xy: GridPos,
-        width: int = 2,
-    ) -> np.ndarray:
-        mask = np.zeros((self.map_size, self.map_size), dtype=bool)
-        planner = AStarPlanner(self._heightmap, self._no_fly_mask)
-        static_path = planner.plan(start_xy, goal_xy).path
-        if len(static_path) < 2:
-            x0, y0 = start_xy
-            x1, y1 = goal_xy
-            steps = max(abs(x1 - x0), abs(y1 - y0), 1)
-            static_path = []
-            for k in range(steps + 1):
-                t = k / steps
-                x = int(round(x0 + (x1 - x0) * t))
-                y = int(round(y0 + (y1 - y0) * t))
-                # Only include passable cells in the linear fallback corridor
-                if 0 <= y < self.map_size and 0 <= x < self.map_size:
-                    if self._heightmap[y, x] <= 0 and not self._no_fly_mask[y, x]:
-                        static_path.append((x, y))
-
-        for x, y in static_path:
-            for dy in range(-width, width + 1):
-                for dx in range(-width, width + 1):
-                    ny, nx = y + dy, x + dx
-                    if 0 <= ny < self.map_size and 0 <= nx < self.map_size:
-                        if abs(dx) + abs(dy) <= width and self._heightmap[ny, nx] <= 0 and not self._no_fly_mask[ny, nx]:
-                            mask[ny, nx] = True
-        return mask
-
-    def _build_runtime_blocking_mask(self) -> np.ndarray:
-        mask = np.zeros((self.map_size, self.map_size), dtype=bool)
-        mask |= self._forced_block_mask
-        mask |= self._traffic_closure_mask
-
-        # Safety buffer sizes from scenario config (extra.safety_buffers)
-        _extra = self.config.extra or {}
-        _sb = _extra.get("safety_buffers") or {}
-        _fire_buf = int(_sb.get("fire_buffer_cells", 5))
-        _nfz_buf = int(_sb.get("nfz_buffer_cells", 3))
-
-        if self._fire_model is not None and self.config.fire_blocks_movement:
-            _fire_mask = self._fire_model.fire_mask
-            mask |= _fire_mask
-            # Fire safety buffer: block cells NEAR fire for heat/turbulence
-            if _fire_buf > 0 and _fire_mask.any():
-                try:
-                    from scipy.ndimage import binary_dilation
-                    mask |= binary_dilation(_fire_mask, iterations=_fire_buf)
-                except ImportError:
-                    pass
-        if self._traffic_model is not None and self.config.traffic_blocks_movement:
-            mask |= self._traffic_model.get_occupancy_mask((self.map_size, self.map_size), buffer_radius=5)
-        if self._moving_target is not None:
-            # Moving-target buffer: step() rejects moves within buffer_radius,
-            # so the guardrail must treat those cells as blocked too.
-            tp = self._moving_target.current_position
-            tx, ty = int(tp[0]), int(tp[1])
-            r = int(self._moving_target.buffer_radius)
-            sz = self.map_size
-            for dy in range(-r, r + 1):
-                for dx in range(-r, r + 1):
-                    if abs(dx) + abs(dy) <= r:
-                        ny, nx = ty + dy, tx + dx
-                        if 0 <= ny < sz and 0 <= nx < sz:
-                            mask[ny, nx] = True
-        if self._intruder_model is not None:
-            mask |= self._intruder_model.get_buffer_mask((self.map_size, self.map_size))
-        if self._dynamic_nfz is not None:
-            _nfz_mask = self._dynamic_nfz.get_nfz_mask()
-            mask |= _nfz_mask
-            # NFZ safety buffer: keep clearance from restricted zones
-            if _nfz_buf > 0 and _nfz_mask.any():
-                try:
-                    from scipy.ndimage import binary_dilation
-                    mask |= binary_dilation(_nfz_mask, iterations=_nfz_buf)
-                except ImportError:
-                    pass
-        if self._emergency_corridor_active and self.config.emergency_corridor_enabled:
-            mask &= ~self._emergency_corridor_mask
-        return mask
-
-    def _enforce_feasibility_guardrail(self, current_xy: GridPos, goal_xy: GridPos) -> int:
-        """Ensure dynamic updates do not make path permanently unreachable.
-
-        Returns guardrail_depth: 0=no action, 1=forced blocks cleared,
-        2=NFZ/closures relaxed, 3=emergency corridor fallback,
-        4=nuclear deconfliction (all dynamics cleared along wide corridor).
-
-        Optimization: skips BFS when the topology change counter has not
-        been incremented since the last check AND that check confirmed
-        reachability.  The counter is incremented whenever dynamic layers
-        step, interaction engine updates closures, or interdictions fire.
-        This is O(1) and avoids the previous O(N) byte-hash approach.
-        """
-        status: dict[str, Any] = {
-            "reachability_failed_before_relax": False,
-            "relaxation_applied": {},
-            "corridor_fallback_used": False,
-            "feasible_after_guardrail": True,
-            "guardrail_depth": 0,
-        }
-        relaxation: dict[str, Any] = {}
-        relaxed = False
-        depth = 0
-
-        # Topology-change detection: skip expensive BFS if no blocking
-        # layer has changed since the last check AND previous check
-        # confirmed reachability.
-        topo_version = self._topology_change_counter
-        if (
-            self._guardrail_prev_topo_version == topo_version
-            and self._guardrail_last_reachable
-        ):
-            # Topology unchanged and was reachable → still reachable
-            self._guardrail_bfs_skips += 1
-            self._guardrail_unreachable_streak = 0
-            self._last_guardrail_status = status
-            return 0
-
-        runtime_mask = self._build_runtime_blocking_mask()
-        free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
-
-        reachable = self._is_reachable(free, current_xy, goal_xy)
-        self._guardrail_bfs_calls += 1
-        self._guardrail_prev_topo_version = topo_version
-        self._guardrail_last_reachable = reachable
-        if reachable:
-            self._guardrail_unreachable_streak = 0
-            self._last_guardrail_status = status
-            return 0
-
-        status["reachability_failed_before_relax"] = True
-
-        # Step 1 (depth=1): relax forced interdiction this tick.
-        depth = 1
-        forced_before = int(np.sum(self._forced_block_mask))
-        if forced_before > 0:
-            self._forced_block_mask[:] = False
-            self._forced_block_cleared_by_guardrail = True
-            relaxation["forced_blocks_cleared"] = forced_before
-            relaxed = True
-            runtime_mask = self._build_runtime_blocking_mask()
-            free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
-            reachable = self._is_reachable(free, current_xy, goal_xy)
-            if reachable:
-                status["relaxation_applied"] = relaxation
-                status["feasible_after_guardrail"] = True
-                status["guardrail_depth"] = depth
-                self._guardrail_unreachable_streak = 0
-                self._guardrail_prev_topo_version = None  # invalidate cache
-                self._guardrail_last_reachable = True
-                self._last_guardrail_status = status
-                return depth
-
-        # Step 2 (depth=2): reduce NFZ growth / closures this tick.
-        depth = 2
-        nfz_cells_freed = 0
-        if self._dynamic_nfz is not None:
-            if hasattr(self._dynamic_nfz, "relax_zones"):
-                nfz_cells_freed = self._dynamic_nfz.relax_zones(shrink_px=2)
-            else:
-                # Legacy fallback for non-MissionRestrictionModel NFZ models
-                if hasattr(self._dynamic_nfz, "expansion_rate"):
-                    prev_rate = float(getattr(self._dynamic_nfz, "expansion_rate"))
-                    new_rate = max(0.1, prev_rate * 0.70)
-                    setattr(self._dynamic_nfz, "expansion_rate", float(new_rate))
-                if hasattr(self._dynamic_nfz, "radii"):
-                    prev_radii = np.asarray(getattr(self._dynamic_nfz, "radii"), dtype=np.float32)
-                    new_radii = np.maximum(prev_radii - 2.0, 4.0)
-                    setattr(self._dynamic_nfz, "radii", new_radii)
-        closures_removed = 0
-        if np.any(self._traffic_closure_mask):
-            to_relax = self._traffic_closure_mask & self._emergency_corridor_mask
-            closures_removed = int(np.sum(to_relax))
-            if closures_removed > 0:
-                self._traffic_closure_mask[to_relax] = False
-            else:
-                closures_removed = int(np.sum(self._traffic_closure_mask))
-                self._traffic_closure_mask[:] = False
-        if nfz_cells_freed > 0 or closures_removed > 0:
-            relaxation["nfz_cells_freed"] = nfz_cells_freed
-            relaxation["closures_removed"] = int(closures_removed)
-            relaxed = True
-
-        runtime_mask = self._build_runtime_blocking_mask()
-        free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
-        reachable = self._is_reachable(free, current_xy, goal_xy)
-        if reachable:
-            status["relaxation_applied"] = relaxation
-            status["feasible_after_guardrail"] = True
-            status["guardrail_depth"] = depth
-            self._guardrail_unreachable_streak = 0
-            self._guardrail_prev_topo_version = None  # invalidate cache
-            self._guardrail_last_reachable = True
-            self._last_guardrail_status = status
-            return depth
-
-        # Step 3 (depth=3): emergency corridor fallback.
-        depth = 3
-        if self.config.emergency_corridor_enabled:
-            self._emergency_corridor_active = True
-            status["corridor_fallback_used"] = True
-            self._forced_block_mask[self._emergency_corridor_mask] = False
-            self._traffic_closure_mask[self._emergency_corridor_mask] = False
-            runtime_mask = self._build_runtime_blocking_mask()
-            free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
-            reachable = self._is_reachable(free, current_xy, goal_xy)
-            if not reachable and self._guardrail_unreachable_streak >= 1:
-                # Hard deconfliction fallback: emergency authority opens all dynamic blocks.
-                self._forced_block_mask[:] = False
-                self._traffic_closure_mask[:] = False
-                if self._dynamic_nfz is not None and hasattr(self._dynamic_nfz, "radii"):
-                    self._dynamic_nfz.radii = np.full_like(self._dynamic_nfz.radii, 4.0)
-                self._emergency_corridor_mask |= self._build_emergency_corridor_mask(current_xy, goal_xy, width=3)
-                runtime_mask = self._build_runtime_blocking_mask()
-                free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
-                reachable = self._is_reachable(free, current_xy, goal_xy)
-                relaxation["hard_deconfliction"] = True
-
-        if reachable:
-            status["relaxation_applied"] = relaxation
-            status["feasible_after_guardrail"] = True
-            status["guardrail_depth"] = depth
-            self._guardrail_unreachable_streak = 0
-            self._guardrail_prev_topo_version = None
-            self._guardrail_last_reachable = True
-            self._last_guardrail_status = status
-            return depth
-
-        # Step 4 (depth=4): nuclear deconfliction — wide corridor, clear ALL dynamics.
-        # Last resort: open a width-5 corridor and forcibly remove every dynamic
-        # obstacle along it.  If still infeasible → episode flagged infeasible.
-        depth = 4
-        wide_corridor = self._build_emergency_corridor_mask(current_xy, goal_xy, width=5)
-        self._emergency_corridor_mask |= wide_corridor
-        self._emergency_corridor_active = True
-        self._forced_block_mask[:] = False
-        self._traffic_closure_mask[:] = False
-        if self._dynamic_nfz is not None:
-            if hasattr(self._dynamic_nfz, "radii"):
-                self._dynamic_nfz.radii = np.full_like(self._dynamic_nfz.radii, 2.0)
-        # Clear fire blocks in the wide corridor if fire blocks movement
-        if self.config.fire_blocks_movement and self._fire_model is not None:
-            fire_state = self._fire_model._state
-            fire_state[wide_corridor & (fire_state > 0)] = 0
-        relaxation["nuclear_deconfliction"] = True
-        relaxation["corridor_width"] = 5
-        status["corridor_fallback_used"] = True
-
-        runtime_mask = self._build_runtime_blocking_mask()
-        free = (self._heightmap <= 0) & (~self._no_fly_mask) & (~runtime_mask)
-        reachable = self._is_reachable(free, current_xy, goal_xy)
-
-        status["relaxation_applied"] = relaxation
-        status["feasible_after_guardrail"] = bool(reachable)
-        status["guardrail_depth"] = depth
-        self._guardrail_prev_topo_version = None  # invalidate cache after relaxation
-        self._guardrail_last_reachable = bool(reachable)
-        if reachable:
-            self._guardrail_unreachable_streak = 0
-        else:
-            self._guardrail_unreachable_streak += 1
-        self._last_guardrail_status = status
-        return depth
-
-    def _is_reachable(self, free_mask: np.ndarray, start_xy: GridPos, goal_xy: GridPos) -> bool:
-        """Check if goal is reachable from start on the free_mask grid.
-
-        Uses scipy.ndimage.label for O(H×W) connected-component labeling
-        instead of pure-Python BFS, giving ~100× speedup on 500×500 grids.
-        Falls back to Python BFS if scipy is unavailable.
-        """
-        sx, sy = start_xy
-        gx, gy = goal_xy
-        if not (0 <= sx < self.map_size and 0 <= sy < self.map_size):
-            return False
-        if not (0 <= gx < self.map_size and 0 <= gy < self.map_size):
-            return False
-        if not free_mask[sy, sx] or not free_mask[gy, gx]:
-            return False
-
-        try:
-            from scipy.ndimage import label as scipy_label
-            labeled, _ = scipy_label(free_mask)
-            return int(labeled[sy, sx]) == int(labeled[gy, gx]) and int(labeled[sy, sx]) > 0
-        except ImportError:
-            pass
-
-        # Fallback: pure-Python BFS
-        from collections import deque
-        q = deque([(sx, sy)])
-        visited = np.zeros_like(free_mask, dtype=bool)
-        visited[sy, sx] = True
-        while q:
-            x, y = q.popleft()
-            if (x, y) == (gx, gy):
-                return True
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < self.map_size and 0 <= ny < self.map_size:
-                    if free_mask[ny, nx] and not visited[ny, nx]:
-                        visited[ny, nx] = True
-                        q.append((nx, ny))
-        return False
-
-
-    # --------------- Helpers ----------------
-
-    def _build_observation(self) -> np.ndarray:
-        x, y, z = self._agent_pos
-        gx, gy, gz = self._goal_pos
-        h = float(self._heightmap[int(y), int(x)])
-        return np.array(
-            [x, y, z, gx, gy, gz, h],
-            dtype=np.float32,
+    ) -> tuple[np.ndarray, np.ndarray, tuple[int, int], tuple[int, int]]:
+        """Return (heightmap, no_fly, start_xy, goal_xy) (EN-6)."""
+        return (
+            self._heightmap.copy(),
+            self._no_fly.copy(),
+            self._agent_xy,
+            self._goal_xy,
         )
-
-    def export_planner_inputs(self) -> tuple[np.ndarray, np.ndarray, GridPos, GridPos]:
-        """Return planner-ready inputs: (heightmap, no_fly_mask, start_xy, goal_xy).
-
-        - heightmap: float32 [H,W]
-        - no_fly_mask: bool [H,W]
-        - start_xy: (x,y)
-        - goal_xy: (x,y)
-
-        Notes:
-        - Assumes env has been reset() so internal state is initialized.
-        - Returns copies to avoid accidental external mutation.
-        """
-        if not hasattr(self, "_heightmap") or self._heightmap is None:
-            raise RuntimeError("export_planner_inputs() called before reset(): heightmap not initialized.")
-        if not hasattr(self, "_no_fly_mask") or self._no_fly_mask is None:
-            raise RuntimeError("export_planner_inputs() called before reset(): no_fly_mask not initialized.")
-        if not hasattr(self, "_agent_pos") or self._agent_pos is None:
-            raise RuntimeError("export_planner_inputs() called before reset(): agent_pos not initialized.")
-        if not hasattr(self, "_goal_pos") or self._goal_pos is None:
-            raise RuntimeError("export_planner_inputs() called before reset(): goal_pos not initialized.")
-
-        # internal positions are [x,y,z]
-        ax, ay = int(self._agent_pos[0]), int(self._agent_pos[1])
-        gx, gy = int(self._goal_pos[0]), int(self._goal_pos[1])
-
-        heightmap = np.array(self._heightmap, copy=True)
-        no_fly = np.array(self._no_fly_mask, copy=True)
-
-        return heightmap, no_fly, (ax, ay), (gx, gy)
 
     def get_dynamic_state(self) -> dict[str, Any]:
-        """Return all dynamic obstacle state for adaptive planners.
+        """Return dynamic layer state (EN-9).
 
-        Cached per step: subsequent calls within the same step return
-        a shallow copy of the cached result (arrays are already copies).
+        Returns actual dynamic masks when dynamics are enabled.
         """
-        # Per-step cache: avoid recomputing if called multiple times in same step
-        cache_step = self._step_count
-        if hasattr(self, '_dynamic_state_cache_step') and self._dynamic_state_cache_step == cache_step:
-            # Return a shallow copy (arrays inside are already copies)
-            return dict(self._dynamic_state_cache)
-
-        H, W = self._heightmap.shape
-        state: dict[str, Any] = {
-            "fire_mask": None,
-            "burned_mask": None,
-            "smoke_mask": None,
-            "traffic_positions": None,
-            "traffic_closure_mask": None,
-            "moving_target_pos": None,
-            "moving_target_buffer": None,
-            "intruder_positions": None,
-            "intruder_buffer": None,
-            "dynamic_nfz_mask": None,
-            "forced_block_mask": None,
-            "emergency_corridor_mask": None,
-            "population_risk_map": None,
-            "adversarial_positions": None,
-            "adversarial_risk_map": None,
-            "risk_cost_map": None,
-            "interaction_metrics": None,
-            "interaction_metrics_history": None,
-            "guardrail_status": None,
-            "protocol_metrics": None,
+        shape = (self._map_size, self._map_size)
+        return {
+            "fire_mask": (
+                self._fire.fire_mask if self._fire is not None else None
+            ),
+            "smoke_mask": (
+                self._fire.smoke_mask if self._fire is not None else None
+            ),
+            "traffic_positions": (
+                self._traffic.vehicle_positions
+                if self._traffic is not None
+                else None
+            ),
+            "forced_block_mask": (
+                self._forced_block.get_mask()
+                if self._forced_block is not None
+                else None
+            ),
+            "risk_cost_map": None,  # Phase 4+
+            "traffic_closure_mask": (
+                self._interaction.traffic_closure_mask
+                if self._interaction is not None
+                else None
+            ),
+            "traffic_occupancy_mask": (
+                self._traffic.get_occupancy_mask(shape)
+                if self._traffic is not None
+                else None
+            ),
+            "moving_target_buffer": None,  # Phase 4+
+            "intruder_buffer": None,  # Phase 4+
+            "dynamic_nfz_mask": (
+                self._nfz.get_nfz_mask() if self._nfz is not None else None
+            ),
         }
-        if self._fire_model is not None:
-            state["fire_mask"] = self._fire_model.fire_mask.copy()
-            state["burned_mask"] = self._fire_model.burned_mask.copy()
-            state["smoke_mask"] = self._fire_model.smoke_mask.copy()
-        if self._traffic_model is not None:
-            state["traffic_positions"] = self._traffic_model.vehicle_positions.copy()
-        state["traffic_closure_mask"] = self._traffic_closure_mask.copy()
-        if self._moving_target is not None:
-            state["moving_target_pos"] = self._moving_target.current_position
-            state["moving_target_buffer"] = self._moving_target.get_buffer_mask((H, W))
-        if self._intruder_model is not None:
-            state["intruder_positions"] = self._intruder_model.active_positions
-            state["intruder_buffer"] = self._intruder_model.get_buffer_mask((H, W))
-        if self._dynamic_nfz is not None:
-            state["dynamic_nfz_mask"] = self._dynamic_nfz.get_nfz_mask()
-            state["restriction_mask"] = self._dynamic_nfz.get_mask()
-            if hasattr(self._dynamic_nfz, "get_zones"):
-                state["restriction_zones"] = self._dynamic_nfz.get_zones()
-            if hasattr(self._dynamic_nfz, "get_risk_buffer"):
-                state["restriction_risk_buffer"] = self._dynamic_nfz.get_risk_buffer()
-        state["forced_block_mask"] = self._forced_block_mask.copy()
-        state["emergency_corridor_mask"] = self._emergency_corridor_mask.copy()
-        if self._population_risk_enabled:
-            state["population_risk_map"] = self._population_model.risk_map.copy()
+
+    # -- Internal --
+
+    def _step_dynamics(self) -> None:
+        """Advance all dynamic layers by one timestep."""
+        fire_mask = self._fire.fire_mask if self._fire is not None else None
+
+        if self._fire is not None:
+            self._fire.step()
+
+        if self._traffic is not None:
+            self._traffic.step(fire_mask=fire_mask)
+
+        if self._nfz is not None:
+            self._nfz.step(fire_mask=fire_mask)
+
+        if self._interaction is not None:
+            self._interaction.update(
+                fire_mask=self._fire.fire_mask if self._fire else None,
+                traffic_positions=(
+                    self._traffic.vehicle_positions
+                    if self._traffic
+                    else None
+                ),
+                nfz_mask=(
+                    self._nfz.get_nfz_mask() if self._nfz else None
+                ),
+            )
+
+        # Forced block lifecycle (FC-1)
+        if self._forced_block is not None:
+            events_before = len(self._forced_block.events)
+            self._forced_block.step(self._step_idx)
+            # Append any new forced block events
+            for evt in self._forced_block.events[events_before:]:
+                self._events.append(evt)
+
+    def _classify_block(
+        self,
+        ny: int,
+        nx: int,
+        dyn_state: dict[str, Any],
+    ) -> RejectReason:
+        """Classify which layer blocked cell (ny, nx) (EC-1).
+
+        Priority: building > no_fly > fire > smoke > traffic_closure >
+        traffic_buffer > dynamic_nfz > forced_block.
+        """
+        if self._heightmap[ny, nx] > 0:
+            return RejectReason.BUILDING
+        if self._no_fly[ny, nx]:
+            return RejectReason.NO_FLY
+        if dyn_state.get("fire_mask") is not None and dyn_state["fire_mask"][ny, nx]:
+            return RejectReason.FIRE
+        if dyn_state.get("smoke_mask") is not None and dyn_state["smoke_mask"][ny, nx] >= 0.5:
+            return RejectReason.FIRE
+        if dyn_state.get("traffic_closure_mask") is not None and dyn_state["traffic_closure_mask"][ny, nx]:
+            return RejectReason.TRAFFIC_CLOSURE
+        if dyn_state.get("traffic_occupancy_mask") is not None and dyn_state["traffic_occupancy_mask"][ny, nx]:
+            return RejectReason.TRAFFIC_BUFFER
+        if dyn_state.get("dynamic_nfz_mask") is not None and dyn_state["dynamic_nfz_mask"][ny, nx]:
+            return RejectReason.DYNAMIC_NFZ
+        if dyn_state.get("forced_block_mask") is not None and dyn_state["forced_block_mask"][ny, nx]:
+            return RejectReason.FORCED_BLOCK
+        if dyn_state.get("moving_target_buffer") is not None and dyn_state["moving_target_buffer"][ny, nx]:
+            return RejectReason.MOVING_TARGET
+        if dyn_state.get("intruder_buffer") is not None and dyn_state["intruder_buffer"][ny, nx]:
+            return RejectReason.INTRUDER
+        # Fallback (should not happen if blocking mask is consistent)
+        return RejectReason.BUILDING
+
+    def _generate_roads(self, rng: np.random.Generator) -> np.ndarray:
+        """Generate synthetic road network as grid pattern."""
+        roads = np.zeros((self._map_size, self._map_size), dtype=bool)
+        # Place roads on a grid with spacing ~10% of map size
+        spacing = max(3, self._map_size // 8)
+        for i in range(0, self._map_size, spacing):
+            roads[i, :] = True  # horizontal
+            roads[:, i] = True  # vertical
+        # Roads must be on free cells (not buildings)
+        roads = roads & (self._heightmap == 0.0)
+        return roads
+
+    def _generate_heightmap(self, rng: np.random.Generator) -> np.ndarray:
+        """Generate synthetic heightmap from RNG (DC-1 compliant)."""
+        h = np.zeros((self._map_size, self._map_size), dtype=np.float32)
+        if self.config.building_density > 0:
+            mask = rng.random((self._map_size, self._map_size)) < self.config.building_density
+            h[mask] = rng.uniform(1.0, 5.0, size=mask.sum()).astype(np.float32)
+        return h
+
+    def _random_free_cell(
+        self,
+        rng: np.random.Generator,
+        exclude: tuple[int, int] | None = None,
+    ) -> tuple[int, int]:
+        """Pick a random free cell on the heightmap."""
+        free_mask = self._heightmap == 0.0
+        if exclude is not None:
+            free_mask[exclude[1], exclude[0]] = False
+        free_yx = np.argwhere(free_mask)
+        idx = rng.integers(len(free_yx))
+        y, x = free_yx[idx]
+        return (int(x), int(y))
+
+    def _get_obs(self) -> np.ndarray:
+        """Build observation vector (EN-3)."""
+        ax, ay = self._agent_xy
+        gx, gy = self._goal_xy
+        terrain_h = float(self._heightmap[ay, ax])
+        return np.array([ax, ay, gx, gy, terrain_h], dtype=np.float32)
+
+    def _get_info(self) -> dict[str, Any]:
+        """Build info dict with all required fields."""
+        ax, ay = self._agent_xy
+
+        info: dict[str, Any] = {
+            # Position
+            "agent_pos": self._agent_xy,
+            "agent_xy": self._agent_xy,
+            "goal_pos": self._goal_xy,
+            "goal_xy": self._goal_xy,
+            # Step
+            "step_idx": self._step_idx,
+            # Termination (MC-4)
+            "termination_reason": self._termination_reason,
+            "objective_completed": self._objective_completed,
+        }
+
+        # Forced block state (FC-1)
+        if self._forced_block is not None:
+            info["forced_block_active"] = self._forced_block.active
+            info["forced_block_lifecycle"] = self._forced_block.lifecycle.value
         else:
-            state["population_risk_map"] = np.zeros((H, W), dtype=np.float32)
-        if self._adversarial_uav is not None:
-            state["adversarial_positions"] = self._adversarial_uav.positions
-            state["adversarial_risk_map"] = self._adversarial_uav.get_risk_map((H, W))
-        state["risk_cost_map"] = self._risk_cost_map.copy()
-        state["interaction_metrics"] = dict(self._interaction_metrics_last)
-        state["interaction_metrics_history"] = [dict(v) for v in self._interaction_metrics_history]
-        state["guardrail_status"] = dict(self._last_guardrail_status)
-        state["protocol_metrics"] = {
-            "forced_replans_triggered": int(self._forced_replans_triggered),
-            "interdiction_hit_rate": float(self._interdiction_hits / max(self._interdiction_total, 1)),
-            "interdictions_triggered": int(self._interdiction_total),
-            "reference_path_length": int(len(self._reference_path)),
-            "emergency_corridor_active": bool(self._emergency_corridor_active),
-        }
-        # Forced block lifecycle (paper V&V)
-        state["forced_block_active"] = bool(np.any(self._forced_block_mask))
-        state["forced_block_area"] = int(np.sum(self._forced_block_mask))
-        state["forced_block_cleared_by_guardrail"] = bool(self._forced_block_cleared_by_guardrail)
-        state["forced_interdiction_triggered_steps"] = list(self._forced_interdiction_triggered_steps)
+            info["forced_block_active"] = False
+            info["forced_block_lifecycle"] = "none"
 
-        # Cache for this step
-        self._dynamic_state_cache = state
-        self._dynamic_state_cache_step = cache_step
+        # Mission fields (MC-1, MC-3)
+        if self._mission is not None:
+            info["objective_poi"] = self._mission.objective_poi
+            info["objective_reason"] = self._mission.objective_reason
+            info["mission_domain"] = self.config.mission_type.value
+            info["objective_label"] = self._mission.objective_label
+            info["distance_to_task"] = self._mission.distance_to_task(
+                self._agent_xy
+            )
+            info["task_progress"] = self._mission.task_progress
+            info["deliverable_name"] = self._mission.deliverable_name
+            info["service_time_s"] = self._mission.service_time_s
 
-        return state
+        return info
