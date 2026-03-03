@@ -1,408 +1,176 @@
-"""Enhanced benchmark runner with oracle/non-oracle protocols and determinism.
+"""Benchmark runner (RU-1, RU-3, RU-4).
 
-This module orchestrates full benchmark runs:
-- Load scenarios and initialize environment
-- Run planners with time budgets
-- Collect metrics and events
-- Support oracle vs non-oracle modes
-- Aggregate results across seeds
+Exactly ONE runner. Orchestrates: scenario load -> env reset -> plan ->
+step loop -> metrics. Owns the authoritative step_idx (EV-1).
 """
 
 from __future__ import annotations
 
-import json
-import logging
-import platform
-import time
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import Any
 
-import numpy as np
-
-from uavbench.envs.urban import UrbanEnv
-from uavbench.cli.benchmark import run_dynamic_episode, run_planner_once
-from uavbench.metrics.comprehensive import (
-    EpisodeMetrics, AggregateMetrics, compute_episode_metrics,
-    aggregate_episode_metrics, save_episode_metrics_jsonl, save_aggregate_metrics_csv,
-    print_aggregate_metrics_table
-)
+from uavbench.envs.urban import UrbanEnvV2
+from uavbench.metrics.compute import compute_episode_metrics
 from uavbench.planners import PLANNERS
-from uavbench.planners.astar import AStarPlanner
 from uavbench.scenarios.loader import load_scenario
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
-class BenchmarkConfig:
-    """Configuration for a benchmark run."""
-    # Scenarios and planners
-    scenario_ids: list[str]
-    planner_ids: list[str]
-    
-    # Seeds and runs
-    seeds: list[int]
-    max_episode_steps: int = 1000
-    
-    # Oracle mode
-    oracle_horizon: int = 0  # 0 = non-oracle, >0 = oracle with horizon
-    oracle_planner_id: Optional[str] = "astar"
-    
-    # Determinism
-    deterministic: bool = True
-    
-    # Output
-    output_dir: Path = Path("./benchmark_results")
-    save_jsonl: bool = True
-    save_csv: bool = True
-    
-    # Debug
-    verbose: bool = False
-    early_stop_seed: Optional[int] = None  # Stop after first N seeds (for testing)
+class EpisodeResult:
+    """Result of a single episode run.
+
+    Attributes used by determinism tests (DC-2):
+        events: list of event dicts
+        trajectory: list of (x, y) agent positions
+        metrics: episode metrics dict
+        frame_hashes: per-frame hash strings (empty if not rendering)
+    """
+
+    events: list[dict] = field(default_factory=list)
+    trajectory: list[tuple[int, int]] = field(default_factory=list)
+    metrics: dict[str, Any] = field(default_factory=dict)
+    frame_hashes: list[str] = field(default_factory=list)
 
 
-class BenchmarkRunner:
-    """Orchestrates benchmark runs across scenarios, planners, and seeds."""
-    
-    def __init__(self, config: BenchmarkConfig):
-        self.config = config
-        self.config.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        if config.verbose:
-            logging.basicConfig(level=logging.DEBUG)
-        else:
-            logging.basicConfig(level=logging.INFO)
-    
-    def run(self) -> dict[str, AggregateMetrics]:
-        """Run full benchmark suite.
-        
-        Returns:
-            Dict mapping "scenario_id/planner_id" -> AggregateMetrics
-        """
-        all_episodes: dict[tuple[str, str], list[EpisodeMetrics]] = {}
-        
-        scenario_count = len(self.config.scenario_ids)
-        planner_count = len(self.config.planner_ids)
-        seed_count = len(self.config.seeds)
-        
-        total_runs = scenario_count * planner_count * seed_count
-        run_idx = 0
-        
-        logger.info(f"Starting benchmark: {scenario_count} scenarios × {planner_count} planners × {seed_count} seeds = {total_runs} runs")
-        
-        for scenario_id in self.config.scenario_ids:
-            for planner_id in self.config.planner_ids:
-                episodes = []
-                
-                for seed in self.config.seeds:
-                    run_idx += 1
-                    progress = f"[{run_idx}/{total_runs}]"
-                    
-                    logger.info(f"{progress} Running {scenario_id} / {planner_id} / seed={seed}")
-                    
-                    try:
-                        episode = self._run_episode(scenario_id, planner_id, seed)
-                        episodes.append(episode)
-                        
-                        status = "✓" if episode.success else "✗"
-                        logger.info(
-                            f"{progress} {status} {scenario_id} / {planner_id} "
-                            f"path={episode.path_length:.0f} "
-                            f"time={episode.planning_time_ms:.1f}ms"
-                        )
-                        
-                        if self.config.early_stop_seed is not None and run_idx >= self.config.early_stop_seed:
-                            logger.info("Early stop requested")
-                            return {}
-                    
-                    except Exception as e:
-                        logger.error(f"{progress} Exception: {e}", exc_info=True)
-                        episodes.append(
-                            EpisodeMetrics(
-                                scenario_id=scenario_id,
-                                planner_id=planner_id,
-                                seed=seed,
-                                episode_step=0,
-                                success=False,
-                                termination_reason=f"exception: {type(e).__name__}",
-                                path_length=0.0,
-                                path_length_any_angle=None,
-                                planning_time_ms=0.0,
-                                total_time_ms=0.0,
-                                replans=0,
-                                first_replan_step=None,
-                                blocked_path_events=0,
-                                collision_count=0,
-                                nfz_violations=0,
-                                fire_exposure=0.0,
-                                traffic_proximity_time=0.0,
-                                intruder_proximity_time=0.0,
-                                smoke_exposure=0.0,
-                                regret_length=None,
-                                regret_risk=None,
-                                regret_time=None,
-                                notes=f"Exception: {e}",
-                            )
-                        )
-                
-                all_episodes[(scenario_id, planner_id)] = episodes
-        
-        # Aggregate results
-        logger.info("Aggregating results...")
-        aggregates = self._aggregate_all_episodes(all_episodes)
-        
-        # Save results
-        self._save_results(all_episodes, aggregates)
-        
-        # Print summary
-        print_aggregate_metrics_table(list(aggregates.values()))
-        
-        return aggregates
-    
-    def _run_episode(self, scenario_id: str, planner_id: str, seed: int) -> EpisodeMetrics:
-        """Run a single episode and return metrics."""
-        cfg = load_scenario(Path(f"src/uavbench/scenarios/configs/{scenario_id}.yaml"))
-        if planner_id not in PLANNERS:
-            raise ValueError(f"Unknown planner '{planner_id}'")
+def run_episode(
+    scenario_id: str,
+    planner_id: str,
+    seed: int,
+    render: bool = False,
+) -> EpisodeResult:
+    """Run a single deterministic episode (RU-3).
 
-        use_dynamic = (
-            cfg.paper_track == "dynamic"
-            or int(cfg.force_replan_count) > 0
-            or cfg.fire_blocks_movement
-            or cfg.traffic_blocks_movement
-            or cfg.enable_moving_target
-            or cfg.enable_intruders
-            or cfg.enable_dynamic_nfz
+    Args:
+        scenario_id: registered scenario name
+        planner_id: registered planner name
+        seed: RNG seed (DC-1)
+        render: whether to capture frame hashes (Phase 8)
+
+    Returns:
+        EpisodeResult with events, trajectory, metrics, frame_hashes.
+    """
+    # Load scenario
+    config = load_scenario(scenario_id)
+
+    # Create environment
+    env = UrbanEnvV2(config)
+    obs, info = env.reset(seed=seed)
+
+    # Export planner inputs
+    heightmap, no_fly, start_xy, goal_xy = env.export_planner_inputs()
+
+    # Create planner
+    planner_cls = PLANNERS[planner_id]
+    planner = planner_cls(heightmap, no_fly, config)
+    planner.set_seed(seed)
+
+    # Initial plan
+    plan_result = planner.plan(start_xy, goal_xy)
+
+    # Track path execution
+    path = plan_result.path if plan_result.success else []
+    path_idx = 0
+    trajectory: list[tuple[int, int]] = [start_xy]
+
+    # Step loop (RU-4: runner owns step_idx)
+    step_idx = 0
+    replan_count = 0
+    terminated = False
+    truncated = False
+    final_info = info
+
+    while not terminated and not truncated:
+        step_idx += 1
+
+        # Determine action from path
+        action = _path_to_action(env.agent_xy, path, path_idx)
+
+        # Step environment
+        obs, reward, terminated, truncated, info = env.step(action)
+        final_info = info
+        trajectory.append(env.agent_xy)
+
+        # Advance path index if we moved to expected next waypoint
+        if path_idx < len(path) - 1:
+            next_wp = path[path_idx + 1]
+            if env.agent_xy == next_wp:
+                path_idx += 1
+
+        # Update planner with dynamic state
+        dyn_state = env.get_dynamic_state()
+        planner.update(dyn_state)
+
+        # Check if replan needed
+        should, reason = planner.should_replan(
+            env.agent_xy, path, dyn_state, step_idx
         )
-        if use_dynamic:
-            res = run_dynamic_episode(
-                scenario_id,
-                planner_id,
-                seed=seed,
-                protocol_variant="default",
-                episode_horizon_steps=self.config.max_episode_steps,
-            )
-            path = list(res.get("path") or [res.get("start")])
-            start_xy = tuple(res.get("start", (0, 0)))
-            goal_xy = tuple(res.get("goal", (0, 0)))
-            heightmap = np.asarray(res.get("heightmap"))
-            no_fly = np.asarray(res.get("no_fly"))
-            planning_time_ms = float(res.get("planning_time_ms", float(res.get("planning_time", 0.0) * 1000.0)))
-            episode_duration_ms = float(res.get("episode_steps", 0)) * 1.0
-            collisions = 1 if bool(res.get("collision_terminated", False)) else 0
-            nfz_violations = int(res.get("constraint_violations", 0))
-            termination_reason = str(res.get("termination_reason", "unknown"))
-            success = bool(res.get("success", False))
-            replans = int(res.get("total_replans", 0))
-            env_events = list(res.get("events", []))
-        else:
-            res = run_planner_once(scenario_id, planner_id, seed=seed)
-            path = list(res.get("path") or [res.get("start")])
-            start_xy = tuple(res.get("start", (0, 0)))
-            goal_xy = tuple(res.get("goal", (0, 0)))
-            heightmap = np.asarray(res.get("heightmap"))
-            no_fly = np.asarray(res.get("no_fly"))
-            planning_time_ms = float(res.get("planning_time_ms", float(res.get("planning_time", 0.0) * 1000.0)))
-            episode_duration_ms = planning_time_ms
-            collisions = 0
-            nfz_violations = int(res.get("constraint_violations", 0))
-            termination_reason = "success" if bool(res.get("success", False)) else "static_validation_failed"
-            success = bool(res.get("success", False))
-            replans = 0
-            env_events = []
+        if should:
+            plan_result_new = planner.plan(env.agent_xy, goal_xy)
+            if plan_result_new.success:
+                path = plan_result_new.path
+                path_idx = 0
+                replan_count += 1
 
-        return compute_episode_metrics(
-            scenario_id=scenario_id,
-            planner_id=planner_id,
-            seed=seed,
-            success=success,
-            path=path,
-            start=start_xy,
-            goal=goal_xy,
-            heightmap=heightmap,
-            no_fly=no_fly,
-            planning_time_ms=planning_time_ms,
-            episode_duration_ms=episode_duration_ms,
-            replans=replans,
-            first_replan_step=None,
-            env_events=env_events,
-            collisions=collisions,
-            nfz_violations=nfz_violations,
-            termination_reason=termination_reason,
-        )
-    
-    def _aggregate_all_episodes(
-        self,
-        all_episodes: dict[tuple[str, str], list[EpisodeMetrics]],
-    ) -> dict[str, AggregateMetrics]:
-        """Aggregate episode metrics across all runs."""
-        aggregates = {}
-        
-        for (scenario_id, planner_id), episodes in all_episodes.items():
-            if not episodes:
-                continue
-            
-            agg = aggregate_episode_metrics(
-                episodes,
-                oracle_planner_id=self.config.oracle_planner_id,
-            )
-            aggregates[f"{scenario_id}/{planner_id}"] = agg
-        
-        return aggregates
-    
-    def _save_results(
-        self,
-        all_episodes: dict[tuple[str, str], list[EpisodeMetrics]],
-        aggregates: dict[str, AggregateMetrics],
-    ) -> None:
-        """Save results to disk."""
-        output_dir = self.config.output_dir
-        
-        # Flatten episodes
-        all_episode_list = []
-        for episodes in all_episodes.values():
-            all_episode_list.extend(episodes)
-        
-        # Save JSONL
-        if self.config.save_jsonl:
-            jsonl_path = output_dir / "episodes.jsonl"
-            save_episode_metrics_jsonl(all_episode_list, jsonl_path)
-            logger.info(f"Saved episode metrics: {jsonl_path}")
-        
-        # Save CSV
-        if self.config.save_csv:
-            csv_path = output_dir / "aggregates.csv"
-            save_aggregate_metrics_csv(list(aggregates.values()), csv_path)
-            logger.info(f"Saved aggregate metrics: {csv_path}")
+    # Compute metrics
+    metrics = compute_episode_metrics(
+        scenario_id=scenario_id,
+        planner_id=planner_id,
+        seed=seed,
+        trajectory=trajectory,
+        events=env.events,
+        final_info=final_info,
+        plan_result=plan_result,
+        replan_count=replan_count,
+    )
 
-        # Save reproducibility metadata
-        metadata_path = output_dir / "run_metadata.json"
-        metadata = {
-            "scenario_ids": self.config.scenario_ids,
-            "planner_ids": self.config.planner_ids,
-            "seeds": self.config.seeds,
-            "deterministic": self.config.deterministic,
-            "oracle_horizon": self.config.oracle_horizon,
-            "oracle_planner_id": self.config.oracle_planner_id,
-            "max_episode_steps": self.config.max_episode_steps,
-            "python_version": platform.python_version(),
-            "num_episode_records": len(all_episode_list),
-            "num_aggregate_rows": len(aggregates),
-        }
-        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        logger.info(f"Saved run metadata: {metadata_path}")
+    return EpisodeResult(
+        events=env.events,
+        trajectory=trajectory,
+        metrics=metrics,
+        frame_hashes=[],
+    )
 
 
-def _waypoint_to_action(current: tuple[int, int], next_pos: tuple[int, int]) -> int:
-    """Convert waypoints to discrete action (0-5)."""
-    dx = next_pos[0] - current[0]
-    dy = next_pos[1] - current[1]
-    
-    if dx == 0 and dy == -1:
-        return 0  # up
-    elif dx == 0 and dy == 1:
-        return 1  # down
-    elif dx == -1 and dy == 0:
-        return 2  # left
-    elif dx == 1 and dy == 0:
-        return 3  # right
-    else:
-        return 0  # fallback
-
-
-def _expand_execution_path(
+def _path_to_action(
+    agent_xy: tuple[int, int],
     path: list[tuple[int, int]],
-    heightmap: Any,
-    no_fly: Any,
-) -> list[tuple[int, int]]:
-    """Expand sparse/any-angle waypoints into 4-connected executable steps."""
-    if len(path) < 2:
-        return list(path)
+    path_idx: int,
+) -> int:
+    """Convert path waypoint to an action integer.
 
-    expanded: list[tuple[int, int]] = [path[0]]
-    segment_planner = AStarPlanner(heightmap, no_fly)
-    for waypoint in path[1:]:
-        prev = expanded[-1]
-        dx = abs(waypoint[0] - prev[0])
-        dy = abs(waypoint[1] - prev[1])
-        if dx + dy == 1:
-            expanded.append(waypoint)
-            continue
-        seg = segment_planner.plan(prev, waypoint)
-        if seg.success and len(seg.path) >= 2:
-            expanded.extend(seg.path[1:])
+    If we're at the end of the path or path is empty, use greedy
+    navigation toward the goal (last waypoint).
+    """
+    # Action constants
+    ACTION_UP = 0
+    ACTION_DOWN = 1
+    ACTION_LEFT = 2
+    ACTION_RIGHT = 3
+    ACTION_STAY = 4
+
+    if not path:
+        return ACTION_STAY
+
+    # Target: next waypoint on path
+    target_idx = path_idx + 1 if path_idx + 1 < len(path) else len(path) - 1
+    target = path[target_idx]
+
+    ax, ay = agent_xy
+    tx, ty = target
+
+    if (ax, ay) == (tx, ty):
+        # At target — try next waypoint or stay
+        if target_idx + 1 < len(path):
+            tx, ty = path[target_idx + 1]
         else:
-            # Keep original waypoint if local expansion unexpectedly fails.
-            expanded.append(waypoint)
-    return expanded
+            return ACTION_STAY
 
+    dx = tx - ax
+    dy = ty - ay
 
-def main():
-    """Main entry point for benchmark CLI."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Run UAVBench benchmarks")
-    parser.add_argument(
-        "--scenarios",
-        nargs="+",
-        default=["osm_athens_wildfire_easy"],
-        help="Scenario IDs to run",
-    )
-    parser.add_argument(
-        "--planners",
-        nargs="+",
-        default=["astar"],
-        help="Planner IDs to run",
-    )
-    parser.add_argument(
-        "--seeds",
-        nargs="+",
-        type=int,
-        default=[0, 1, 2],
-        help="Random seeds to use",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("./benchmark_results"),
-        help="Output directory for results",
-    )
-    parser.add_argument(
-        "--oracle-horizon",
-        type=int,
-        default=0,
-        help="Oracle horizon (0 = non-oracle)",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Verbose logging",
-    )
-    parser.add_argument(
-        "--early-stop",
-        type=int,
-        default=None,
-        help="Stop after N runs (for testing)",
-    )
-    
-    args = parser.parse_args()
-    
-    config = BenchmarkConfig(
-        scenario_ids=args.scenarios,
-        planner_ids=args.planners,
-        seeds=args.seeds,
-        output_dir=args.output_dir,
-        oracle_horizon=args.oracle_horizon,
-        verbose=args.verbose,
-        early_stop_seed=args.early_stop,
-    )
-    
-    runner = BenchmarkRunner(config)
-    aggregates = runner.run()
-    
-    print(f"\n✓ Benchmark complete. Results saved to {args.output_dir}")
-
-
-if __name__ == "__main__":
-    main()
+    if dx == 0 and dy == 0:
+        return ACTION_STAY
+    if abs(dx) >= abs(dy):
+        return ACTION_RIGHT if dx > 0 else ACTION_LEFT
+    else:
+        return ACTION_DOWN if dy > 0 else ACTION_UP
