@@ -1,21 +1,22 @@
-"""Emergency traffic model using road mask for pixel-space vehicle movement.
+"""Traffic model (DC-1 compliant).
 
-Vehicles move along road pixels toward random destinations, creating
-dynamic obstacles for UAV path planning.
+Vehicles move along road network, avoid fire, generate occupancy masks.
+All randomness flows through caller-supplied rng.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+# 4-connected movement: (dy, dx)
+_MOVES = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
 
 class TrafficModel:
-    """Pixel-space vehicle movement model on road networks.
+    """Emergency vehicle traffic on road network.
 
-    Args:
-        roads_mask: bool [H, W] — road pixel mask
-        num_vehicles: int — number of emergency vehicles
-        rng: np.random.Generator — for deterministic behavior
+    Vehicles move toward random targets on roads, avoiding fire.
+    Generates occupancy mask with Manhattan buffer for blocking.
     """
 
     def __init__(
@@ -23,114 +24,118 @@ class TrafficModel:
         roads_mask: np.ndarray,
         num_vehicles: int,
         rng: np.random.Generator,
+        buffer_radius: int = 5,
     ) -> None:
-        self._roads = roads_mask.astype(bool)
         self._rng = rng
+        self._roads = roads_mask.astype(bool)
+        self._H, self._W = roads_mask.shape
+        self._buffer_radius = buffer_radius
 
-        # Cache all road pixel coordinates [M, 2] as (y, x)
-        self._road_pixels = np.argwhere(self._roads)
+        # Find road pixels
+        road_ys, road_xs = np.where(self._roads)
+        self._road_pixels = np.column_stack((road_ys, road_xs))
 
-        if len(self._road_pixels) == 0:
-            num_vehicles = 0
-
+        # Clamp vehicles to available road pixels
         n = min(num_vehicles, len(self._road_pixels))
+        self._num_vehicles = n
 
-        # Initialize vehicle positions on random road pixels
-        if n > 0:
-            indices = rng.choice(len(self._road_pixels), size=n, replace=False)
-            self._positions = self._road_pixels[indices].copy()  # [N, 2] (y, x)
-            self._targets = self._pick_targets(n)
+        if n == 0:
+            self._positions = np.zeros((0, 2), dtype=np.int32)
+            self._targets = np.zeros((0, 2), dtype=np.int32)
         else:
-            self._positions = np.empty((0, 2), dtype=np.int32)
-            self._targets = np.empty((0, 2), dtype=np.int32)
+            # Initial positions (y, x) on roads
+            indices = rng.choice(len(self._road_pixels), size=n, replace=False)
+            self._positions = self._road_pixels[indices].copy()
+            self._targets = self._pick_targets()
 
-    def _pick_targets(self, n: int) -> np.ndarray:
-        """Pick n random road pixels as movement targets."""
-        indices = self._rng.choice(len(self._road_pixels), size=n)
-        return self._road_pixels[indices].copy()
-
-    def step(self, dt: float = 1.0, fire_mask: np.ndarray | None = None) -> None:
-        """Move each vehicle one pixel toward its target."""
         self._fire_avoidance_events = 0
 
-        if len(self._positions) == 0:
-            return
-
-        H, W = self._roads.shape
-
-        for i in range(len(self._positions)):
-            py, px = self._positions[i]
-            ty, tx = self._targets[i]
-
-            # Check if at target (within 3 pixels)
-            if abs(py - ty) + abs(px - tx) <= 3:
-                self._targets[i] = self._road_pixels[
-                    self._rng.integers(len(self._road_pixels))
-                ]
-                ty, tx = self._targets[i]
-
-            # Compute direction toward target
-            dy = np.sign(ty - py)
-            dx = np.sign(tx - px)
-
-            # Try primary direction (larger delta first)
-            moved = False
-            if abs(ty - py) >= abs(tx - px):
-                attempts = [(dy, 0), (0, dx), (dy, dx)]
-            else:
-                attempts = [(0, dx), (dy, 0), (dy, dx)]
-
-            for ay, ax in attempts:
-                if ay == 0 and ax == 0:
-                    continue
-                ny = int(py + ay)
-                nx = int(px + ax)
-                if 0 <= ny < H and 0 <= nx < W and self._roads[ny, nx]:
-                    if fire_mask is not None and fire_mask[ny, nx]:
-                        self._fire_avoidance_events += 1
-                        continue  # skip this direction
-                    self._positions[i] = [ny, nx]
-                    moved = True
-                    break
-
-            # If stuck, try any adjacent road pixel
-            if not moved:
-                for ay, ax in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    ny = int(py + ay)
-                    nx = int(px + ax)
-                    if 0 <= ny < H and 0 <= nx < W and self._roads[ny, nx]:
-                        if fire_mask is not None and fire_mask[ny, nx]:
-                            self._fire_avoidance_events += 1
-                            continue  # skip this direction
-                        self._positions[i] = [ny, nx]
-                        break
+    # -- Public properties --
 
     @property
     def vehicle_positions(self) -> np.ndarray:
-        """[N, 2] int — (y, x) pixel positions of all vehicles."""
+        """int[N, 2] as (y, x): copy of current positions."""
         return self._positions.copy()
 
     @property
     def fire_avoidance_events(self) -> int:
-        return getattr(self, "_fire_avoidance_events", 0)
+        return self._fire_avoidance_events
+
+    # -- Step --
+
+    def step(self, dt: float = 1.0, fire_mask: np.ndarray | None = None) -> None:
+        """Move each vehicle one step toward its target.
+
+        Avoids fire cells. Picks new target when close to current one.
+        """
+        self._fire_avoidance_events = 0
+
+        for i in range(self._num_vehicles):
+            y, x = self._positions[i]
+            ty, tx = self._targets[i]
+
+            # Check if near target — pick new one
+            dist = abs(y - ty) + abs(x - tx)
+            if dist <= 3:
+                self._targets[i] = self._pick_one_target()
+                ty, tx = self._targets[i]
+
+            # Greedy move toward target
+            best_move = None
+            best_dist = dist
+
+            for dy, dx in _MOVES:
+                ny, nx = y + dy, x + dx
+                if not (0 <= ny < self._H and 0 <= nx < self._W):
+                    continue
+                if not self._roads[ny, nx]:
+                    continue
+                if fire_mask is not None and fire_mask[ny, nx]:
+                    self._fire_avoidance_events += 1
+                    continue
+
+                d = abs(ny - ty) + abs(nx - tx)
+                if d < best_dist:
+                    best_dist = d
+                    best_move = (ny, nx)
+
+            if best_move is not None:
+                self._positions[i] = best_move
 
     def get_occupancy_mask(
-        self, shape: tuple[int, int], buffer_radius: int = 5
+        self,
+        shape: tuple[int, int] | None = None,
     ) -> np.ndarray:
-        """[H, W] bool — cells within buffer_radius (Manhattan) of any vehicle."""
-        mask = np.zeros(shape, dtype=bool)
-        H, W = shape
+        """bool[H, W]: Manhattan buffer around each vehicle."""
+        H, W = shape if shape is not None else (self._H, self._W)
+        mask = np.zeros((H, W), dtype=bool)
+        r = self._buffer_radius
 
-        for i in range(len(self._positions)):
-            py, px = self._positions[i]
-            iy, ix = int(py), int(px)
-            y_lo = max(0, iy - buffer_radius)
-            y_hi = min(H, iy + buffer_radius + 1)
-            x_lo = max(0, ix - buffer_radius)
-            x_hi = min(W, ix + buffer_radius + 1)
-            for ny in range(y_lo, y_hi):
-                for nx in range(x_lo, x_hi):
-                    if abs(ny - iy) + abs(nx - ix) <= buffer_radius:
-                        mask[ny, nx] = True
+        for i in range(self._num_vehicles):
+            vy, vx = self._positions[i]
+            for dy in range(-r, r + 1):
+                for dx in range(-r, r + 1):
+                    if abs(dy) + abs(dx) <= r:
+                        ny, nx = vy + dy, vx + dx
+                        if 0 <= ny < H and 0 <= nx < W:
+                            mask[ny, nx] = True
 
         return mask
+
+    # -- Internal --
+
+    def _pick_targets(self) -> np.ndarray:
+        """Pick random road targets for all vehicles."""
+        if len(self._road_pixels) == 0:
+            return np.zeros((self._num_vehicles, 2), dtype=np.int32)
+        indices = self._rng.choice(
+            len(self._road_pixels), size=self._num_vehicles
+        )
+        return self._road_pixels[indices].copy()
+
+    def _pick_one_target(self) -> np.ndarray:
+        """Pick a single random road target."""
+        if len(self._road_pixels) == 0:
+            return np.array([0, 0], dtype=np.int32)
+        idx = self._rng.integers(len(self._road_pixels))
+        return self._road_pixels[idx].copy()

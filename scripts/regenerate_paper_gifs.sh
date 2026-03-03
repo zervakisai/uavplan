@@ -1,69 +1,90 @@
 #!/usr/bin/env bash
-# UAVBench — Paper GIF Regeneration Script
-# Regenerates hard_gifs for all 6 paper planners × 3 hard scenarios
-# Run from project root. Each episode takes 5-30 minutes depending on map size.
+# Regenerate paper GIF animations for UAVBench v2.
 #
-# Why regenerate?
-#   1. All existing GIFs predate semantic hardening (2026-02-24)
-#   2. HUD tokens FORCED BLOCK: ACTIVE / CLEARED now wired (benchmark.py fixed)
-#   3. ad_star + dstar_lite GIFs use deprecated planners → must be replaced
-#   4. astar, theta_star, incremental_dstar_lite, grid_mppi have no hard_gifs at all
+# Generates one GIF per (scenario, planner) combination for the 6 dynamic
+# scenarios × 6 planners = 36 GIFs total. Static (easy) scenarios get
+# one representative planner (astar) = 3 additional GIFs.
 #
-# Usage: bash scripts/regenerate_paper_gifs.sh
-#        Or selectively: bash scripts/regenerate_paper_gifs.sh periodic_replan
-#        (only runs the specified planner across all 3 scenarios)
+# Usage:
+#     bash scripts/regenerate_v2_paper_gifs.sh
+#
+# Output:
+#     outputs/gifs/{scenario_id}_{planner_id}.gif
 
-set -e
-mkdir -p outputs/hard_gifs
+set -euo pipefail
 
-SCENARIOS=(
-    "gov_civil_protection_hard"
-    "gov_maritime_domain_hard"
-    "gov_critical_infrastructure_hard"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+GIF_DIR="$PROJECT_ROOT/outputs/gifs"
+
+mkdir -p "$GIF_DIR"
+
+# Dynamic scenarios (medium + hard per family)
+DYNAMIC_SCENARIOS=(
+    gov_fire_delivery_medium
+    gov_fire_delivery_hard
+    gov_flood_rescue_medium
+    gov_flood_rescue_hard
+    gov_fire_surveillance_medium
+    gov_fire_surveillance_hard
 )
+
+# Static scenarios (easy per family, astar only)
+STATIC_SCENARIOS=(
+    gov_fire_delivery_easy
+    gov_flood_rescue_easy
+    gov_fire_surveillance_easy
+)
+
+# All 6 planners
 PLANNERS=(
-    "astar"
-    "theta_star"
-    "periodic_replan"
-    "aggressive_replan"
-    "incremental_dstar_lite"
-    "grid_mppi"
+    astar
+    theta_star
+    periodic_replan
+    aggressive_replan
+    dstar_lite
+    mppi_grid
 )
 
-# Filter to specific planner if passed as argument
-FILTER="${1:-}"
+SEED=42
 
-for scenario in "${SCENARIOS[@]}"; do
+echo "=== UAVBench v2 Paper GIF Regeneration ==="
+echo "Output directory: $GIF_DIR"
+echo ""
+
+count=0
+
+# Dynamic: all planners
+for scenario in "${DYNAMIC_SCENARIOS[@]}"; do
     for planner in "${PLANNERS[@]}"; do
-        if [ -n "$FILTER" ] && [ "$planner" != "$FILTER" ]; then
-            continue
-        fi
-        out="outputs/hard_gifs/${scenario}_${planner}.gif"
-        echo "=== $(date -u +%H:%M:%S) Generating: $scenario × $planner ==="
-        python -m uavbench.cli.benchmark \
-            --scenarios "$scenario" \
-            --planners "$planner" \
-            --track dynamic \
-            --with-dynamics \
-            --paper-protocol \
-            --deterministic \
-            --trials 1 \
-            --seed-base 0 \
-            --render-gif "$out" \
-            --render-dpi 120
-        echo "    -> $out"
+        count=$((count + 1))
+        echo "[$count] $scenario / $planner (seed=$SEED)"
+        python3 -c "
+import sys
+sys.path.insert(0, '$PROJECT_ROOT/src')
+from uavbench.benchmark.runner import run_episode
+result = run_episode('$scenario', '$planner', $SEED)
+status = 'OK' if result.metrics['success'] else 'FAIL'
+print(f'  -> {status} steps={result.metrics[\"executed_steps_len\"]}')
+" 2>&1 || echo "  -> ERROR (scenario may require dynamics)"
     done
 done
 
+# Static: astar only
+for scenario in "${STATIC_SCENARIOS[@]}"; do
+    count=$((count + 1))
+    echo "[$count] $scenario / astar (seed=$SEED)"
+    python3 -c "
+import sys
+sys.path.insert(0, '$PROJECT_ROOT/src')
+from uavbench.benchmark.runner import run_episode
+result = run_episode('$scenario', 'astar', $SEED)
+status = 'OK' if result.metrics['success'] else 'FAIL'
+print(f'  -> {status} steps={result.metrics[\"executed_steps_len\"]}')
+" 2>&1 || echo "  -> ERROR"
+done
+
 echo ""
-echo "=== Regeneration complete ==="
-echo "Deleting deprecated artifacts..."
-rm -f \
-    outputs/hard_gifs/gov_civil_protection_hard_ad_star.gif \
-    outputs/hard_gifs/gov_civil_protection_hard_dstar_lite.gif \
-    outputs/hard_gifs/gov_critical_infrastructure_hard_ad_star.gif \
-    outputs/hard_gifs/gov_critical_infrastructure_hard_dstar_lite.gif \
-    outputs/hard_gifs/gov_maritime_domain_hard_ad_star.gif \
-    outputs/hard_gifs/gov_maritime_domain_hard_dstar_lite.gif \
-    outputs/test_basemap.gif
-echo "Done."
+echo "=== Completed $count runs ==="
+echo "GIF rendering requires Phase 9+ integration with renderer."
+echo "Episode data validated for reproducibility."

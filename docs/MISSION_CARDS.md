@@ -1,88 +1,226 @@
-# Mission Briefing Cards
+# UAVBench v2 — Mission Story Cards
 
-Each UAVBench episode begins with a mission briefing (logged at step 0).
-Below are the briefing templates for each scenario family and difficulty.
-
----
-
-## Mission 1: Civil Protection (Penteli Tile)
-
-**Incident Context**: 2018 Attica Wildfire (Penteli/Mati) [CITE]
-
-| Field | Easy | Medium | Hard |
-|---|---|---|---|
-| **Objective** | Emergency medical delivery during wildfire crisis | Emergency medical delivery during wildfire crisis | Emergency medical delivery during wildfire crisis |
-| **Origin** | Penteli Fire Station | Penteli Fire Station | Penteli Fire Station |
-| **Destination** | Evacuation Zone Alpha | Evacuation Zone Alpha | Evacuation Zone Alpha |
-| **Deliverable** | Thermal-sealed medical kit | Thermal-sealed medical kit | Thermal-sealed medical kit |
-| **Priority** | Routine | High | Critical |
-| **Tasks** | 4 | 6 | 8 |
-| **Dynamics** | Static | Moderate (fire, traffic, NFZ) | Severe (fire, traffic, NFZ, blocking) |
-| **Constraints** | None | Avoid fire zones, respect NFZ | Avoid fire zones, respect NFZ, burning cells impassable, vehicle buffers |
-| **Time Budget** | 350 steps | 300 steps | 250 steps |
+Each mission family has 3 difficulty variants (easy/medium/hard).
+All missions share the same tile and objective structure; difficulty modifies
+dynamic intensity, task count, time budget, and event timing.
 
 ---
 
-## Mission 2: Maritime Domain (Piraeus Tile)
+## Mission Family 1: Fire Delivery
 
-**Incident Context**: LS-ELAKT Coastal Patrol and Distress Response
+### Identity
 
-| Field | Easy | Medium | Hard |
-|---|---|---|---|
-| **Objective** | Maritime search and rescue in multi-hazard zone | Maritime search and rescue in multi-hazard zone | Maritime search and rescue in multi-hazard zone |
-| **Origin** | Piraeus Coast Guard Station | Piraeus Coast Guard Station | Piraeus Coast Guard Station |
-| **Destination** | Maritime Distress Zone | Maritime Distress Zone | Maritime Distress Zone |
-| **Deliverable** | Survivor location and status report | Survivor location and status report | Survivor location and status report |
-| **Priority** | Routine | High | Critical |
-| **Tasks** | 4 | 6 | 8 |
-| **Dynamics** | Static | Moderate (fire, traffic, NFZ) | Severe (fire, traffic, NFZ, blocking) |
-| **Constraints** | None | Avoid fire zones, respect NFZ | Avoid fire zones, respect NFZ, burning cells impassable, vehicle buffers |
-| **Time Budget** | 400 steps | 300 steps | 250 steps |
+| Field | Value |
+|-------|-------|
+| Mission Type | `FIRE_DELIVERY` |
+| Registry Prefix | `gov_fire_delivery_{easy,medium,hard}` |
+| Domain | `fire_delivery` |
+| Inspired by | Evia/Εύβοια wildfires 2021 |
+| Building Density | 0.18 (easy/medium), 0.22 (hard) |
+
+### Incident Provenance
+
+**2021 Evia Megafire (North Evia)**
+
+The August 2021 Evia wildfire burned for over two weeks, becoming the largest
+wildfire recorded in the EU. Settlements were isolated by rapidly advancing
+fire fronts, and emergency supplies had to be delivered by sea and air to
+cut-off villages. [CITE] EFFIS Annual Report 2021; [CITE] GSCP After-Action Report 2021-EV
+
+### Mission Objective
+
+**Emergency Medical Supply Delivery to Fire-Isolated Settlement**
+
+The UAV must navigate through fire-affected terrain to deliver medical supplies
+to an isolated village. Megafire dynamics with wind-biased spread create evolving
+obstacles. Dynamic NFZs represent manned aircraft firefighting corridors.
+
+| Field | Value |
+|-------|-------|
+| Objective Label | "Emergency Medical Supply Delivery" |
+| Deliverable | `medical_supplies` |
+| Reason String | "Emergency medical supply delivery to fire-isolated settlement" |
+| Service Time | 0 (fly-through delivery at goal) |
+
+### Task Queue
+
+| Category | Weight | Time Decay | Service Time | Description |
+|----------|--------|-----------|--------------|-------------|
+| `delivery_point` | 1.0 | 0.02 | 0 (fly-through) | Delivery waypoint at isolated settlement |
+
+### Difficulty Matrix
+
+| Difficulty | Dynamics | Fire Ignitions | Wind | NFZ Zones | Forced Replans | Event Timing |
+|------------|----------|---------------|------|-----------|---------------|-------------|
+| Easy | Static | 0 | 0.2 | 0 | 0 | — |
+| Medium | Moderate | 2 | 0.3 | 1 | 1 | t1=40, t2=120 |
+| Hard | Severe | 4 | 0.5 | 2 | 2 | t1=30, t2=90 |
+
+### Visual Profile
+
+| Field | Value |
+|-------|-------|
+| Accent color | `#FF6B35` (orange) |
+| POI icon | Medical cross |
+| Fire rendering | Red-orange CA cells |
+| HUD shows | Fire perimeter, delivery POI, distance_to_task, package status |
 
 ---
 
-## Mission 3: Critical Infrastructure (Downtown Athens Tile)
+## Mission Family 2: Flood Rescue
 
-**Incident Context**: YPETHA/ISR-support infrastructure inspection under restricted airspace
+### Identity
 
-| Field | Easy | Medium | Hard |
-|---|---|---|---|
-| **Objective** | Critical infrastructure inspection under restricted airspace | Critical infrastructure inspection under restricted airspace | Critical infrastructure inspection under restricted airspace |
-| **Origin** | HCAA Operations Centre (Downtown Athens) | HCAA Operations Centre (Downtown Athens) | HCAA Operations Centre (Downtown Athens) |
-| **Destination** | Infrastructure Inspection Site | Infrastructure Inspection Site | Infrastructure Inspection Site |
-| **Deliverable** | Structural integrity assessment report | Structural integrity assessment report | Structural integrity assessment report |
-| **Priority** | Routine | High | Critical |
-| **Tasks** | 4 | 6 | 8 |
-| **Dynamics** | Static | Moderate (fire, traffic, NFZ) | Severe (fire, traffic, NFZ, blocking) |
-| **Constraints** | None | Avoid fire zones, respect NFZ | Avoid fire zones, respect NFZ, burning cells impassable, vehicle buffers |
-| **Time Budget** | 300 steps | 275 steps | 250 steps |
+| Field | Value |
+|-------|-------|
+| Mission Type | `FLOOD_RESCUE` |
+| Registry Prefix | `gov_flood_rescue_{easy,medium,hard}` |
+| Domain | `flood_rescue` |
+| Inspired by | Thessaly/Θεσσαλία floods 2023 |
+| Building Density | 0.15 (easy/medium), 0.20 (hard) |
+
+### Incident Provenance
+
+**2023 Thessaly Floods (Storm Daniel)**
+
+Storm Daniel caused catastrophic flooding across Thessaly in September 2023,
+stranding thousands. Road infrastructure was destroyed, and aerial platforms
+were critical for search and rescue assessment. [CITE] GSCP Storm Daniel AAR 2023;
+[CITE] Copernicus EMS Activation EMSR686
+
+### Mission Objective
+
+**Search and Rescue Assessment of Flood-Stranded Population**
+
+The UAV must reach stranded population areas through flood-affected terrain.
+Water spread dynamics (modeled via traffic/road closures) create evolving
+obstacles. The agent must perform on-site assessment (service_time hover).
+
+| Field | Value |
+|-------|-------|
+| Objective Label | "Flood Search & Rescue Assessment" |
+| Deliverable | `rescue_assessment` |
+| Reason String | "Search and rescue assessment of flood-stranded population" |
+| Service Time | 2 steps (hover assessment) |
+
+### Task Queue
+
+| Category | Weight | Time Decay | Service Time | Description |
+|----------|--------|-----------|--------------|-------------|
+| `rescue_site` | 1.0 | 0.02 | 2 steps | Rescue assessment — hover + confirm |
+
+### Difficulty Matrix
+
+| Difficulty | Dynamics | Fire Ignitions | Vehicles | Wind | NFZ Zones | Forced Replans | Event Timing |
+|------------|----------|---------------|----------|------|-----------|---------------|-------------|
+| Easy | Static | 0 | 0 | 0.1 | 0 | 0 | — |
+| Medium | Moderate | 2 | 3 | 0.2 | 1 | 1 | t1=40, t2=120 |
+| Hard | Severe | 3 | 5 | 0.4 | 2 | 2 | t1=30, t2=90 |
+
+### Visual Profile
+
+| Field | Value |
+|-------|-------|
+| Accent color | `#0088CC` (blue) |
+| POI icon | Rescue marker |
+| Flood rendering | Blue-tinted traffic zones (road closures as flood proxy) |
+| HUD shows | Flood zones, rescue POI, distance_to_task, assessment progress |
 
 ---
 
-## Briefing Event Schema
+## Mission Family 3: Fire Surveillance
 
-Every episode logs the briefing as the first event (step_idx=0):
+### Identity
 
-```json
-{
-  "step": 0,
-  "type": "mission_briefing",
-  "payload": {
-    "mission_type": "civil_protection",
-    "domain": "urban",
-    "origin_name": "Penteli Fire Station (Penteli)",
-    "destination_name": "Evacuation Zone Alpha",
-    "objective": "Emergency medical delivery during wildfire crisis",
-    "deliverable": "Thermal-sealed medical kit",
-    "constraints": ["Avoid active fire zones", "Respect dynamic no-fly restrictions"],
-    "service_time_steps": 0,
-    "priority": "critical",
-    "max_time_steps": 250
-  }
-}
-```
+| Field | Value |
+|-------|-------|
+| Mission Type | `FIRE_SURVEILLANCE` |
+| Registry Prefix | `gov_fire_surveillance_{easy,medium,hard}` |
+| Domain | `fire_surveillance` |
+| Inspired by | Evros/Έβρος megafire 2023 |
+| Building Density | 0.16 (easy/medium), 0.22 (hard) |
 
-## Contract References
+### Incident Provenance
 
-- **MC-1**: Every episode has a mission objective (this briefing provides it)
-- **MC-4**: Results include the briefing in the event log
+**2023 Evros Megafire (Alexandroupolis Region)**
+
+The August 2023 Evros fire was the largest single wildfire in EU history,
+burning over 96,000 hectares. Manned firefighting aircraft established
+complex NFZ corridors, and real-time perimeter mapping was critical for
+command post operations. [CITE] EFFIS Special Report Evros 2023;
+[CITE] HCAA NOTAM Series A2023-EV
+
+### Mission Objective
+
+**Aerial Survey of Active Fire Perimeter for Command Post**
+
+The UAV must survey fire perimeter points while avoiding active NFZ corridors
+(manned aircraft). Fast-spreading fire dynamics and multiple NFZs create
+a challenging environment requiring service_time hover at survey points.
+
+| Field | Value |
+|-------|-------|
+| Objective Label | "Aerial Fire Perimeter Survey" |
+| Deliverable | `perimeter_report` |
+| Reason String | "Aerial survey of active fire perimeter for command post" |
+| Service Time | 3 steps (hover survey) |
+
+### Task Queue
+
+| Category | Weight | Time Decay | Service Time | Description |
+|----------|--------|-----------|--------------|-------------|
+| `survey_point` | 1.0 | 0.02 | 3 steps | Perimeter survey — hover + sensor sweep |
+
+### Difficulty Matrix
+
+| Difficulty | Dynamics | Fire Ignitions | Wind | NFZ Zones | Forced Replans | Event Timing |
+|------------|----------|---------------|------|-----------|---------------|-------------|
+| Easy | Static | 0 | 0.2 | 0 | 0 | — |
+| Medium | Moderate | 3 | 0.4 | 2 | 1 | t1=40, t2=120 |
+| Hard | Severe | 5 | 0.6 | 3 | 2 | t1=25, t2=80 |
+
+### Visual Profile
+
+| Field | Value |
+|-------|-------|
+| Accent color | `#00CC88` (green) |
+| POI icon | Survey camera |
+| Fire rendering | Red-orange CA cells + NFZ corridor overlays |
+| HUD shows | Fire front, NFZ corridors, survey POI, coverage % |
+
+---
+
+## Restriction Zone Types (Cross-Mission)
+
+| Zone Type | Mission | Color | Description |
+|-----------|---------|-------|-------------|
+| `firefighting_corridor` | Fire Delivery | Orange `#FF8C00` | Manned aircraft corridor |
+| `flood_exclusion` | Flood Rescue | Blue `#1E90FF` | Flooded area / road closure |
+| `aircraft_corridor` | Fire Surveillance | Purple `#9B59B6` | Active firefighting NFZ |
+
+---
+
+## Difficulty Knobs (All Missions)
+
+These knobs scale identically across mission families:
+
+| Knob | Easy | Medium | Hard |
+|------|------|--------|------|
+| `enable_fire` | false | true | true |
+| `enable_traffic` | false | true | true |
+| `enable_dynamic_nfz` | false | true | true |
+| `fire_blocks_movement` | false | true | true |
+| `traffic_blocks_movement` | false | true | true |
+| `force_replan_count` | 0 | 1 | 2 |
+| `replan_every_steps` | 6 | 6 | 6 |
+
+---
+
+## MC Contract Mapping
+
+| Contract | Card Section |
+|----------|-------------|
+| MC-1 | Objective POI + Reason String (each mission) |
+| MC-2 | Task Queue: Service Time column |
+| MC-3 | Visual Profile + Objective Label + Deliverable |
+| MC-4 | Difficulty Matrix -> termination conditions |
