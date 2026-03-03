@@ -1,4 +1,4 @@
-# UAVBench v2 — Traceability Matrix
+# UAVBench — Traceability Matrix
 
 > Req → Module → Test → Evidence
 
@@ -11,26 +11,26 @@ Every requirement traces from specification to code, test, and evidence artifact
 
 | Req ID | Requirement Summary | Source Module(s) | Test File(s) | Evidence Artifact | Phase |
 |--------|-------------------|------------------|-------------|-------------------|-------|
-| DC-1 | ONE RNG source via `reset(seed)` | `envs/urban.py` | `contract_test_determinism.py` | `outputs/v2/rng_audit.json` | 2 |
-| DC-2 | Bit-identical outputs for same inputs | `benchmark/runner.py`, `benchmark/determinism.py` | `contract_test_determinism.py` | `outputs/v2/determinism_hashes.json` | 2 |
-| FC-1 | Interdictions on BFS corridor, not planner path | `benchmark/fairness.py` | `contract_test_fairness.py` | `outputs/v2/fairness_audit.json` | 5 |
-| FC-2 | Equivalent degraded snapshots across planners | `envs/urban.py` | `contract_test_fairness.py` | `outputs/v2/fairness_audit.json` | 5 |
-| EC-1 | Rejected moves log reason/layer/cell/step | `envs/urban.py` | `contract_test_decision_record.py` | `outputs/v2/decision_record_sample.json` | 3 |
-| EC-2 | Accepted moves log move_accepted + dynamics counter | `envs/urban.py` | `contract_test_decision_record.py` | `outputs/v2/decision_record_sample.json` | 3 |
-| GC-1 | Multi-depth relaxation with logging | `guardrail/feasibility.py` | `contract_test_guardrail.py` | `outputs/v2/guardrail_audit.json` | 6 |
-| GC-2 | Infeasible episodes flagged + exclusion rate | `guardrail/feasibility.py`, `metrics/compute.py` | `contract_test_guardrail.py` | `outputs/v2/guardrail_audit.json` | 6 |
-| EV-1 | Authoritative step_idx on every event | `benchmark/runner.py`, `envs/urban.py` | `contract_test_event_semantics.py` | `outputs/v2/event_semantics_audit.json` | 3 |
-| VC-1 | Planned path visible when plan_len > 1 | `visualization/renderer.py`, `visualization/overlays.py` | `contract_test_visual_truth.py` | `outputs/v2/viz_frame_checks.json` | 8 |
-| VC-2 | NO_PLAN/STALE badge when plan missing/stale | `visualization/hud.py` | `contract_test_visual_truth.py` | `outputs/v2/viz_frame_checks.json` | 8 |
-| VC-3 | Forced block lifecycle rendered on HUD | `visualization/hud.py`, `visualization/overlays.py` | `contract_test_visual_truth.py` | `outputs/v2/viz_frame_checks.json` | 8 |
-| MC-1 | Objective POI with human-readable reason | `missions/engine.py`, `missions/schema.py` | `contract_test_mission_story.py` | `outputs/v2/mission_story_sample.json` | 2 |
-| MC-2 | Task completion = reach + service_time | `missions/engine.py` | `contract_test_mission_story.py` | `outputs/v2/mission_story_sample.json` | 2 |
-| MC-3 | HUD shows mission_domain, objective_label, etc. | `visualization/hud.py`, `envs/urban.py` | `contract_test_mission_story.py` | `outputs/v2/mission_story_sample.json` | 2 |
-| MC-4 | termination_reason + objective_completed in results | `envs/urban.py`, `metrics/schema.py` | `contract_test_mission_story.py` | `outputs/v2/mission_story_sample.json` | 2 |
-| PC-1 | Motion legal under 4-connected + STAY | `envs/urban.py`, `benchmark/runner.py` | `integration_test_runner_e2e.py` | `outputs/v2/e2e_episode.json` | 7 |
-| PC-2 | planned_waypoints_len vs executed_steps_len | `metrics/schema.py`, `metrics/compute.py` | `integration_test_runner_e2e.py` | `outputs/v2/e2e_episode.json` | 7 |
-| MP-1 | ONE compute_blocking_mask for step + guardrail | `blocking.py` | `contract_test_mask_parity.py` | `outputs/v2/mask_parity_audit.json` | 4 |
-| RS-1 | Replan storm prevention (<=20% naive) | `planners/base.py`, `benchmark/runner.py` | `contract_test_replan_storm_regression.py` | `outputs/v2/replan_storm_audit.json` | 7 |
+| DC-1 | ONE RNG source via `reset(seed)` | `envs/urban.py` | `contract_test_determinism.py` | `outputs/rng_audit.json` | 2 |
+| DC-2 | Bit-identical outputs for same inputs | `benchmark/runner.py`, `benchmark/determinism.py` | `contract_test_determinism.py` | `outputs/determinism_hashes.json` | 2 |
+| FC-1 | Interdictions on BFS corridor, not planner path | `dynamics/forced_block.py` | `contract_test_fairness.py` | `outputs/fairness_audit.json` | 5 |
+| FC-2 | Equivalent degraded snapshots across planners | `envs/urban.py` | `contract_test_fairness.py` | `outputs/fairness_audit.json` | 5 |
+| EC-1 | Rejected moves log reason/layer/cell/step | `envs/urban.py` | `contract_test_decision_record.py` | `outputs/decision_record_sample.json` | 3 |
+| EC-2 | Accepted moves log move_accepted + dynamics counter | `envs/urban.py` | `contract_test_decision_record.py` | `outputs/decision_record_sample.json` | 3 |
+| GC-1 | Multi-depth relaxation with logging | `guardrail/feasibility.py` | `contract_test_guardrail.py` | `outputs/guardrail_audit.json` | 6 |
+| GC-2 | Infeasible episodes flagged + exclusion rate | `guardrail/feasibility.py`, `metrics/compute.py` | `contract_test_guardrail.py` | `outputs/guardrail_audit.json` | 6 |
+| EV-1 | Authoritative step_idx on every event | `benchmark/runner.py`, `envs/urban.py` | `contract_test_event_semantics.py` | `outputs/event_semantics_audit.json` | 3 |
+| VC-1 | Planned path visible when plan_len > 1 | `visualization/renderer.py`, `visualization/overlays.py` | `contract_test_visual_truth.py` | `outputs/viz_frame_checks.json` | 8 |
+| VC-2 | NO_PLAN/STALE badge when plan missing/stale | `visualization/hud.py` | `contract_test_visual_truth.py` | `outputs/viz_frame_checks.json` | 8 |
+| VC-3 | Forced block lifecycle rendered on HUD | `visualization/hud.py`, `visualization/overlays.py` | `contract_test_visual_truth.py` | `outputs/viz_frame_checks.json` | 8 |
+| MC-1 | Objective POI with human-readable reason | `missions/engine.py`, `missions/schema.py` | `contract_test_mission_story.py` | `outputs/mission_story_sample.json` | 2 |
+| MC-2 | Task completion = reach + service_time | `missions/engine.py` | `contract_test_mission_story.py` | `outputs/mission_story_sample.json` | 2 |
+| MC-3 | HUD shows mission_domain, objective_label, etc. | `visualization/hud.py`, `envs/urban.py` | `contract_test_mission_story.py` | `outputs/mission_story_sample.json` | 2 |
+| MC-4 | termination_reason + objective_completed in results | `envs/urban.py`, `metrics/schema.py` | `contract_test_mission_story.py` | `outputs/mission_story_sample.json` | 2 |
+| PC-1 | Motion legal under 4-connected + STAY | `envs/urban.py`, `benchmark/runner.py` | `integration_test_runner_e2e.py` | `outputs/e2e_episode.json` | 7 |
+| PC-2 | planned_waypoints_len vs executed_steps_len | `metrics/schema.py`, `metrics/compute.py` | `integration_test_runner_e2e.py` | `outputs/e2e_episode.json` | 7 |
+| MP-1 | ONE compute_blocking_mask for step + guardrail | `blocking.py` | `contract_test_mask_parity.py` | `outputs/mask_parity_audit.json` | 4 |
+| RS-1 | Replan storm prevention (<=20% naive) | `planners/base.py`, `benchmark/runner.py` | `contract_test_replan_storm_regression.py` | `outputs/replan_storm_audit.json` | 7 |
 
 ---
 
@@ -68,7 +68,7 @@ Every requirement traces from specification to code, test, and evidence artifact
 |--------|-------------------|------------------|-------------|----------|
 | PL-1 | PlannerBase ABC with plan() | `planners/base.py` | `unit_test_planner_base.py` | — |
 | PL-2 | PlanResult dataclass with 4 fields | `planners/base.py` | `unit_test_planner_base.py` | — |
-| PL-3 | 6 planners in PLANNERS registry | `planners/__init__.py` | `unit_test_planner_registry.py` | — |
+| PL-3 | 4 planners in PLANNERS registry | `planners/__init__.py` | `unit_test_planner_registry.py` | — |
 | PL-4 | should_replan() overridable | `planners/base.py` | `unit_test_planner_base.py` | — |
 | PL-5 | update() for incremental planners | `planners/dstar_lite.py` | `unit_test_dstar_lite_api.py` | — |
 | PL-6 | Paths as list[(x,y)] inclusive start+goal | `planners/*.py` | `unit_test_planner_paths.py` | — |
@@ -92,8 +92,8 @@ Every requirement traces from specification to code, test, and evidence artifact
 |--------|-------------------|------------------|-------------|----------|
 | RU-1 | Single runner at benchmark/runner.py | `benchmark/runner.py` | `integration_test_runner_e2e.py` | `grep -c runner src/uavbench/benchmark/` |
 | RU-2 | Single CLI at cli/benchmark.py | `cli/benchmark.py` | `integration_test_cli.py` | `python -m uavbench --help` |
-| RU-3 | Runner orchestrates full episode | `benchmark/runner.py` | `integration_test_runner_e2e.py` | `outputs/v2/e2e_episode.json` |
-| RU-4 | Runner owns authoritative step_idx | `benchmark/runner.py` | `contract_test_event_semantics.py` | `outputs/v2/event_semantics_audit.json` |
+| RU-3 | Runner orchestrates full episode | `benchmark/runner.py` | `integration_test_runner_e2e.py` | `outputs/e2e_episode.json` |
+| RU-4 | Runner owns authoritative step_idx | `benchmark/runner.py` | `contract_test_event_semantics.py` | `outputs/event_semantics_audit.json` |
 | RU-5 | CLI accepts --scenarios, --planners, etc. | `cli/benchmark.py` | `integration_test_cli.py` | `python -m uavbench run --help` |
 
 ---
@@ -103,8 +103,8 @@ Every requirement traces from specification to code, test, and evidence artifact
 | Req ID | Requirement Summary | Source Module(s) | Test File(s) | Evidence |
 |--------|-------------------|------------------|-------------|----------|
 | VZ-1 | paper_min and ops_full modes | `visualization/renderer.py` | `unit_test_renderer_modes.py` | — |
-| VZ-2 | 12-layer z-order stack | `visualization/renderer.py`, `visualization/overlays.py` | `contract_test_visual_truth.py` | `outputs/v2/viz_manifest.csv` |
-| VZ-3 | Deterministic GIF export | `visualization/renderer.py` | `contract_test_visual_truth.py` | `outputs/v2/viz_frame_checks.json` |
+| VZ-2 | 12-layer z-order stack | `visualization/renderer.py`, `visualization/overlays.py` | `contract_test_visual_truth.py` | `outputs/viz_manifest.csv` |
+| VZ-3 | Deterministic GIF export | `visualization/renderer.py` | `contract_test_visual_truth.py` | `outputs/viz_frame_checks.json` |
 
 ---
 
@@ -112,15 +112,15 @@ Every requirement traces from specification to code, test, and evidence artifact
 
 | Req ID | Requirement Summary | Source Module(s) | Test File(s) | Evidence |
 |--------|-------------------|------------------|-------------|----------|
-| GR-1 | Uses compute_blocking_mask() (MP-1) | `guardrail/feasibility.py`, `blocking.py` | `contract_test_mask_parity.py` | `outputs/v2/mask_parity_audit.json` |
-| GR-2 | D1→D2→D3 depths logged | `guardrail/feasibility.py` | `contract_test_guardrail.py` | `outputs/v2/guardrail_audit.json` |
+| GR-1 | Uses compute_blocking_mask() (MP-1) | `guardrail/feasibility.py`, `blocking.py` | `contract_test_mask_parity.py` | `outputs/mask_parity_audit.json` |
+| GR-2 | D1→D2→D3 depths logged | `guardrail/feasibility.py` | `contract_test_guardrail.py` | `outputs/guardrail_audit.json` |
 | GR-3 | Topology counter skips BFS when unchanged | `guardrail/feasibility.py` | `unit_test_guardrail_topology.py` | — |
 
 ---
 
 ## Evidence Artifact Inventory
 
-All evidence artifacts live under `outputs/v2/`. They are regenerated by `scripts/export_v2_artifacts.py`.
+All evidence artifacts live under `outputs/`. They are regenerated by `scripts/export_artifacts.py`.
 
 | Artifact | Contents | Generated By |
 |----------|---------|-------------|
@@ -136,4 +136,4 @@ All evidence artifacts live under `outputs/v2/`. They are regenerated by `script
 | `viz_manifest.csv` | Frame count, file size, hash per GIF | `contract_test_visual_truth.py` |
 | `viz_frame_checks.json` | Per-frame pixel/HUD assertions | `contract_test_visual_truth.py` |
 | `e2e_episode.json` | Full episode trace (trajectory, events, metrics) | `integration_test_runner_e2e.py` |
-| `repro_manifest.json` | Single-command reproduction proof | `scripts/export_v2_artifacts.py` |
+| `repro_manifest.json` | Single-command reproduction proof | `scripts/export_artifacts.py` |

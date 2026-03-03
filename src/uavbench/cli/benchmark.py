@@ -1,4 +1,4 @@
-"""UAVBench v2 CLI entry point (RU-2).
+"""UAVBench CLI entry point (RU-2).
 
 Exactly ONE CLI. No forks, no duplicates.
 """
@@ -13,7 +13,7 @@ def main(argv: list[str] | None = None) -> None:
     """CLI entry point for ``python -m uavbench``."""
     parser = argparse.ArgumentParser(
         prog="uavbench",
-        description="UAVBench v2 — UAV navigation benchmark",
+        description="UAVBench — UAV navigation benchmark",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -23,7 +23,7 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--planners", type=str, default="astar")
     run_parser.add_argument("--trials", type=int, default=1)
     run_parser.add_argument("--seed-base", type=int, default=0)
-    run_parser.add_argument("--output-dir", type=str, default="outputs/v2")
+    run_parser.add_argument("--output-dir", type=str, default="outputs")
 
     args = parser.parse_args(argv)
 

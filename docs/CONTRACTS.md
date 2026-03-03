@@ -1,4 +1,4 @@
-# UAVBench v2 — Canonical Contracts
+# UAVBench — Canonical Contracts
 
 These contracts are the source of truth. Every contract maps to at least one test file.
 When implementing, reference contracts by ID (e.g., "Enforces DC-1").

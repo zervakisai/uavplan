@@ -1,6 +1,6 @@
-# UAVBench v2 — Test Plan
+# UAVBench — Test Plan
 
-All tests live under `tests/v2/`. Tests are written spec-first (before implementation).
+All tests live under `tests/`. Tests are written spec-first (before implementation).
 Every contract has a named test file with explicit acceptance criteria.
 
 ---
@@ -34,7 +34,7 @@ Each test file maps to one or more contract IDs.
 | `test_identical_seed_identical_frames` | DC-2 | Frame hash arrays from two identical runs are element-wise equal |
 | `test_different_seed_different_output` | DC-2 | Two runs with seeds 42 and 43 produce different trajectory hashes |
 
-**Evidence**: `outputs/v2/determinism_hashes.json`, `outputs/v2/rng_audit.json`
+**Evidence**: `outputs/determinism_hashes.json`, `outputs/rng_audit.json`
 
 ---
 
@@ -50,7 +50,7 @@ Each test file maps to one or more contract IDs.
 | `test_interdiction_planner_agnostic` | FC-1 | Same `(scenario, seed)` with `astar` vs `theta_star` produces identical interdiction cell coordinates |
 | `test_identical_dynamic_state_across_planners` | FC-2 | At each step, `get_dynamic_state()` returns byte-identical arrays for two different planners running the same `(scenario, seed)` |
 
-**Evidence**: `outputs/v2/fairness_audit.json`
+**Evidence**: `outputs/fairness_audit.json`
 
 ---
 
@@ -69,7 +69,7 @@ Each test file maps to one or more contract IDs.
 | `test_accepted_move_has_fields` | EC-2 | Info dict contains `accepted_move is True` and `dynamics_step` integer |
 | `test_dynamics_step_matches_runner` | EC-2 | `dynamics_step` equals the runner's current step counter |
 
-**Evidence**: `outputs/v2/decision_record_sample.json`
+**Evidence**: `outputs/decision_record_sample.json`
 
 ---
 
@@ -86,7 +86,7 @@ Each test file maps to one or more contract IDs.
 | `test_step_idx_matches_runner` | EV-1 | For events logged during step N, `event["step_idx"] == N` |
 | `test_no_off_by_one` | EV-1 | Reset event has `step_idx=0`; first step event has `step_idx=1` |
 
-**Evidence**: `outputs/v2/event_semantics_audit.json`
+**Evidence**: `outputs/event_semantics_audit.json`
 
 ---
 
@@ -105,7 +105,7 @@ Each test file maps to one or more contract IDs.
 | `test_infeasible_flagged` | GC-2 | When all depths fail, `feasible_after_guardrail=False` in info dict |
 | `test_infeasible_rate_in_metrics` | GC-2 | Aggregate metrics contain `infeasible_rate` as float [0,1] |
 
-**Evidence**: `outputs/v2/guardrail_audit.json`
+**Evidence**: `outputs/guardrail_audit.json`
 
 ---
 
@@ -122,7 +122,7 @@ Each test file maps to one or more contract IDs.
 | `test_guardrail_uses_blocking_mask` | MP-1 | `guardrail.check()` code path calls `compute_blocking_mask()` |
 | `test_masks_identical_at_every_step` | MP-1 | Over a 50-step dynamic episode, the mask used by step legality == the mask used by guardrail BFS at each step |
 
-**Evidence**: `outputs/v2/mask_parity_audit.json`
+**Evidence**: `outputs/mask_parity_audit.json`
 
 ---
 
@@ -142,7 +142,7 @@ Each test file maps to one or more contract IDs.
 | `test_termination_reason_in_final_info` | MC-4 | Final info dict has `termination_reason` (TerminationReason enum) and `objective_completed` (bool) |
 | `test_successful_episode_objective_completed` | MC-4 | When agent reaches goal and completes tasks, `objective_completed is True` |
 
-**Evidence**: `outputs/v2/mission_story_sample.json`
+**Evidence**: `outputs/mission_story_sample.json`
 
 ---
 
@@ -163,7 +163,7 @@ Each test file maps to one or more contract IDs.
 | `test_forced_block_active` | VC-3 | While block is active, HUD shows "FORCED BLOCK: ACTIVE" |
 | `test_forced_block_cleared` | VC-3 | After guardrail clears block, HUD shows "FORCED BLOCK: CLEARED" |
 
-**Evidence**: `outputs/v2/viz_manifest.csv`, `outputs/v2/viz_frame_checks.json`
+**Evidence**: `outputs/viz_manifest.csv`, `outputs/viz_frame_checks.json`
 
 ---
 
@@ -179,7 +179,7 @@ Each test file maps to one or more contract IDs.
 | `test_naive_definition` | RS-1 | Naive replan = same position AND identical blocking mask hash as previous replan |
 | `test_cooldown_enforced` | RS-1 | No two replans occur within 3 steps of each other (unless forced) |
 
-**Evidence**: `outputs/v2/replan_storm_audit.json`
+**Evidence**: `outputs/replan_storm_audit.json`
 
 ---
 
@@ -238,7 +238,7 @@ Integration tests verify the full pipeline from CLI to evidence artifacts.
 ### 5.1 Fast Suite (every push)
 
 ```bash
-pytest tests/v2/unit_test_*.py tests/v2/contract_test_*.py -q --timeout=60
+pytest tests/unit_test_*.py tests/contract_test_*.py -q --timeout=60
 ```
 
 - All unit + contract tests
@@ -248,7 +248,7 @@ pytest tests/v2/unit_test_*.py tests/v2/contract_test_*.py -q --timeout=60
 ### 5.2 Slow Suite (nightly / pre-merge)
 
 ```bash
-pytest tests/v2/ -q --timeout=300
+pytest tests/ -q --timeout=300
 ```
 
 - All tests including integration
@@ -258,7 +258,7 @@ pytest tests/v2/ -q --timeout=300
 ### 5.3 Determinism Suite (release gate)
 
 ```bash
-pytest tests/v2/contract_test_determinism.py tests/v2/integration_test_determinism_e2e.py -q --timeout=600
+pytest tests/contract_test_determinism.py tests/integration_test_determinism_e2e.py -q --timeout=600
 ```
 
 - Full determinism verification

@@ -1,4 +1,4 @@
-# UAVBench v2 — Mission Story Cards
+# UAVBench — Mission Story Cards
 
 Each mission family has 3 difficulty variants (easy/medium/hard).
 All missions share the same tile and objective structure; difficulty modifies

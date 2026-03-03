@@ -408,8 +408,6 @@ class UrbanEnvV2(gym.Env):
                 if self._traffic is not None
                 else None
             ),
-            "moving_target_buffer": None,  # Phase 4+
-            "intruder_buffer": None,  # Phase 4+
             "dynamic_nfz_mask": (
                 self._nfz.get_nfz_mask() if self._nfz is not None else None
             ),
@@ -478,10 +476,6 @@ class UrbanEnvV2(gym.Env):
             return RejectReason.DYNAMIC_NFZ
         if dyn_state.get("forced_block_mask") is not None and dyn_state["forced_block_mask"][ny, nx]:
             return RejectReason.FORCED_BLOCK
-        if dyn_state.get("moving_target_buffer") is not None and dyn_state["moving_target_buffer"][ny, nx]:
-            return RejectReason.MOVING_TARGET
-        if dyn_state.get("intruder_buffer") is not None and dyn_state["intruder_buffer"][ny, nx]:
-            return RejectReason.INTRUDER
         # Fallback (should not happen if blocking mask is consistent)
         return RejectReason.BUILDING
 

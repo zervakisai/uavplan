@@ -29,8 +29,6 @@ class RejectReason(str, Enum):
     TRAFFIC_CLOSURE = "traffic_closure"
     FIRE = "fire"
     TRAFFIC_BUFFER = "traffic_buffer"
-    MOVING_TARGET = "moving_target"
-    INTRUDER = "intruder"
     DYNAMIC_NFZ = "dynamic_nfz"
     OUT_OF_BOUNDS = "out_of_bounds"
 
