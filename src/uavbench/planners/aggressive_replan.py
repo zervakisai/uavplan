@@ -81,14 +81,26 @@ class AggressiveReplanPlanner(PlannerBase):
         )
         mask_hash = hashlib.sha256(mask.tobytes()).hexdigest()
 
+        # Calibration: first call records baseline (no replan)
+        if self._last_mask_hash == "":
+            self._last_mask_hash = mask_hash
+            self._last_replan_pos = current_pos
+            return (False, "calibration")
+
         if mask_hash == self._last_mask_hash:
             return (False, "no_change")
 
-        # Path-progress: skip if same position + same mask
-        if (
-            current_pos == self._last_replan_pos
-            and mask_hash == self._last_mask_hash
-        ):
+        # Mask changed — check if path is actually affected
+        path_blocked = False
+        for px, py in current_path:
+            if 0 <= py < mask.shape[0] and 0 <= px < mask.shape[1]:
+                if mask[py, px]:
+                    path_blocked = True
+                    break
+
+        # RS-1: skip if same position AND path still clear
+        if current_pos == self._last_replan_pos and not path_blocked:
+            self._last_mask_hash = mask_hash
             return (False, "naive_skip")
 
         self._last_replan_step = step

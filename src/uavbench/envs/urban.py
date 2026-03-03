@@ -205,6 +205,7 @@ class UrbanEnvV2(gym.Env):
                 map_shape=map_shape,
                 rng=fire_rng,
                 n_ignition=self.config.fire_ignition_points,
+                roads_mask=self._roads,
                 corridor_cells=self._bfs_corridor,
             )
 

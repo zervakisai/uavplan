@@ -25,6 +25,18 @@ def compute_episode_metrics(
 
     planned_len = len(plan_result.path) if plan_result and plan_result.success else 0
 
+    # Count collisions and NFZ violations from events (EC-1)
+    collision_count = 0
+    nfz_violations = 0
+    for ev in events:
+        reason = ev.get("reject_reason", "")
+        reason_str = reason.value if hasattr(reason, "value") else str(reason)
+        if reason_str in ("building", "fire", "forced_block", "traffic_closure",
+                          "traffic_buffer"):
+            collision_count += 1
+        elif reason_str in ("no_fly", "dynamic_nfz"):
+            nfz_violations += 1
+
     return {
         "scenario_id": scenario_id,
         "planner_id": planner_id,
@@ -32,10 +44,10 @@ def compute_episode_metrics(
         "success": success,
         "termination_reason": tr_str,
         "objective_completed": final_info.get("objective_completed", False),
-        "path_length": len(trajectory),
+        "path_length": planned_len,
         "executed_steps_len": len(trajectory),
         "planned_waypoints_len": planned_len,
         "replans": replan_count,
-        "collision_count": 0,
-        "nfz_violations": 0,
+        "collision_count": collision_count,
+        "nfz_violations": nfz_violations,
     }
