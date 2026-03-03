@@ -138,13 +138,6 @@ class DStarLitePlanner(PlannerBase):
         if mask_hash == self._last_mask_hash:
             return (False, "no_change")
 
-        # Path-progress: skip if same position + same mask (RS-1)
-        if (
-            current_pos == self._last_replan_pos
-            and mask_hash == self._last_mask_hash
-        ):
-            return (False, "naive_skip")
-
         # Check if any path cell is now blocked
         path_blocked = False
         for px, py in current_path:
@@ -157,6 +150,14 @@ class DStarLitePlanner(PlannerBase):
             # Mask changed but path is still clear — record and skip
             self._last_mask_hash = mask_hash
             return (False, "path_clear")
+
+        # RS-1: skip if same position AND already replanned at this step range
+        if (
+            current_pos == self._last_replan_pos
+            and step - self._last_replan_step <= self._cooldown
+        ):
+            self._last_mask_hash = mask_hash
+            return (False, "naive_skip")
 
         self._last_replan_step = step
         self._last_replan_pos = current_pos
