@@ -86,6 +86,7 @@ class ScenarioConfig:
 
     # Fire
     fire_ignition_points: int = 0
+    fire_buffer_radius: int = 3  # safety buffer cells around burning fire (FD-2)
 
     # Traffic
     num_emergency_vehicles: int = 0

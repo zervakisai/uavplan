@@ -90,13 +90,35 @@ class ForcedBlockManager:
         interior = bfs_corridor[1:-1] if len(bfs_corridor) > 2 else []
         n = min(force_replan_count, len(interior))
 
+        # FC-1: Build 3-wide perpendicular area interdictions.
+        # Each interdiction is a rectangular zone perpendicular to the
+        # corridor direction, 3 cells wide. This prevents any-angle
+        # planners (Theta*) from threading between single blocked cells.
+        self._forced_cells: list[tuple[int, int]] = []
         if n > 0 and len(interior) > 0:
-            # Pick cells spread along the corridor (not clustered)
-            # Use evenly spaced indices for deterministic placement
             indices = np.linspace(0, len(interior) - 1, n, dtype=int)
-            self._forced_cells = [interior[i] for i in indices]
-        else:
-            self._forced_cells = []
+            for idx in indices:
+                cx, cy = interior[idx]
+                # Determine corridor direction at this point
+                prev_idx = max(0, idx - 1)
+                next_idx = min(len(interior) - 1, idx + 1)
+                px, py = interior[prev_idx]
+                nx_c, ny_c = interior[next_idx]
+                ddx, ddy = nx_c - px, ny_c - py
+
+                # Perpendicular direction (rotated 90 degrees)
+                if abs(ddx) >= abs(ddy):
+                    # Corridor runs east-west → block north-south
+                    perp = [(0, -1), (0, 0), (0, 1)]
+                else:
+                    # Corridor runs north-south → block east-west
+                    perp = [(-1, 0), (0, 0), (1, 0)]
+
+                for pdx, pdy in perp:
+                    bx, by = cx + pdx, cy + pdy
+                    if 0 <= by < map_shape[0] and 0 <= bx < map_shape[1]:
+                        if (bx, by) not in self._forced_cells:
+                            self._forced_cells.append((bx, by))
 
         self._mask = np.zeros(map_shape, dtype=bool)
 

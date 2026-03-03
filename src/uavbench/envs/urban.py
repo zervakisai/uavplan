@@ -12,7 +12,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from uavbench.blocking import compute_blocking_mask
+from uavbench.blocking import SMOKE_BLOCKING_THRESHOLD, compute_blocking_mask
 from uavbench.dynamics.fire_ca import FireSpreadModel
 from uavbench.dynamics.forced_block import ForcedBlockManager, bfs_shortest_path
 from uavbench.dynamics.interaction_engine import InteractionEngine
@@ -418,10 +418,12 @@ class UrbanEnvV2(gym.Env):
 
     def _step_dynamics(self) -> None:
         """Advance all dynamic layers by one timestep."""
-        fire_mask = self._fire.fire_mask if self._fire is not None else None
-
+        # Fire advances first
         if self._fire is not None:
             self._fire.step()
+
+        # All other dynamics see the NEW fire state (consistent)
+        fire_mask = self._fire.fire_mask if self._fire is not None else None
 
         if self._traffic is not None:
             self._traffic.step(fire_mask=fire_mask)
@@ -467,8 +469,17 @@ class UrbanEnvV2(gym.Env):
             return RejectReason.NO_FLY
         if dyn_state.get("fire_mask") is not None and dyn_state["fire_mask"][ny, nx]:
             return RejectReason.FIRE
-        if dyn_state.get("smoke_mask") is not None and dyn_state["smoke_mask"][ny, nx] >= 0.5:
-            return RejectReason.FIRE
+        # Fire buffer: cell not burning but within fire_buffer_radius (FD-2)
+        if self.config.fire_buffer_radius > 0 and dyn_state.get("fire_mask") is not None:
+            from scipy.ndimage import binary_dilation, generate_binary_structure
+            fire = dyn_state["fire_mask"]
+            if fire.any():
+                struct = generate_binary_structure(2, 1)
+                buf = binary_dilation(fire, structure=struct, iterations=self.config.fire_buffer_radius)
+                if buf[ny, nx]:
+                    return RejectReason.FIRE_BUFFER
+        if dyn_state.get("smoke_mask") is not None and dyn_state["smoke_mask"][ny, nx] >= SMOKE_BLOCKING_THRESHOLD:
+            return RejectReason.SMOKE
         if dyn_state.get("traffic_closure_mask") is not None and dyn_state["traffic_closure_mask"][ny, nx]:
             return RejectReason.TRAFFIC_CLOSURE
         if dyn_state.get("traffic_occupancy_mask") is not None and dyn_state["traffic_occupancy_mask"][ny, nx]:

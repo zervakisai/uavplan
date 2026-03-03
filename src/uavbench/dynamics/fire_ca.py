@@ -110,8 +110,10 @@ class FireSpreadModel:
         self._burn_timer[burning] += dt
 
         # --- Spread (FD-2: isotropic, equal probability all 8 neighbors) ---
-        candidates_y, candidates_x = [], []
-        candidate_probs = []
+        # Deduplicate: when multiple burning neighbors nominate the same
+        # unburned cell, keep only the max probability. This avoids wasting
+        # RNG draws on duplicates (FD-4 determinism stability).
+        candidate_map: dict[tuple[int, int], float] = {}
 
         burning_ys, burning_xs = np.where(burning)
         for by, bx in zip(burning_ys, burning_xs):
@@ -130,18 +132,18 @@ class FireSpreadModel:
                 if self._roads[ny, nx]:
                     prob *= 0.5
 
-                candidates_y.append(ny)
-                candidates_x.append(nx)
-                candidate_probs.append(prob)
+                key = (int(ny), int(nx))
+                if key not in candidate_map or prob > candidate_map[key]:
+                    candidate_map[key] = prob
 
-        # Stochastic ignition of candidates
-        if candidates_y:
-            rolls = self._rng.random(len(candidates_y))
-            probs = np.array(candidate_probs)
-            ignite_mask = rolls < probs
-            for i in range(len(candidates_y)):
-                if ignite_mask[i]:
-                    self._state[candidates_y[i], candidates_x[i]] = BURNING
+        # Stochastic ignition of unique candidates
+        if candidate_map:
+            cells = list(candidate_map.keys())
+            probs = np.array([candidate_map[c] for c in cells])
+            rolls = self._rng.random(len(cells))
+            for i, (cy, cx) in enumerate(cells):
+                if rolls[i] < probs[i]:
+                    self._state[cy, cx] = BURNING
 
         # --- Burnout ---
         burnout_mask = burning & (self._burn_timer >= self._burnout_time)

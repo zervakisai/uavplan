@@ -148,6 +148,14 @@ def _get_font_patterns() -> dict[str, list[int]]:
         '%': [0b1001, 0b0010, 0b0100, 0b1001, 0b0000, 0b0000],
         '=': [0b0000, 0b1111, 0b0000, 0b1111, 0b0000, 0b0000],
         '+': [0b0000, 0b0100, 0b1110, 0b0100, 0b0000, 0b0000],
+        '!': [0b0100, 0b0100, 0b0100, 0b0000, 0b0100, 0b0000],
+        '?': [0b0110, 0b1001, 0b0010, 0b0000, 0b0010, 0b0000],
+        '#': [0b1010, 0b1111, 0b1010, 0b1111, 0b1010, 0b0000],
+        '*': [0b0100, 0b1110, 0b0100, 0b1010, 0b0000, 0b0000],
+        '<': [0b0010, 0b0100, 0b1000, 0b0100, 0b0010, 0b0000],
+        '>': [0b1000, 0b0100, 0b0010, 0b0100, 0b1000, 0b0000],
+        '[': [0b0110, 0b0100, 0b0100, 0b0100, 0b0110, 0b0000],
+        ']': [0b0110, 0b0010, 0b0010, 0b0010, 0b0110, 0b0000],
     }
 
 
@@ -206,11 +214,12 @@ def render_hud_text(
     hud_x = 2
     hud_w = min(W - 4, W)
 
-    # Draw semi-transparent background (#0A0F1A, alpha=0.82)
-    bg_region = frame[hud_y:hud_y + hud_h, hud_x:hud_x + hud_w].astype(np.float32)
-    bg_color = np.array([10, 15, 26], dtype=np.float32)
+    # Draw semi-transparent background (#0A0F1A, alpha=210/256 ~= 0.82)
+    # Integer-only blend for cross-platform determinism
+    bg_region = frame[hud_y:hud_y + hud_h, hud_x:hud_x + hud_w].astype(np.uint16)
+    bg_color = np.array([10, 15, 26], dtype=np.uint16)
     frame[hud_y:hud_y + hud_h, hud_x:hud_x + hud_w] = (
-        bg_region * 0.18 + bg_color * 0.82
+        (bg_region * 46 + bg_color * 210) >> 8
     ).astype(np.uint8)
 
     line_h = _CHAR_H * scale + 2

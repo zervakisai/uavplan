@@ -12,20 +12,33 @@ from typing import Any, Literal
 import numpy as np
 
 from uavbench.scenarios.schema import ScenarioConfig
-from uavbench.visualization.hud import compute_badges, render_hud_text
+from uavbench.visualization.hud import (
+    _render_text,
+    compute_badges,
+    render_hud_text,
+)
 from uavbench.visualization.overlays import (
+    COLOR_AGENT,
+    COLOR_CYAN,
+    COLOR_FIRE,
+    COLOR_FORCED_BLOCK,
+    COLOR_GOAL,
+    COLOR_SMOKE,
+    COLOR_START,
+    COLOR_TRAJ_BLUE,
     draw_agent,
     draw_fire,
     draw_forced_blocks,
     draw_goal,
     draw_path,
+    draw_smoke,
     draw_start,
     draw_trajectory,
 )
 
 # Pixel-per-cell scaling
 _CELL_PX_PAPER = 15   # 300 DPI paper mode
-_CELL_PX_OPS = 8      # 150 DPI ops mode
+_CELL_PX_OPS = 10     # ops mode (meets 480px min for 50x50 grid)
 
 
 class Renderer:
@@ -76,6 +89,8 @@ class Renderer:
             smoke_mask = dynamic_state.get("smoke_mask")
             if fire_mask is not None:
                 draw_fire(frame, fire_mask, cell)
+            if smoke_mask is not None:
+                draw_smoke(frame, smoke_mask, cell)
 
         # Z=8: Forced block markers
         forced_active = state.get("forced_block_active", False)
@@ -117,6 +132,10 @@ class Renderer:
             # paper_min: minimal HUD (step + planner only)
             render_hud_text(frame, state, badges, minimal=True)
 
+        # Z=13: Color legend (paper mode only)
+        if self.mode == "paper_min":
+            frame = self._render_legend(frame)
+
         meta = {
             "path_rendered": path_rendered,
             "plan_badge": badges["plan_badge"],
@@ -133,19 +152,54 @@ class Renderer:
         H: int, W: int,
         cell: int,
     ) -> np.ndarray:
-        """Render base map layer (z=1)."""
+        """Render base map layer (z=1), vectorized."""
         img_h = H * cell
         img_w = W * cell
         frame = np.full((img_h, img_w, 3), 230, dtype=np.uint8)  # light ground
 
-        # Buildings: dark grey
-        for y in range(H):
-            for x in range(W):
-                if heightmap[y, x] > 0:
-                    y0, y1 = y * cell, (y + 1) * cell
-                    x0, x1 = x * cell, (x + 1) * cell
-                    # Building color: darker with height
-                    intensity = max(40, 120 - int(heightmap[y, x] * 15))
-                    frame[y0:y1, x0:x1] = [intensity, intensity, intensity]
+        # Buildings: intensity varies with height (vectorized)
+        building_mask = heightmap > 0
+        if building_mask.any():
+            intensity = np.clip(120 - (heightmap * 15).astype(int), 40, 120)
+            # Create per-cell color array
+            color_map = np.where(
+                building_mask[:, :, np.newaxis],
+                np.stack([intensity] * 3, axis=-1).astype(np.uint8),
+                230,
+            ).astype(np.uint8)
+            # Upscale to pixel resolution
+            frame = np.repeat(np.repeat(color_map, cell, axis=0), cell, axis=1)
 
         return frame
+
+    @staticmethod
+    def _render_legend(frame: np.ndarray) -> np.ndarray:
+        """Render color legend bar at bottom of frame (paper mode)."""
+        H, W = frame.shape[:2]
+        legend_h = 20
+        legend = np.full((legend_h, W, 3), 255, dtype=np.uint8)
+
+        items = [
+            (COLOR_START, "START"),
+            (COLOR_GOAL, "GOAL"),
+            (COLOR_AGENT, "UAV"),
+            (COLOR_CYAN, "PLAN"),
+            (COLOR_TRAJ_BLUE, "TRAJ"),
+            (COLOR_FIRE, "FIRE"),
+            (COLOR_SMOKE, "SMOKE"),
+            (COLOR_FORCED_BLOCK, "BLOCK"),
+        ]
+        x = 4
+        swatch_size = 8
+        scale = 2
+        for color, label in items:
+            if x + swatch_size + 4 > W:
+                break
+            # Draw color swatch
+            sy = (legend_h - swatch_size) // 2
+            legend[sy:sy + swatch_size, x:x + swatch_size] = color
+            # Draw label
+            _render_text(legend, label, x + swatch_size + 2, sy, (40, 40, 40), scale)
+            x += swatch_size + 4 + len(label) * (4 + 1) * scale + 8
+
+        return np.vstack([frame, legend])

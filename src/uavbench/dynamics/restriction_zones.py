@@ -154,7 +154,12 @@ class RestrictionZoneModel:
         return mask
 
     def _rebuild_mask(self) -> None:
-        """Rebuild combined NFZ mask, enforcing coverage cap."""
+        """Rebuild combined NFZ mask, enforcing coverage cap.
+
+        Zones that exceed the cap are excluded from the mask this step
+        but NOT permanently deactivated — they can be included in future
+        steps if earlier zones expire or are relaxed.
+        """
         self._nfz_mask = np.zeros((self._H, self._W), dtype=bool)
         total_cells = self._H * self._W
 
@@ -165,6 +170,4 @@ class RestrictionZoneModel:
                 coverage = candidate.sum() / total_cells
                 if coverage <= self._max_coverage:
                     self._nfz_mask = candidate
-                else:
-                    # Coverage cap exceeded — deactivate this zone
-                    zone.active = False
+                # else: skip this zone this step (cap exceeded) but keep active

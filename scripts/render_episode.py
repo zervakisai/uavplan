@@ -1,6 +1,6 @@
-"""Render a single v2 episode to GIF for visual inspection.
+"""Render a single episode to GIF for visual inspection.
 
-Fast version: vectorized basemap, skip frames, lower cell resolution.
+Uses the main Renderer class for consistency with paper snapshots.
 """
 
 from __future__ import annotations
@@ -15,104 +15,7 @@ from uavbench.benchmark.runner import _path_to_action
 from uavbench.envs.urban import UrbanEnvV2
 from uavbench.planners import PLANNERS
 from uavbench.scenarios.loader import load_scenario
-
-
-# Fast vectorized rendering (no per-pixel loops)
-CELL_PX = 2  # 2 pixels per cell → 1000x1000 image for 500x500 map
-
-COLOR_GROUND = np.array([230, 230, 220], dtype=np.uint8)
-COLOR_BUILDING = np.array([80, 80, 80], dtype=np.uint8)
-COLOR_FIRE = np.array([255, 80, 20], dtype=np.uint8)
-COLOR_SMOKE = np.array([180, 180, 180], dtype=np.uint8)
-COLOR_AGENT = np.array([0, 102, 255], dtype=np.uint8)
-COLOR_GOAL = np.array([255, 215, 0], dtype=np.uint8)
-COLOR_PATH = np.array([79, 195, 247], dtype=np.uint8)
-COLOR_TRAIL = np.array([0, 180, 255], dtype=np.uint8)
-COLOR_FORCED = np.array([200, 0, 200], dtype=np.uint8)
-COLOR_NFZ = np.array([255, 100, 100], dtype=np.uint8)
-
-
-def _fast_render(
-    heightmap: np.ndarray,
-    fire_mask: np.ndarray | None,
-    smoke_mask: np.ndarray | None,
-    forced_block_mask: np.ndarray | None,
-    agent_xy: tuple[int, int],
-    goal_xy: tuple[int, int],
-    trajectory: list[tuple[int, int]],
-    path: list[tuple[int, int]],
-    step_idx: int,
-    planner_id: str,
-    scenario_id: str,
-    success: bool | None = None,
-) -> np.ndarray:
-    """Render frame using vectorized numpy (fast)."""
-    H, W = heightmap.shape
-    c = CELL_PX
-
-    # Base: all ground color
-    frame = np.full((H * c, W * c, 3), COLOR_GROUND, dtype=np.uint8)
-
-    # Buildings (vectorized)
-    building_mask = heightmap > 0
-    building_expanded = np.repeat(np.repeat(building_mask, c, axis=0), c, axis=1)
-    frame[building_expanded] = COLOR_BUILDING
-
-    # Fire overlay (vectorized)
-    if fire_mask is not None and fire_mask.any():
-        fire_expanded = np.repeat(np.repeat(fire_mask, c, axis=0), c, axis=1)
-        frame[fire_expanded] = (
-            frame[fire_expanded].astype(np.float32) * 0.3
-            + COLOR_FIRE.astype(np.float32) * 0.7
-        ).astype(np.uint8)
-
-    # Smoke overlay (vectorized, semi-transparent)
-    if smoke_mask is not None:
-        smoke_bool = smoke_mask >= 0.3
-        if smoke_bool.any():
-            smoke_expanded = np.repeat(np.repeat(smoke_bool, c, axis=0), c, axis=1)
-            frame[smoke_expanded] = (
-                frame[smoke_expanded].astype(np.float32) * 0.6
-                + COLOR_SMOKE.astype(np.float32) * 0.4
-            ).astype(np.uint8)
-
-    # Forced blocks
-    if forced_block_mask is not None and forced_block_mask.any():
-        fb_expanded = np.repeat(np.repeat(forced_block_mask, c, axis=0), c, axis=1)
-        frame[fb_expanded] = COLOR_FORCED
-
-    # Trajectory trail (last 60 steps)
-    trail = trajectory[-60:] if len(trajectory) > 60 else trajectory
-    for tx, ty in trail:
-        y0, y1 = ty * c, (ty + 1) * c
-        x0, x1 = tx * c, (tx + 1) * c
-        if 0 <= y0 < H * c and 0 <= x0 < W * c:
-            frame[y0:y1, x0:x1] = COLOR_TRAIL
-
-    # Planned path
-    for px, py in path[:80]:
-        y0, y1 = py * c, (py + 1) * c
-        x0, x1 = px * c, (px + 1) * c
-        if 0 <= y0 < H * c and 0 <= x0 < W * c:
-            frame[y0:y1, x0:x1] = COLOR_PATH
-
-    # Goal marker (3x3 cells)
-    gx, gy = goal_xy
-    for dy in range(-1, 2):
-        for dx in range(-1, 2):
-            py, px = (gy + dy) * c, (gx + dx) * c
-            if 0 <= py < H * c - c and 0 <= px < W * c - c:
-                frame[py:py + c, px:px + c] = COLOR_GOAL
-
-    # Agent marker (3x3 cells, bright blue)
-    ax, ay = agent_xy
-    for dy in range(-1, 2):
-        for dx in range(-1, 2):
-            py, px = (ay + dy) * c, (ax + dx) * c
-            if 0 <= py < H * c - c and 0 <= px < W * c - c:
-                frame[py:py + c, px:px + c] = COLOR_AGENT
-
-    return frame
+from uavbench.visualization.renderer import Renderer
 
 
 def render_episode(
@@ -137,6 +40,8 @@ def render_episode(
     path = plan_result.path if plan_result.success else []
     path_idx = 0
     trajectory = [start_xy]
+
+    renderer = Renderer(config, mode="ops_full")
 
     frames = []
     step_idx = 0
@@ -174,19 +79,27 @@ def render_episode(
         # Render every N frames + first/last
         if step_idx % frame_skip == 0 or step_idx <= 3 or terminated or truncated:
             remaining_path = path[path_idx:] if path else []
-            frame = _fast_render(
-                heightmap=heightmap,
-                fire_mask=dyn_state.get("fire_mask"),
-                smoke_mask=dyn_state.get("smoke_mask"),
-                forced_block_mask=dyn_state.get("forced_block_mask"),
-                agent_xy=env.agent_xy,
-                goal_xy=goal_xy,
-                trajectory=trajectory,
-                path=remaining_path,
-                step_idx=step_idx,
-                planner_id=planner_id,
-                scenario_id=scenario_id,
-            )
+            state = {
+                "agent_xy": env.agent_xy,
+                "goal_xy": goal_xy,
+                "trajectory": list(trajectory),
+                "plan_path": remaining_path,
+                "plan_len": len(remaining_path),
+                "plan_age_steps": 0,
+                "plan_reason": "",
+                "forced_block_active": info.get("forced_block_active", False),
+                "forced_block_lifecycle": info.get("forced_block_lifecycle", "none"),
+                "scenario_id": scenario_id,
+                "planner_name": planner_id,
+                "mission_domain": info.get("mission_domain", ""),
+                "objective_label": info.get("objective_label", ""),
+                "distance_to_task": info.get("distance_to_task", 0),
+                "task_progress": info.get("task_progress", ""),
+                "deliverable_name": info.get("deliverable_name", ""),
+                "step_idx": step_idx,
+                "replans": replan_count,
+            }
+            frame, _meta = renderer.render_frame(heightmap, state, dyn_state)
             frames.append(frame)
 
         if step_idx % 100 == 0:
