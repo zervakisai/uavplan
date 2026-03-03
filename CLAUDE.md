@@ -21,12 +21,12 @@ src/uavbench/
   missions/                     # schema, engine (mission objective + task queue)
   envs/                         # base, urban (UrbanEnvV2)
   dynamics/                     # fire_ca, traffic, restriction_zones,
-                                # interaction_engine, forced_block, battery
+                                # interaction_engine, forced_block
   planners/                     # base, astar, periodic_replan,
                                 # aggressive_replan, dstar_lite
   blocking.py                   # ONE compute_blocking_mask() (MP-1)
   guardrail/feasibility.py      # multi-depth relaxation
-  benchmark/                    # runner, determinism, fairness, sanity_check
+  benchmark/                    # runner, determinism, sanity_check
   metrics/                      # schema, compute
   visualization/                # renderer, overlays, hud
 ```

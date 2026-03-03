@@ -1,3 +1,3 @@
-"""UAVBench v2 — UAV navigation benchmark framework (clean-room rewrite)."""
+"""UAVBench — UAV navigation benchmark framework."""
 
-__version__ = "2.0.0-dev"
+__version__ = "1.0.0"

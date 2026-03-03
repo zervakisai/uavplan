@@ -1,4 +1,4 @@
-# UAVBench v2 — Architecture Specification
+# UAVBench — Architecture Specification
 
 ## 1. Module Map
 
@@ -15,71 +15,67 @@ src/uavbench/
 │   ├── __init__.py
 │   ├── schema.py                        # ScenarioConfig frozen dataclass (SC-2)
 │   ├── loader.py                        # load_scenario(path) → ScenarioConfig (SC-3)
-│   ├── registry.py                      # SCENARIO_REGISTRY + filter functions (SC-4)
+│   ├── registry.py                      # SCENARIO_IDS list (SC-4)
+│   ├── calibration.py                   # Feasibility pre-check (CC-1..4)
 │   └── configs/                         # 9 YAML files (SC-1)
-│       ├── gov_civil_protection_easy.yaml
-│       ├── gov_civil_protection_medium.yaml
-│       ├── gov_civil_protection_hard.yaml
-│       ├── gov_maritime_domain_easy.yaml
-│       ├── gov_maritime_domain_medium.yaml
-│       ├── gov_maritime_domain_hard.yaml
-│       ├── gov_critical_infrastructure_easy.yaml
-│       ├── gov_critical_infrastructure_medium.yaml
-│       └── gov_critical_infrastructure_hard.yaml
+│       ├── gov_fire_delivery_easy.yaml
+│       ├── gov_fire_delivery_medium.yaml
+│       ├── gov_fire_delivery_hard.yaml
+│       ├── gov_fire_surveillance_easy.yaml
+│       ├── gov_fire_surveillance_medium.yaml
+│       ├── gov_fire_surveillance_hard.yaml
+│       ├── gov_flood_rescue_easy.yaml
+│       ├── gov_flood_rescue_medium.yaml
+│       └── gov_flood_rescue_hard.yaml
 │
 ├── missions/
 │   ├── __init__.py
-│   ├── schema.py                        # TaskSpec, MissionSpec, TaskStatus (MC-1)
-│   ├── engine.py                        # MissionEngine: task queue + lifecycle (MC-2)
-│   └── policies.py                      # GreedyPolicy, LookaheadPolicy
+│   ├── schema.py                        # TaskSpec, MissionBriefing, TaskStatus (MC-1)
+│   └── engine.py                        # MissionEngine: task lifecycle (MC-2)
 │
 ├── envs/
 │   ├── __init__.py
-│   ├── base.py                          # UAVBenchEnv(gymnasium.Env, ABC) (EN-1)
-│   └── urban.py                         # UrbanEnvV2(UAVBenchEnv) (EN-2..EN-9)
+│   ├── base.py                          # Enums: TerminationReason, RejectReason, BlockLifecycle, TaskStatus
+│   └── urban.py                         # UrbanEnvV2(gymnasium.Env) (EN-2..EN-9)
 │
 ├── dynamics/
 │   ├── __init__.py
-│   ├── fire_ca.py                       # FireSpreadModel (cellular automaton)
+│   ├── fire_ca.py                       # FireSpreadModel (cellular automaton, FD-1..5)
 │   ├── traffic.py                       # TrafficModel (road-following vehicles)
-│   ├── restriction_zones.py             # MissionRestrictionModel (dynamic NFZ)
-│   ├── interaction_engine.py            # InteractionEngine (cross-layer coupling)
-│   ├── moving_target.py                 # MovingTargetModel
-│   ├── intruder.py                      # IntruderModel
-│   └── population_risk.py              # PopulationRiskModel (non-blocking)
+│   ├── restriction_zones.py             # RestrictionZoneModel (dynamic NFZ)
+│   ├── interaction_engine.py            # InteractionEngine (fire↔traffic coupling)
+│   └── forced_block.py                  # ForcedBlockManager (BFS corridor interdictions, FC-1)
 │
 ├── planners/
-│   ├── __init__.py                      # PLANNERS registry (PL-3)
+│   ├── __init__.py                      # PLANNERS registry: 4 planners (PL-3)
 │   ├── base.py                          # PlannerBase ABC + PlanResult (PL-1, PL-2)
-│   ├── astar.py                         # AStarPlanner
-│   ├── theta_star.py                    # ThetaStarPlanner
-│   ├── periodic_replan.py               # PeriodicReplanPlanner
-│   ├── aggressive_replan.py             # AggressiveReplanPlanner
-│   ├── dstar_lite.py                    # DStarLitePlanner (true incremental)
-│   └── mppi_grid.py                     # GridMPPIPlanner
+│   ├── astar.py                         # AStarPlanner (static baseline)
+│   ├── periodic_replan.py               # PeriodicReplanPlanner (time-triggered)
+│   ├── aggressive_replan.py             # AggressiveReplanPlanner (event-driven)
+│   └── dstar_lite.py                    # DStarLitePlanner (incremental, simplified)
 │
 ├── guardrail/
 │   ├── __init__.py
-│   └── feasibility.py                   # Multi-depth relaxation (GC-1, GC-2)
+│   └── feasibility.py                   # Multi-depth relaxation (GC-1..4)
 │
 ├── blocking.py                          # compute_blocking_mask(state) (MP-1)
 │
 ├── benchmark/
 │   ├── __init__.py
-│   ├── runner.py                        # BenchmarkRunner (RU-1, RU-3, RU-4)
-│   ├── determinism.py                   # hash_episode(), verify_determinism()
-│   └── fairness.py                      # BFS reference corridor, interdiction placement
+│   ├── runner.py                        # run_episode() orchestrator (RU-1, RU-3, RU-4)
+│   ├── determinism.py                   # hash_episode(), verify_determinism() (DC-2)
+│   └── sanity_check.py                  # Post-run SC-1/SC-2/SC-4 analysis
 │
 ├── metrics/
 │   ├── __init__.py
-│   ├── schema.py                        # EpisodeMetrics, AggregateMetrics (ME-1..ME-4)
-│   └── compute.py                       # compute_episode_metrics(), aggregate()
+│   ├── schema.py                        # EpisodeMetrics dataclass (ME-1..ME-4)
+│   └── compute.py                       # compute_episode_metrics()
 │
 └── visualization/
     ├── __init__.py
-    ├── renderer.py                      # OperationalRenderer (VZ-1, VZ-2)
-    ├── overlays.py                      # Mission-specific overlays
-    └── hud.py                           # HUD rendering + tokens
+    ├── renderer.py                      # Frame renderer: paper_min / ops_full (VZ-1, VZ-2)
+    ├── overlays.py                      # Path, fire, agent, markers
+    └── hud.py                           # HUD badges + text (VC-2, VC-3, MC-3)
 ```
 
 ---
@@ -140,7 +136,7 @@ class ScenarioConfig:
     name: str
     domain: Domain                           # Enum: URBAN
     difficulty: Difficulty                   # Enum: EASY, MEDIUM, HARD
-    mission_type: MissionType               # Enum: CIVIL_PROTECTION, MARITIME_DOMAIN, CRITICAL_INFRASTRUCTURE
+    mission_type: MissionType               # Enum: FIRE_DELIVERY, FLOOD_RESCUE, FIRE_SURVEILLANCE
     regime: Regime                           # Enum: NATURALISTIC, STRESS_TEST
     paper_track: Literal["static", "dynamic"]
 
@@ -251,7 +247,7 @@ cli/benchmark.py
         │     ├── dynamics/*               ← all dynamic layers
         │     ├── guardrail/feasibility.py ← uses blocking.py
         │     └── missions/engine.py
-        ├── planners/__init__.py → planners/base.py + all 6 planners
+        ├── planners/__init__.py → planners/base.py + all 4 planners
         ├── metrics/compute.py → metrics/schema.py
         └── visualization/renderer.py → visualization/overlays.py, hud.py
 ```
@@ -276,9 +272,9 @@ class Difficulty(str, Enum):
     HARD = "hard"
 
 class MissionType(str, Enum):
-    CIVIL_PROTECTION = "civil_protection"
-    MARITIME_DOMAIN = "maritime_domain"
-    CRITICAL_INFRASTRUCTURE = "critical_infrastructure"
+    FIRE_DELIVERY = "fire_delivery"
+    FLOOD_RESCUE = "flood_rescue"
+    FIRE_SURVEILLANCE = "fire_surveillance"
 
 class Regime(str, Enum):
     NATURALISTIC = "naturalistic"
@@ -291,9 +287,8 @@ class RejectReason(str, Enum):
     TRAFFIC_CLOSURE = "traffic_closure"
     FIRE = "fire"
     TRAFFIC_BUFFER = "traffic_buffer"
-    MOVING_TARGET = "moving_target"
-    INTRUDER = "intruder"
     DYNAMIC_NFZ = "dynamic_nfz"
+    OUT_OF_BOUNDS = "out_of_bounds"
 
 class TerminationReason(str, Enum):
     SUCCESS = "success"
@@ -315,14 +310,6 @@ class BlockLifecycle(str, Enum):
     TRIGGERED = "triggered"
     ACTIVE = "active"
     CLEARED = "cleared"
-
-class ReplanTrigger(str, Enum):
-    INITIAL = "initial"
-    FORCED = "forced"
-    PATH_INVALIDATED = "path_invalidated"
-    CADENCE = "cadence"
-    STUCK = "stuck"
-    RISK_SPIKE = "risk_spike"
 ```
 
 ---
@@ -332,14 +319,12 @@ class ReplanTrigger(str, Enum):
 ```
 reset(seed=S)
   └── root_rng = np.random.default_rng(S)
-        ├── env_rng = root_rng.spawn(1)[0]          # map generation, start/goal
-        ├── fire_rng = root_rng.spawn(1)[0]          # fire ignition, spread
-        ├── traffic_rng = root_rng.spawn(1)[0]       # vehicle spawning, movement
-        ├── nfz_rng = root_rng.spawn(1)[0]           # zone placement
-        ├── target_rng = root_rng.spawn(1)[0]        # target movement noise
-        ├── intruder_rng = root_rng.spawn(1)[0]      # intruder spawning, noise
-        ├── risk_rng = root_rng.spawn(1)[0]          # population risk init
-        └── planner_rng = root_rng.spawn(1)[0]       # MPPI sampling
+        └── children = root_rng.spawn(5)
+              ├── env_rng        → heightmap, roads, start/goal placement
+              ├── fire_rng       → FireSpreadModel (ignition, spread)
+              ├── traffic_rng    → TrafficModel (positions, targets)
+              ├── nfz_rng        → RestrictionZoneModel (zone centers, radii)
+              └── reserved_rng   → ForcedBlockManager (cell selection)
 ```
 
 Each component receives its own child generator. No component creates its own RNG.
@@ -355,7 +340,7 @@ def compute_blocking_mask(
     heightmap: np.ndarray,
     no_fly: np.ndarray,
     config: ScenarioConfig,
-    dynamic_state: dict[str, Any],
+    dynamic_state: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """
     Returns bool[H, W] mask where True = blocked.
@@ -364,6 +349,9 @@ def compute_blocking_mask(
     """
     mask = (heightmap > 0) | no_fly
 
+    if dynamic_state is None:
+        return mask
+
     if dynamic_state.get("forced_block_mask") is not None:
         mask |= dynamic_state["forced_block_mask"]
     if dynamic_state.get("traffic_closure_mask") is not None:
@@ -371,13 +359,9 @@ def compute_blocking_mask(
     if config.fire_blocks_movement and dynamic_state.get("fire_mask") is not None:
         mask |= dynamic_state["fire_mask"]
     if config.fire_blocks_movement and dynamic_state.get("smoke_mask") is not None:
-        mask |= (dynamic_state["smoke_mask"] >= 0.3)
+        mask |= (dynamic_state["smoke_mask"] >= 0.5)
     if config.traffic_blocks_movement and dynamic_state.get("traffic_occupancy_mask") is not None:
         mask |= dynamic_state["traffic_occupancy_mask"]
-    if dynamic_state.get("moving_target_buffer") is not None:
-        mask |= dynamic_state["moving_target_buffer"]
-    if dynamic_state.get("intruder_buffer") is not None:
-        mask |= dynamic_state["intruder_buffer"]
     if dynamic_state.get("dynamic_nfz_mask") is not None:
         mask |= dynamic_state["dynamic_nfz_mask"]
 

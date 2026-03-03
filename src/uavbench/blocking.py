@@ -39,10 +39,6 @@ def compute_blocking_mask(
         mask = mask | (dynamic_state["smoke_mask"] >= 0.5)
     if config.traffic_blocks_movement and dynamic_state.get("traffic_occupancy_mask") is not None:
         mask = mask | dynamic_state["traffic_occupancy_mask"]
-    if dynamic_state.get("moving_target_buffer") is not None:
-        mask = mask | dynamic_state["moving_target_buffer"]
-    if dynamic_state.get("intruder_buffer") is not None:
-        mask = mask | dynamic_state["intruder_buffer"]
     if dynamic_state.get("dynamic_nfz_mask") is not None:
         mask = mask | dynamic_state["dynamic_nfz_mask"]
 

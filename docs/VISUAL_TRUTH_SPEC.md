@@ -1,4 +1,4 @@
-# UAVBench v2 — Visual Truth Specification
+# UAVBench — Visual Truth Specification
 
 This document defines the visualization contracts: what MUST appear on screen,
 when, and in what order. It is the source of truth for contracts VC-1, VC-2, VC-3.

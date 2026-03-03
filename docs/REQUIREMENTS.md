@@ -1,4 +1,4 @@
-# UAVBench v2 — Requirements Specification
+# UAVBench — Requirements Specification
 
 All requirements use RFC 2119 keywords (SHALL, SHOULD, MAY).
 Each requirement has a unique ID, acceptance criterion, and traceability to contracts and tests.
@@ -78,7 +78,7 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 
 | ID    | Requirement | Acceptance Criterion |
 |-------|------------|---------------------|
-| SC-1  | v2 SHALL support 9 government mission scenarios matching v1 parameter values | All 9 YAML configs load without validation errors; field values match v1 audit |
+| SC-1  | UAVBench SHALL support 9 government mission scenarios | All 9 YAML configs load without validation errors; field values match v1 audit |
 | SC-2  | ScenarioConfig SHALL be a frozen dataclass with validation on construction | `ScenarioConfig(invalid_field=...)` raises `ValueError`; frozen instance rejects attribute assignment |
 | SC-3  | Scenario loader SHALL support both `osm` and `synthetic` map sources | `load_scenario()` succeeds for configs with `map_source: osm` and `map_source: synthetic` |
 | SC-4  | Scenario registry SHALL provide filter functions by mission_type, difficulty, track | `list_scenarios_by_track("dynamic")` returns exactly 6 scenario IDs |

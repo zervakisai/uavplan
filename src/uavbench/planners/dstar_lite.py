@@ -102,15 +102,14 @@ class DStarLitePlanner(PlannerBase):
         mask = (self._heightmap > 0) | self._no_fly
         for key in (
             "fire_mask", "forced_block_mask", "traffic_closure_mask",
-            "traffic_occupancy_mask", "moving_target_buffer",
-            "intruder_buffer", "dynamic_nfz_mask",
+            "traffic_occupancy_mask", "dynamic_nfz_mask",
         ):
             val = dyn_state.get(key)
             if val is not None:
                 mask = mask | val.astype(bool)
         smoke = dyn_state.get("smoke_mask")
         if smoke is not None:
-            mask = mask | (smoke >= 0.3)
+            mask = mask | (smoke >= 0.5)
         return mask
 
     def should_replan(

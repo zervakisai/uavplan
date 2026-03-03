@@ -52,7 +52,6 @@ src/uavbench/
 ├── planners/
 │   ├── base.py                   # PlannerBase ABC + PlanResult
 │   ├── astar.py                  # A* (4-connected, static)
-│   ├── theta_star.py             # Theta* (any-angle, NOT in registry)
 │   ├── periodic_replan.py        # Time-triggered replan
 │   ├── aggressive_replan.py      # Event-driven replan
 │   ├── dstar_lite.py             # Incremental (simplified)
@@ -257,11 +256,6 @@ class PlanResult:
 - If mask changed but path clear → skip replan
 - If mask changed AND path blocked → replan
 - **PC-4:** Expected to underperform full-replan planners in fire scenarios (mass cell changes)
-
-### Theta* (`planners/theta_star.py`)
-- **EXISTS but NOT in PLANNERS registry** — not used in paper
-- Any-angle planning with line-of-sight checks (Bresenham)
-- Expands result to 4-connected grid for execution (PC-1 compliance)
 
 ---
 
