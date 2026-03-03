@@ -9,8 +9,12 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from scipy.ndimage import binary_dilation, generate_binary_structure
 
 from uavbench.scenarios.schema import ScenarioConfig
+
+# Smoke blocking threshold — single source of truth
+SMOKE_BLOCKING_THRESHOLD = 0.5
 
 
 def compute_blocking_mask(
@@ -33,10 +37,20 @@ def compute_blocking_mask(
         mask = mask | dynamic_state["forced_block_mask"]
     if dynamic_state.get("traffic_closure_mask") is not None:
         mask = mask | dynamic_state["traffic_closure_mask"]
+
     if config.fire_blocks_movement and dynamic_state.get("fire_mask") is not None:
-        mask = mask | dynamic_state["fire_mask"]
+        fire = dynamic_state["fire_mask"]
+        mask = mask | fire
+        # FD-2: dilate fire mask by fire_buffer_radius for safety buffer
+        if config.fire_buffer_radius > 0 and fire.any():
+            struct = generate_binary_structure(2, 1)  # 4-connected cross
+            fire_buffer = binary_dilation(
+                fire, structure=struct, iterations=config.fire_buffer_radius,
+            )
+            mask = mask | fire_buffer
+
     if config.fire_blocks_movement and dynamic_state.get("smoke_mask") is not None:
-        mask = mask | (dynamic_state["smoke_mask"] >= 0.5)
+        mask = mask | (dynamic_state["smoke_mask"] >= SMOKE_BLOCKING_THRESHOLD)
     if config.traffic_blocks_movement and dynamic_state.get("traffic_occupancy_mask") is not None:
         mask = mask | dynamic_state["traffic_occupancy_mask"]
     if dynamic_state.get("dynamic_nfz_mask") is not None:

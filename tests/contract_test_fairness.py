@@ -130,11 +130,15 @@ class TestFC1_BFSCorridor:
             "With force_replan_count=3, there should be forced block cells"
         )
 
-        # All forced cells must be on the BFS corridor
+        # FC-1: Area interdictions — each forced cell must be within 1 cell
+        # of the BFS corridor (perpendicular zone extends 1 cell each side)
         corridor_set = set(bfs_corridor)
         for cell in forced_cells:
-            assert cell in corridor_set, (
-                f"FC-1: forced cell {cell} is NOT on BFS corridor"
+            cx, cy = cell
+            neighbors = {(cx + dx, cy + dy)
+                         for dx in range(-1, 2) for dy in range(-1, 2)}
+            assert neighbors & corridor_set, (
+                f"FC-1: forced cell {cell} not adjacent to BFS corridor"
             )
 
     def test_bfs_corridor_matches_reference(self):

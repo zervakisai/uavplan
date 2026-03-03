@@ -28,6 +28,8 @@ class RejectReason(str, Enum):
     FORCED_BLOCK = "forced_block"
     TRAFFIC_CLOSURE = "traffic_closure"
     FIRE = "fire"
+    FIRE_BUFFER = "fire_buffer"
+    SMOKE = "smoke"
     TRAFFIC_BUFFER = "traffic_buffer"
     DYNAMIC_NFZ = "dynamic_nfz"
     OUT_OF_BOUNDS = "out_of_bounds"

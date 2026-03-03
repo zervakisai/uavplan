@@ -10,19 +10,19 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# Colors (RGB uint8)
+# Colors (RGB uint8) — Okabe-Ito colorblind-safe palette (Wong 2011)
 # ---------------------------------------------------------------------------
 
-COLOR_CYAN = np.array([79, 195, 247], dtype=np.uint8)     # #4FC3F7 — planned path
+COLOR_CYAN = np.array([86, 180, 233], dtype=np.uint8)      # #56B4E9 — planned path (sky blue)
 COLOR_PATH_OUTLINE = np.array([0, 0, 0], dtype=np.uint8)   # black outline
-COLOR_TRAJ_BLUE = np.array([0, 102, 255], dtype=np.uint8)  # #0066FF — trajectory
+COLOR_TRAJ_BLUE = np.array([0, 114, 178], dtype=np.uint8)  # #0072B2 — trajectory (blue)
 COLOR_TRAJ_OUTLINE = np.array([255, 255, 255], dtype=np.uint8)  # white outline
-COLOR_START = np.array([0, 204, 68], dtype=np.uint8)       # #00CC44 — start
-COLOR_GOAL = np.array([255, 215, 0], dtype=np.uint8)       # #FFD700 — goal
-COLOR_AGENT = np.array([0, 102, 255], dtype=np.uint8)      # #0066FF — UAV
-COLOR_FIRE = np.array([255, 80, 20], dtype=np.uint8)       # red-orange — fire
-COLOR_SMOKE = np.array([160, 160, 160], dtype=np.uint8)    # grey — smoke
-COLOR_FORCED_BLOCK = np.array([26, 26, 26], dtype=np.uint8)  # #1A1A1A — forced block
+COLOR_START = np.array([0, 158, 115], dtype=np.uint8)      # #009E73 — start (bluish-green)
+COLOR_GOAL = np.array([240, 228, 66], dtype=np.uint8)      # #F0E442 — goal (yellow)
+COLOR_AGENT = np.array([0, 114, 178], dtype=np.uint8)      # #0072B2 — UAV (blue)
+COLOR_FIRE = np.array([230, 159, 0], dtype=np.uint8)       # #E69F00 — fire (orange)
+COLOR_SMOKE = np.array([160, 160, 160], dtype=np.uint8)    # #A0A0A0 — smoke (grey)
+COLOR_FORCED_BLOCK = np.array([213, 94, 0], dtype=np.uint8)  # #D55E00 — forced block (vermillion)
 
 
 # ---------------------------------------------------------------------------
@@ -214,18 +214,30 @@ def draw_fire(
     fire_mask: np.ndarray,
     cell: int,
 ) -> None:
-    """Draw fire cells as red-orange overlay."""
-    H, W = fire_mask.shape
-    for y in range(H):
-        for x in range(W):
-            if fire_mask[y, x]:
-                y0, y1 = y * cell, (y + 1) * cell
-                x0, x1 = x * cell, (x + 1) * cell
-                # Alpha blend 0.65
-                frame[y0:y1, x0:x1] = (
-                    frame[y0:y1, x0:x1].astype(np.float32) * 0.35
-                    + COLOR_FIRE.astype(np.float32) * 0.65
-                ).astype(np.uint8)
+    """Draw fire cells as red-orange overlay (vectorized)."""
+    if not fire_mask.any():
+        return
+    fire_px = np.repeat(np.repeat(fire_mask, cell, axis=0), cell, axis=1)
+    mask_3d = fire_px[:, :, np.newaxis]
+    fg = COLOR_FIRE.astype(np.uint16)
+    blended = ((frame.astype(np.uint16) * 90 + fg * 166) >> 8).astype(np.uint8)
+    frame[:] = np.where(mask_3d, blended, frame)
+
+
+def draw_smoke(
+    frame: np.ndarray,
+    smoke_mask: np.ndarray,
+    cell: int,
+) -> None:
+    """Draw smoke cells as grey overlay (vectorized, z=3.5)."""
+    smoke_bool = smoke_mask >= 0.3
+    if not smoke_bool.any():
+        return
+    smoke_px = np.repeat(np.repeat(smoke_bool, cell, axis=0), cell, axis=1)
+    mask_3d = smoke_px[:, :, np.newaxis]
+    fg = COLOR_SMOKE.astype(np.uint16)
+    blended = ((frame.astype(np.uint16) * 154 + fg * 102) >> 8).astype(np.uint8)
+    frame[:] = np.where(mask_3d, blended, frame)
 
 
 # ---------------------------------------------------------------------------
@@ -239,10 +251,8 @@ def draw_forced_blocks(
     cell: int,
 ) -> None:
     """Draw forced block X-markers (VC-3)."""
-    H, W = forced_block_mask.shape
-    for y in range(H):
-        for x in range(W):
-            if forced_block_mask[y, x]:
-                cx, cy = _cell_center(x, y, cell)
-                size = max(2, cell // 3)
-                _draw_x(frame, cx, cy, size, COLOR_FORCED_BLOCK)
+    ys, xs = np.where(forced_block_mask)
+    size = max(2, cell // 3)
+    for y, x in zip(ys, xs):
+        cx, cy = _cell_center(x, y, cell)
+        _draw_x(frame, cx, cy, size, COLOR_FORCED_BLOCK)

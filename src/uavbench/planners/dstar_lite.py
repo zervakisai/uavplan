@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from uavbench.blocking import compute_blocking_mask
+from uavbench.blocking import SMOKE_BLOCKING_THRESHOLD, compute_blocking_mask
 from uavbench.planners.astar import AStarPlanner
 from uavbench.planners.base import PlannerBase, PlanResult
 
@@ -109,7 +109,7 @@ class DStarLitePlanner(PlannerBase):
                 mask = mask | val.astype(bool)
         smoke = dyn_state.get("smoke_mask")
         if smoke is not None:
-            mask = mask | (smoke >= 0.5)
+            mask = mask | (smoke >= SMOKE_BLOCKING_THRESHOLD)
         return mask
 
     def should_replan(
