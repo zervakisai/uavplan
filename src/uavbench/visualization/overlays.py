@@ -23,6 +23,9 @@ COLOR_AGENT = np.array([0, 114, 178], dtype=np.uint8)      # #0072B2 — UAV (bl
 COLOR_FIRE = np.array([230, 159, 0], dtype=np.uint8)       # #E69F00 — fire (orange)
 COLOR_SMOKE = np.array([160, 160, 160], dtype=np.uint8)    # #A0A0A0 — smoke (grey)
 COLOR_FORCED_BLOCK = np.array([213, 94, 0], dtype=np.uint8)  # #D55E00 — forced block (vermillion)
+COLOR_NFZ = np.array([204, 121, 167], dtype=np.uint8)       # #CC79A7 — NFZ (reddish purple)
+COLOR_TRAFFIC = np.array([230, 159, 0], dtype=np.uint8)      # #E69F00 — traffic closure (orange)
+COLOR_FIRE_BUFFER = np.array([213, 94, 0], dtype=np.uint8)   # #D55E00 — fire buffer (vermillion)
 
 
 # ---------------------------------------------------------------------------
@@ -256,3 +259,79 @@ def draw_forced_blocks(
     for y, x in zip(ys, xs):
         cx, cy = _cell_center(x, y, cell)
         _draw_x(frame, cx, cy, size, COLOR_FORCED_BLOCK)
+
+
+# ---------------------------------------------------------------------------
+# NFZ overlay (z=5) — restriction zones
+# ---------------------------------------------------------------------------
+
+
+def draw_nfz(
+    frame: np.ndarray,
+    nfz_mask: np.ndarray,
+    cell: int,
+) -> None:
+    """Draw dynamic no-fly zones as purple overlay with hatching."""
+    if not nfz_mask.any():
+        return
+    nfz_px = np.repeat(np.repeat(nfz_mask, cell, axis=0), cell, axis=1)
+    mask_3d = nfz_px[:, :, np.newaxis]
+    fg = COLOR_NFZ.astype(np.uint16)
+    blended = ((frame.astype(np.uint16) * 128 + fg * 128) >> 8).astype(np.uint8)
+    frame[:] = np.where(mask_3d, blended, frame)
+
+    # Diagonal hatching for NFZ cells (every 4th pixel)
+    H, W = frame.shape[:2]
+    hatch_color = np.array([180, 80, 140], dtype=np.uint8)
+    ys, xs = np.where(nfz_px)
+    hatch = (ys + xs) % 4 == 0
+    frame[ys[hatch], xs[hatch]] = hatch_color
+
+
+# ---------------------------------------------------------------------------
+# Traffic overlay (z=6) — emergency vehicles and closures
+# ---------------------------------------------------------------------------
+
+
+def draw_traffic(
+    frame: np.ndarray,
+    traffic_mask: np.ndarray,
+    cell: int,
+) -> None:
+    """Draw traffic closure/occupancy zones as orange overlay."""
+    if not traffic_mask.any():
+        return
+    traf_px = np.repeat(np.repeat(traffic_mask, cell, axis=0), cell, axis=1)
+    mask_3d = traf_px[:, :, np.newaxis]
+    fg = COLOR_TRAFFIC.astype(np.uint16)
+    blended = ((frame.astype(np.uint16) * 154 + fg * 102) >> 8).astype(np.uint8)
+    frame[:] = np.where(mask_3d, blended, frame)
+
+
+# ---------------------------------------------------------------------------
+# Fire buffer overlay (z=3.8) — safety buffer around active fire
+# ---------------------------------------------------------------------------
+
+
+def draw_fire_buffer(
+    frame: np.ndarray,
+    fire_mask: np.ndarray,
+    buffer_radius: int,
+    cell: int,
+) -> None:
+    """Draw fire safety buffer zone as semi-transparent vermillion."""
+    if not fire_mask.any() or buffer_radius <= 0:
+        return
+    from scipy.ndimage import binary_dilation, generate_binary_structure
+    struct = generate_binary_structure(2, 1)
+    buffer_zone = binary_dilation(fire_mask, structure=struct, iterations=buffer_radius)
+    # Buffer is the ring around fire, not the fire cells themselves
+    buffer_ring = buffer_zone & ~fire_mask
+    if not buffer_ring.any():
+        return
+    buf_px = np.repeat(np.repeat(buffer_ring, cell, axis=0), cell, axis=1)
+    mask_3d = buf_px[:, :, np.newaxis]
+    fg = COLOR_FIRE_BUFFER.astype(np.uint16)
+    # Lighter blend than fire itself (alpha ~0.25)
+    blended = ((frame.astype(np.uint16) * 192 + fg * 64) >> 8).astype(np.uint8)
+    frame[:] = np.where(mask_3d, blended, frame)

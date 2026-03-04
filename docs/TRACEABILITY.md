@@ -68,7 +68,7 @@ Every requirement traces from specification to code, test, and evidence artifact
 |--------|-------------------|------------------|-------------|----------|
 | PL-1 | PlannerBase ABC with plan() | `planners/base.py` | `unit_test_planner_base.py` | — |
 | PL-2 | PlanResult dataclass with 4 fields | `planners/base.py` | `unit_test_planner_base.py` | — |
-| PL-3 | 4 planners in PLANNERS registry | `planners/__init__.py` | `unit_test_planner_registry.py` | — |
+| PL-3 | 6 planners in PLANNERS registry | `planners/__init__.py` | `unit_test_planner_registry.py` | — |
 | PL-4 | should_replan() overridable | `planners/base.py` | `unit_test_planner_base.py` | — |
 | PL-5 | update() for incremental planners | `planners/dstar_lite.py` | `unit_test_dstar_lite_api.py` | — |
 | PL-6 | Paths as list[(x,y)] inclusive start+goal | `planners/*.py` | `unit_test_planner_paths.py` | — |

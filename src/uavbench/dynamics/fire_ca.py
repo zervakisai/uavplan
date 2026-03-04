@@ -57,11 +57,11 @@ class FireSpreadModel:
         ).astype(np.float32)
         self._smoke = np.zeros((self._H, self._W), dtype=np.float32)
 
-        # Landuse (default: all forest=1 if not provided)
+        # Landuse (default: urban=2 for realistic spread in urban grids)
         if landuse_map is not None:
             self._landuse = landuse_map.astype(np.int8)
         else:
-            self._landuse = np.ones((self._H, self._W), dtype=np.int8)
+            self._landuse = np.full((self._H, self._W), 2, dtype=np.int8)
 
         # Roads act as 50% firebreak
         self._roads = (
@@ -168,49 +168,14 @@ class FireSpreadModel:
         n: int,
         corridor_cells: list[tuple[int, int]] | None = None,
     ) -> None:
-        """Ignite n cells. When corridor_cells is provided, place at least
-        half of ignitions near the corridor (within 20-40 cells offset)
-        so fire meaningfully interacts with planned paths."""
-        n_near = 0
-        near_buffer = 8  # cells offset from corridor (close for path interaction)
+        """Ignite n cells. Random placement on burnable cells.
 
-        if corridor_cells and len(corridor_cells) > 2:
-            n_near = max(1, n // 2)  # at least 1 near corridor
-            n_random = n - n_near
-
-            # Build a mask of cells near the corridor
-            near_mask = np.zeros((self._H, self._W), dtype=bool)
-            for cx, cy in corridor_cells:
-                y0 = max(0, cy - near_buffer)
-                y1 = min(self._H, cy + near_buffer + 1)
-                x0 = max(0, cx - near_buffer)
-                x1 = min(self._W, cx + near_buffer + 1)
-                near_mask[y0:y1, x0:x1] = True
-
-            # Exclude the corridor itself (don't ignite ON the path)
-            for cx, cy in corridor_cells:
-                if 0 <= cy < self._H and 0 <= cx < self._W:
-                    near_mask[cy, cx] = False
-
-            # Near-corridor ignitions: forest cells near corridor
-            near_forest = near_mask & (self._landuse == 1)
-            near_ys, near_xs = np.where(near_forest)
-
-            placed_near = 0
-            if len(near_ys) >= n_near:
-                indices = self._rng.choice(
-                    len(near_ys), size=n_near, replace=False,
-                )
-                for idx in indices:
-                    self._state[near_ys[idx], near_xs[idx]] = BURNING
-                    placed_near += 1
-
-            # Remaining as random
-            n_random += (n_near - placed_near)
-            if n_random > 0:
-                self._ignite_random(n_random)
-        else:
-            self._ignite_random(n)
+        Fire acts as a background environmental hazard that adaptive
+        planners must detect and route around. Random placement ensures
+        fire creates distributed obstacles rather than directly blocking
+        the shortest path.
+        """
+        self._ignite_random(n)
 
     def _ignite_random(self, n: int) -> None:
         """Ignite n cells at random, preferring forest (landuse=1)."""

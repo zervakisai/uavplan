@@ -5,13 +5,13 @@ domain: urban
 regime: naturalistic
 paper_track: static
 
-map_size: 500
+map_size: 50
 map_source: synthetic
 building_density: 0.18
 
-fixed_start_xy: [50, 50]
-fixed_goal_xy: [450, 450]
-min_start_goal_l1: 100
+fixed_start_xy: [5, 5]
+fixed_goal_xy: [45, 45]
+min_start_goal_l1: 20
 
 enable_fire: false
 enable_traffic: false

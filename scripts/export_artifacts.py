@@ -8,7 +8,7 @@ Generates:
   - outputs/repro_manifest.json      (reproducibility manifest)
 
 Usage:
-    python scripts/export_v2_artifacts.py
+    python scripts/export_artifacts.py
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from uavbench.planners import PLANNERS  # noqa: E402
 from uavbench.visualization.renderer import Renderer  # noqa: E402
 from uavbench.scenarios.loader import load_scenario  # noqa: E402
 
-OUT_DIR = ROOT / "outputs" / "v2"
+OUT_DIR = ROOT / "outputs"
 
 
 def _hash_obj(obj: object) -> str:
@@ -177,9 +177,9 @@ def export_repro_manifest() -> None:
 
     manifest = {
         "version": "v2",
-        "regenerate_command": "python scripts/export_v2_artifacts.py",
-        "test_command": "pytest tests/v2/ -q",
-        "gif_command": "bash scripts/regenerate_v2_paper_gifs.sh",
+        "regenerate_command": "python scripts/export_artifacts.py",
+        "test_command": "pytest tests/ -q",
+        "gif_command": "bash scripts/regenerate_paper_gifs.sh",
         "scenarios": scenarios,
         "planners": planners,
         "scenario_count": len(scenarios),

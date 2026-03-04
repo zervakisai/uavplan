@@ -62,26 +62,31 @@ requires altitude metrics, revisit.
 
 ## Q4: Planner Suite
 
-**Decision**: Exactly 4 planners for the paper benchmark.
+**Decision**: Exactly 6 planners for the paper benchmark across 3 families.
 
-| Registry Key           | Algorithm                | Replanning Strategy  |
-|------------------------|--------------------------|----------------------|
-| `astar`                | A* (4-connected)         | None (one-shot)      |
-| `periodic_replan`      | A* + periodic replan     | Every N steps        |
-| `aggressive_replan`    | A* + mask-change replan  | On obstacle change   |
-| `dstar_lite`           | D* Lite (simplified)     | On path blocked      |
+| Registry Key           | Algorithm                       | Family            | Replanning Strategy  |
+|------------------------|---------------------------------|-------------------|----------------------|
+| `astar`                | A* (4-connected)                | Search (static)   | None (one-shot)      |
+| `theta_star`           | Theta* (any-angle)              | Search (static)   | None (one-shot)      |
+| `periodic_replan`      | A* + periodic replan            | Search (adaptive) | Every N steps        |
+| `aggressive_replan`    | A* + mask-change replan         | Search (adaptive) | On obstacle change   |
+| `dstar_lite`           | D* Lite (incremental)           | Search (adaptive) | On path blocked      |
+| `apf`                  | Artificial Potential Field      | Reactive          | Every step           |
 
-**Removed from v1 planner set (with rationale):**
-- `theta_star`: Removed due to BUG-1 (Theta* paradox — any-angle paths bypass
-  single-cell interdictions). A* serves as the static baseline instead.
+**Removed from v1 planner set:**
 - `mppi_grid`: Removed due to BUG-3 (dead code — registered but never executed).
+- Deprecated aliases (`ad_star`, `dwa`, `mppi`) are NOT carried forward.
 
 **Design notes:**
 1. All planners implement unified `PlannerBase` with `plan()`, `update()`,
    `should_replan()` methods
-2. `dstar_lite` uses A* internally with obstacle-change detection (simplified,
+2. Theta* any-angle paths are expanded to grid steps for execution (PC-1)
+3. BUG-1 (Theta* paradox) fixed via area interdictions (FC-1) — 3-wide
+   perpendicular zones prevent any-angle paths from threading between blocked cells
+4. APF uses attractive (goal) + repulsive (obstacle) potential fields;
+   gradient descent determines next action each step
+5. `dstar_lite` uses A* internally with obstacle-change detection (simplified,
    not true incremental D* Lite — see PC-4)
-3. Deprecated aliases (`ad_star`, `dwa`, `mppi`, `theta_star`) are NOT carried forward
 
 **Status**: DECIDED
 
@@ -278,5 +283,41 @@ to v1 config values.
 **Decision**: Two renderer modes matching v1:
 - `paper_min`: Minimal rendering for paper figures (clean, high-DPI)
 - `ops_full`: Full operational rendering with all overlays and HUD
+
+**Status**: DECIDED
+
+---
+
+## Q18: Reference Corridor Algorithm
+
+**Decision**: The reference corridor (used for forced block placement and fire-aware
+ignition) is computed using A* instead of BFS.
+
+**Rationale**: BFS and A* produce different paths on large grids (500x500) due to
+tie-breaking. BFS (FIFO queue) explores UP first; A* (heap with Manhattan heuristic)
+prefers smaller x. Since all planners use A*-based search, the reference corridor
+must match actual planner paths — otherwise forced blocks and fire ignition land on
+cells that planners never visit, making interdictions irrelevant.
+
+**Implementation**: `urban.py` computes corridor via `AStarPlanner.plan(start, goal)`
+at `reset()` time, with BFS fallback if A* fails.
+
+**Status**: DECIDED
+
+---
+
+## Q19: Fire Placement Strategy
+
+**Decision**: Fire ignition uses random placement on burnable cells (not corridor-aware).
+
+**Rationale**: Corridor-aware placement concentrates fire directly on the A* path,
+creating impassable barriers that make scenarios too hard for medium difficulty
+(CC-2 requires feasibility ≥ 50%). Random placement distributes fire as a background
+environmental hazard that adaptive planners can detect and route around.
+
+**Additional changes**:
+- Default landuse: urban (p_spread=0.06) instead of forest (p_spread=0.15)
+- Fire buffer radius: 2 for medium, 3 for hard scenarios
+- Isotropic spread (8-neighbor Moore, no wind — FD-2)
 
 **Status**: DECIDED

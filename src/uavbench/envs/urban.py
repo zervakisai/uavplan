@@ -15,6 +15,7 @@ from gymnasium import spaces
 from uavbench.blocking import SMOKE_BLOCKING_THRESHOLD, compute_blocking_mask
 from uavbench.dynamics.fire_ca import FireSpreadModel
 from uavbench.dynamics.forced_block import ForcedBlockManager, bfs_shortest_path
+from uavbench.planners.astar import AStarPlanner
 from uavbench.dynamics.interaction_engine import InteractionEngine
 from uavbench.dynamics.restriction_zones import RestrictionZoneModel
 from uavbench.dynamics.traffic import TrafficModel
@@ -187,11 +188,18 @@ class UrbanEnvV2(gym.Env):
             if 0 <= px < self._map_size and 0 <= py < self._map_size:
                 self._heightmap[py, px] = 0.0
 
-        # BFS reference corridor — computed BEFORE dynamics so fire can
-        # use it for corridor-aware ignition placement (Bug 4 fix)
-        self._bfs_corridor = bfs_shortest_path(
-            self._heightmap, self._agent_xy, self._goal_xy
-        )
+        # Reference corridor — computed BEFORE dynamics so fire can
+        # use it for corridor-aware ignition placement (Bug 4 fix).
+        # Uses A* (same as planners) so corridor matches actual paths.
+        # BFS fallback if A* fails (e.g., no path).
+        _ref_planner = AStarPlanner(self._heightmap, self._no_fly)
+        _ref_result = _ref_planner.plan(self._agent_xy, self._goal_xy)
+        if _ref_result.success:
+            self._bfs_corridor = _ref_result.path
+        else:
+            self._bfs_corridor = bfs_shortest_path(
+                self._heightmap, self._agent_xy, self._goal_xy
+            )
 
         # Initialize dynamics (Phase 4)
         map_shape = (self._map_size, self._map_size)
@@ -569,5 +577,8 @@ class UrbanEnvV2(gym.Env):
             info["task_progress"] = self._mission.task_progress
             info["deliverable_name"] = self._mission.deliverable_name
             info["service_time_s"] = self._mission.service_time_s
+            info["origin_name"] = self._mission.origin_name
+            info["destination_name"] = self._mission.destination_name
+            info["priority"] = self._mission.priority
 
         return info

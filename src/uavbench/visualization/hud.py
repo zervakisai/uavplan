@@ -226,16 +226,25 @@ def render_hud_text(
     tx = hud_x + 4
     ty = hud_y + 2
 
-    # Row 1: Identity
-    scenario_id = state.get("scenario_id", "")
-    mission_domain = state.get("mission_domain", "")
-    row1 = f"SCN: {scenario_id}  |  MSN: {mission_domain}"
-    _render_text(frame, row1, tx, ty, (232, 232, 232), scale)
+    # Row 1: Mission objective (human-readable, most prominent)
+    obj_label = state.get("objective_label", "")
+    priority = state.get("priority", "")
+    # Abbreviate long priority for screen fit
+    _prio_abbr = {"critical": "CRIT", "high": "HIGH", "normal": "NORM", "low": "LOW"}
+    priority_tag = f" [{_prio_abbr.get(priority, priority.upper()[:4])}]" if priority else ""
+    row1 = f"MISSION: {obj_label}{priority_tag}"
+    _render_text(frame, row1, tx, ty, (255, 220, 100), scale)
     ty += line_h
 
-    # Row 2: Planner
+    # Row 2: Origin → Destination + Planner
+    origin = state.get("origin_name", "")
+    destination = state.get("destination_name", "")
     planner = state.get("planner_name", "")
-    row2 = f"PLN: {planner}  |  MOD: {state.get('mode', 'run')}"
+    if origin and destination:
+        row2 = f"{origin} > {destination}  |  PLN: {planner}"
+    else:
+        scenario_id = state.get("scenario_id", "")
+        row2 = f"SCN: {scenario_id}  |  PLN: {planner}"
     _render_text(frame, row2, tx, ty, (200, 200, 200), scale)
     ty += line_h
 
@@ -254,10 +263,9 @@ def render_hud_text(
     _render_text(frame, row3, tx, ty, (232, 232, 232), scale)
     ty += line_h
 
-    # Row 4: Mission
-    obj_label = state.get("objective_label", "")
+    # Row 4: Distance + progress + deliverable
     dist = state.get("distance_to_task", 0)
     progress = state.get("task_progress", "")
     deliverable = state.get("deliverable_name", "")
-    row4 = f"OBJ: {obj_label}  D: {int(dist)}  P: {progress}"
+    row4 = f"DIST: {int(dist)}  |  TASKS: {progress}  |  {deliverable}"
     _render_text(frame, row4, tx, ty, (180, 200, 220), scale)
