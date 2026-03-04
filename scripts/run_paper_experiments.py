@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paper experiment runner — 6 planners x 9 scenarios x 30 seeds = 1,620 episodes.
+"""Paper experiment runner — 6 planners x 6 scenarios x 30 seeds = 1,080 episodes.
 
 Saves per-episode results to outputs/paper_results/all_episodes.csv.
 Episodes that crash are logged and skipped (never stops the whole run).
@@ -168,10 +168,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
 
-    scenarios = (
+    all_scenarios = (
         [s.strip() for s in args.scenarios.split(",")]
         if args.scenarios else list_scenarios()
     )
+    # Paper uses only medium + hard (easy = test-only, no dynamics)
+    scenarios = [s for s in all_scenarios if "easy" not in s]
     planners = (
         [p.strip() for p in args.planners.split(",")]
         if args.planners else sorted(PLANNERS.keys())

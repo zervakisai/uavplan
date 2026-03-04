@@ -141,18 +141,21 @@ class TestFC1_BFSCorridor:
                 f"FC-1: forced cell {cell} not adjacent to BFS corridor"
             )
 
-    def test_bfs_corridor_matches_reference(self):
-        """The env's BFS corridor matches our independent BFS computation."""
+    def test_corridor_matches_astar_reference(self):
+        """The env's reference corridor matches A* path (same algorithm planners use)."""
         config = _make_dynamic_config()
         env = UrbanEnvV2(config)
         env.reset(seed=42)
 
-        heightmap, _, start, goal = env.export_planner_inputs()
-        ref_path = _bfs_path_on_static_grid(heightmap, start, goal)
+        heightmap, no_fly, start, goal = env.export_planner_inputs()
+        from uavbench.planners.astar import AStarPlanner
+        ref_planner = AStarPlanner(heightmap, no_fly)
+        ref_result = ref_planner.plan(start, goal)
 
-        assert len(ref_path) > 0, "Reference BFS should find a path"
-        assert env.bfs_corridor == ref_path, (
-            "FC-1: env BFS corridor must match reference BFS computation"
+        assert ref_result.success, "Reference A* should find a path"
+        assert env.bfs_corridor == ref_result.path, (
+            "FC-1: env corridor must match A* reference computation "
+            "(ensures fire/forced blocks intersect actual planner paths)"
         )
 
     def test_interdiction_planner_agnostic(self):

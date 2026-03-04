@@ -37,6 +37,7 @@ def run_episode(
     planner_id: str,
     seed: int,
     render: bool = False,
+    frame_callback: "Callable | None" = None,
 ) -> EpisodeResult:
     """Run a single deterministic episode (RU-3).
 
@@ -45,6 +46,10 @@ def run_episode(
         planner_id: registered planner name
         seed: RNG seed (DC-1)
         render: whether to capture frame hashes (Phase 8)
+        frame_callback: optional read-only callback called each step with
+            (heightmap, state_dict, dynamic_state_dict, config) for rendering.
+            Does NOT affect determinism — callback must be side-effect-free
+            on the simulation state.
 
     Returns:
         EpisodeResult with events, trajectory, metrics, frame_hashes.
@@ -58,6 +63,9 @@ def run_episode(
 
     # Export planner inputs
     heightmap, no_fly, start_xy, goal_xy = env.export_planner_inputs()
+
+    # Mission metadata for rendering
+    _mission_meta = _extract_mission_meta(config, info)
 
     # Create planner
     planner_cls = PLANNERS[planner_id]
@@ -111,6 +119,35 @@ def run_episode(
                 path_idx = 0
                 replan_count += 1
 
+        # Frame callback for visualization (read-only, no sim effect)
+        if frame_callback is not None:
+            remaining_path = path[path_idx:] if path else []
+            frame_state = {
+                "step_idx": step_idx,
+                "agent_xy": env.agent_xy,
+                "start_xy": start_xy,
+                "goal_xy": goal_xy,
+                "plan_path": remaining_path,
+                "plan_len": len(remaining_path),
+                "plan_age_steps": 0,
+                "plan_reason": reason if should else "",
+                "trajectory": list(trajectory),
+                "replans": replan_count,
+                "planner_name": planner_id,
+                "scenario_id": scenario_id,
+                "replan_every_steps": getattr(config, "replan_every_steps", 6),
+                "forced_block_active": info.get("forced_block_active", False),
+                "forced_block_lifecycle": info.get("forced_block_lifecycle", "none"),
+                "dynamic_block_hits": 0,
+                **_mission_meta,
+            }
+            # Add mission fields from info
+            for k in ("objective_label", "distance_to_task", "task_progress",
+                       "deliverable_name", "mission_domain"):
+                if k in info:
+                    frame_state[k] = info[k]
+            frame_callback(heightmap, frame_state, dyn_state, config)
+
     # Compute metrics
     metrics = compute_episode_metrics(
         scenario_id=scenario_id,
@@ -121,6 +158,7 @@ def run_episode(
         final_info=final_info,
         plan_result=plan_result,
         replan_count=replan_count,
+        goal_xy=goal_xy,
     )
 
     return EpisodeResult(
@@ -129,6 +167,27 @@ def run_episode(
         metrics=metrics,
         frame_hashes=[],
     )
+
+
+def _extract_mission_meta(config: "ScenarioConfig", info: dict) -> dict:
+    """Extract mission metadata for frame rendering."""
+    meta = {}
+    for k in ("objective_label", "distance_to_task", "task_progress",
+               "deliverable_name", "mission_domain",
+               "origin_name", "destination_name", "priority"):
+        if k in info:
+            meta[k] = info[k]
+    # Fall back to config-derived values
+    if "mission_domain" not in meta:
+        meta["mission_domain"] = config.mission_type.value
+    # Add config-derived fields for briefing card
+    meta["difficulty"] = config.difficulty.value
+    # Get constraints from mission metadata
+    from uavbench.missions.engine import _MISSION_META
+    mt = config.mission_type.value
+    if mt in _MISSION_META:
+        meta["constraints"] = _MISSION_META[mt].get("constraints", [])
+    return meta
 
 
 def _path_to_action(

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Regenerate paper GIF animations for UAVBench v2.
+# Regenerate paper GIF animations for UAVBench.
 #
-# Generates one GIF per (scenario, planner) combination for the 6 dynamic
-# scenarios × 6 planners = 36 GIFs total. Static (easy) scenarios get
-# one representative planner (astar) = 3 additional GIFs.
+# Generates one GIF per (scenario, planner) combination for the 6
+# scenarios (medium + hard) × 6 planners = 36 GIFs total.
 #
 # Usage:
-#     bash scripts/regenerate_v2_paper_gifs.sh
+#     bash scripts/regenerate_paper_gifs.sh
 #
 # Output:
 #     outputs/gifs/{scenario_id}_{planner_id}.gif
@@ -29,12 +28,6 @@ DYNAMIC_SCENARIOS=(
     gov_fire_surveillance_hard
 )
 
-# Static scenarios (easy per family, astar only)
-STATIC_SCENARIOS=(
-    gov_fire_delivery_easy
-    gov_flood_rescue_easy
-    gov_fire_surveillance_easy
-)
 
 # All 6 planners
 PLANNERS=(
@@ -43,7 +36,7 @@ PLANNERS=(
     periodic_replan
     aggressive_replan
     dstar_lite
-    mppi_grid
+    apf
 )
 
 SEED=42
@@ -70,19 +63,6 @@ print(f'  -> {status} steps={result.metrics[\"executed_steps_len\"]}')
     done
 done
 
-# Static: astar only
-for scenario in "${STATIC_SCENARIOS[@]}"; do
-    count=$((count + 1))
-    echo "[$count] $scenario / astar (seed=$SEED)"
-    python3 -c "
-import sys
-sys.path.insert(0, '$PROJECT_ROOT/src')
-from uavbench.benchmark.runner import run_episode
-result = run_episode('$scenario', 'astar', $SEED)
-status = 'OK' if result.metrics['success'] else 'FAIL'
-print(f'  -> {status} steps={result.metrics[\"executed_steps_len\"]}')
-" 2>&1 || echo "  -> ERROR"
-done
 
 echo ""
 echo "=== Completed $count runs ==="

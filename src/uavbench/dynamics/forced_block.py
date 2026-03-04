@@ -94,9 +94,26 @@ class ForcedBlockManager:
         # Each interdiction is a rectangular zone perpendicular to the
         # corridor direction, 3 cells wide. This prevents any-angle
         # planners (Theta*) from threading between single blocked cells.
+        #
+        # PLACEMENT: Position blocks where the agent will be DURING the
+        # active window [event_t1, event_t2]. The agent reaches corridor
+        # position p at approximately step p. So place blocks in the
+        # range [event_t1, event_t2] along the corridor.
         self._forced_cells: list[tuple[int, int]] = []
         if n > 0 and len(interior) > 0:
-            indices = np.linspace(0, len(interior) - 1, n, dtype=int)
+            # Target range: positions the agent reaches during active window
+            mid_step = (event_t1 + event_t2) // 2
+            # Clamp to interior bounds
+            target_center = min(mid_step, len(interior) - 1)
+            if n == 1:
+                indices = np.array([target_center])
+            else:
+                # Spread blocks evenly within the active window range
+                lo = min(event_t1, len(interior) - 1)
+                hi = min(event_t2, len(interior) - 1)
+                if lo >= hi:
+                    hi = min(lo + n, len(interior) - 1)
+                indices = np.linspace(lo, hi, n, dtype=int)
             for idx in indices:
                 cx, cy = interior[idx]
                 # Determine corridor direction at this point

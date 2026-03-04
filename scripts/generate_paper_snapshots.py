@@ -48,7 +48,7 @@ COMPARISON_SCENARIO = "gov_fire_delivery_hard"
 
 PLANNER_ORDER = [
     "astar", "theta_star", "periodic_replan",
-    "aggressive_replan", "dstar_lite", "mppi_grid",
+    "aggressive_replan", "dstar_lite", "apf",
 ]
 PLANNER_LABELS = {
     "astar": "A*",
@@ -56,7 +56,7 @@ PLANNER_LABELS = {
     "periodic_replan": "Periodic Replan",
     "aggressive_replan": "Aggressive Replan",
     "dstar_lite": "D* Lite",
-    "mppi_grid": "MPPI",
+    "apf": "APF",
 }
 
 

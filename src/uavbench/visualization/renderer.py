@@ -21,18 +21,24 @@ from uavbench.visualization.overlays import (
     COLOR_AGENT,
     COLOR_CYAN,
     COLOR_FIRE,
+    COLOR_FIRE_BUFFER,
     COLOR_FORCED_BLOCK,
     COLOR_GOAL,
+    COLOR_NFZ,
     COLOR_SMOKE,
     COLOR_START,
+    COLOR_TRAFFIC,
     COLOR_TRAJ_BLUE,
     draw_agent,
     draw_fire,
+    draw_fire_buffer,
     draw_forced_blocks,
     draw_goal,
+    draw_nfz,
     draw_path,
     draw_smoke,
     draw_start,
+    draw_traffic,
     draw_trajectory,
 )
 
@@ -87,10 +93,29 @@ class Renderer:
         if dynamic_state is not None:
             fire_mask = dynamic_state.get("fire_mask")
             smoke_mask = dynamic_state.get("smoke_mask")
+            # Z=3.8: Fire buffer zone (safety exclusion ring)
             if fire_mask is not None:
-                draw_fire(frame, fire_mask, cell)
+                fire_buffer_r = getattr(self.config, "fire_buffer_radius", 3)
+                draw_fire_buffer(frame, fire_mask, fire_buffer_r, cell)
             if smoke_mask is not None:
                 draw_smoke(frame, smoke_mask, cell)
+            if fire_mask is not None:
+                draw_fire(frame, fire_mask, cell)
+
+        # Z=5: Dynamic NFZ (restriction zones)
+        if dynamic_state is not None:
+            nfz_mask = dynamic_state.get("dynamic_nfz_mask")
+            if nfz_mask is not None:
+                draw_nfz(frame, nfz_mask, cell)
+
+        # Z=6: Traffic closures
+        if dynamic_state is not None:
+            traffic_mask = dynamic_state.get("traffic_closure_mask")
+            if traffic_mask is not None:
+                draw_traffic(frame, traffic_mask, cell)
+            traffic_occ = dynamic_state.get("traffic_occupancy_mask")
+            if traffic_occ is not None:
+                draw_traffic(frame, traffic_occ, cell)
 
         # Z=8: Forced block markers
         forced_active = state.get("forced_block_active", False)
@@ -114,9 +139,11 @@ class Renderer:
             path_rendered = True
 
         # Z=9.6: Start/Goal markers
+        # Start uses original start position, NOT current agent position
+        start_xy = state.get("start_xy", state.get("agent_xy", (0, 0)))
         agent_xy = state.get("agent_xy", (0, 0))
         goal_xy = state.get("goal_xy", (H - 1, W - 1))
-        draw_start(frame, agent_xy, cell)
+        draw_start(frame, start_xy, cell)
         draw_goal(frame, goal_xy, cell)
 
         # Z=10: Agent icon
@@ -132,9 +159,8 @@ class Renderer:
             # paper_min: minimal HUD (step + planner only)
             render_hud_text(frame, state, badges, minimal=True)
 
-        # Z=13: Color legend (paper mode only)
-        if self.mode == "paper_min":
-            frame = self._render_legend(frame)
+        # Z=13: Color legend (both modes)
+        frame = self._render_legend(frame)
 
         meta = {
             "path_rendered": path_rendered,
@@ -186,7 +212,10 @@ class Renderer:
             (COLOR_CYAN, "PLAN"),
             (COLOR_TRAJ_BLUE, "TRAJ"),
             (COLOR_FIRE, "FIRE"),
+            (COLOR_FIRE_BUFFER, "BUFFER"),
             (COLOR_SMOKE, "SMOKE"),
+            (COLOR_NFZ, "NFZ"),
+            (COLOR_TRAFFIC, "TRAFFIC"),
             (COLOR_FORCED_BLOCK, "BLOCK"),
         ]
         x = 4
@@ -203,3 +232,105 @@ class Renderer:
             x += swatch_size + 4 + len(label) * (4 + 1) * scale + 8
 
         return np.vstack([frame, legend])
+
+    def render_briefing_card(
+        self,
+        heightmap: np.ndarray,
+        state: dict[str, Any],
+    ) -> np.ndarray:
+        """Render a mission briefing title card (shown before animation).
+
+        Shows mission context: objective, origin, destination, constraints,
+        planner name, and a static view of the map with start/goal markers.
+        """
+        H, W = heightmap.shape
+        cell = self._cell_px
+
+        # Render base map
+        frame = self._render_basemap(heightmap, H, W, cell)
+
+        # Start and goal markers (prominent)
+        start_xy = state.get("start_xy", state.get("agent_xy", (0, 0)))
+        goal_xy = state.get("goal_xy", (H - 1, W - 1))
+        draw_start(frame, start_xy, cell)
+        draw_goal(frame, goal_xy, cell)
+
+        # Mission briefing overlay — large dark box with mission details
+        img_h, img_w = frame.shape[:2]
+        box_h = min(int(img_h * 0.6), 260)
+        box_w = min(img_w - 20, img_w)
+        box_y = (img_h - box_h) // 2
+        box_x = (img_w - box_w) // 2
+
+        # Dark semi-transparent background
+        region = frame[box_y:box_y + box_h, box_x:box_x + box_w].astype(np.uint16)
+        bg = np.array([15, 20, 35], dtype=np.uint16)
+        frame[box_y:box_y + box_h, box_x:box_x + box_w] = (
+            (region * 30 + bg * 226) >> 8
+        ).astype(np.uint8)
+
+        # Text rendering — scale based on frame width, auto-reduce for long text
+        base_scale = max(2, min(img_w // 150, 4))
+        tx = box_x + 12
+        ty = box_y + 10
+        avail_w = box_w - 24  # text area width
+
+        def _auto_scale(text: str, preferred: int) -> int:
+            """Reduce scale if text would overflow."""
+            char_w = 5  # (CHAR_W + SPACING) pixels per char at scale=1
+            needed = len(text) * char_w * preferred
+            if needed <= avail_w:
+                return preferred
+            return max(1, avail_w // (len(text) * char_w))
+
+        # Mission title (large, yellow)
+        title = "MISSION BRIEFING"
+        s = _auto_scale(title, base_scale)
+        line_h = 6 * s + 4
+        _render_text(frame, title, tx, ty, (255, 220, 100), s)
+        ty += line_h + 2
+
+        # Objective (may need smaller scale for long names)
+        obj_label = state.get("objective_label", "UAV Mission")
+        s = _auto_scale(obj_label, base_scale)
+        line_h = 6 * s + 4
+        _render_text(frame, obj_label, tx, ty, (232, 232, 232), s)
+        ty += line_h
+
+        # Origin → Destination
+        origin = state.get("origin_name", "")
+        dest = state.get("destination_name", "")
+        detail_scale = _auto_scale(f"FROM: {origin}", base_scale)
+        line_h = 6 * detail_scale + 3
+        if origin and dest:
+            _render_text(frame, f"FROM: {origin}", tx, ty, (180, 200, 220), detail_scale)
+            ty += line_h
+            _render_text(frame, f"TO:   {dest}", tx, ty, (180, 200, 220), detail_scale)
+            ty += line_h
+
+        # Planner + Difficulty
+        planner = state.get("planner_name", "")
+        difficulty = state.get("difficulty", "")
+        diff_tag = f"  [{difficulty.upper()}]" if difficulty else ""
+        _render_text(frame, f"PLANNER: {planner}{diff_tag}", tx, ty, (200, 200, 200), detail_scale)
+        ty += line_h
+
+        # Deliverable
+        deliverable = state.get("deliverable_name", "")
+        if deliverable:
+            _render_text(frame, f"CARGO: {deliverable}", tx, ty, (180, 200, 220), detail_scale)
+            ty += line_h
+
+        # Constraints (if available and space permits)
+        constraints = state.get("constraints", [])
+        if constraints and ty + line_h < box_y + box_h - 4:
+            for c in constraints[:2]:  # max 2 constraints
+                if ty + line_h >= box_y + box_h - 4:
+                    break
+                _render_text(frame, f"! {c}", tx, ty, (213, 94, 0), detail_scale)
+                ty += line_h
+
+        # Add legend
+        frame = self._render_legend(frame)
+
+        return frame

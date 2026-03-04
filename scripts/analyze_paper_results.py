@@ -37,7 +37,7 @@ DEFAULT_FIG_DIR = "outputs/paper_figures"
 # Planner display order
 PLANNER_ORDER = [
     "astar", "theta_star", "periodic_replan",
-    "aggressive_replan", "dstar_lite", "mppi_grid",
+    "aggressive_replan", "dstar_lite", "apf",
 ]
 PLANNER_LABELS = {
     "astar": "A*",
@@ -45,17 +45,18 @@ PLANNER_LABELS = {
     "periodic_replan": "Periodic",
     "aggressive_replan": "Aggressive",
     "dstar_lite": "D* Lite",
-    "mppi_grid": "MPPI",
+    "apf": "APF",
 }
+# Okabe-Ito colorblind-safe palette
 PLANNER_COLORS = {
-    "astar": "#1f77b4",
-    "theta_star": "#ff7f0e",
-    "periodic_replan": "#2ca02c",
-    "aggressive_replan": "#d62728",
-    "dstar_lite": "#9467bd",
-    "mppi_grid": "#8c564b",
+    "astar": "#E69F00",           # orange
+    "theta_star": "#56B4E9",      # sky blue
+    "periodic_replan": "#009E73", # bluish green
+    "aggressive_replan": "#D55E00", # vermillion
+    "dstar_lite": "#CC79A7",      # reddish purple
+    "apf": "#0072B2",       # blue
 }
-DIFFICULTY_ORDER = ["easy", "medium", "hard"]
+DIFFICULTY_ORDER = ["medium", "hard"]  # easy excluded from paper
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +89,58 @@ def _save_tex(tex: str, name: str) -> None:
 def _mean_std_str(series: pd.Series, fmt: str = ".1f") -> str:
     """Format a series as 'mean +/- std'."""
     return f"{series.mean():{fmt}} $\\pm$ {series.std():{fmt}}"
+
+
+def _bootstrap_ci(
+    data: np.ndarray,
+    stat_fn=np.mean,
+    n_boot: int = 10_000,
+    ci: float = 0.95,
+    rng_seed: int = 42,
+) -> tuple[float, float, float]:
+    """Bootstrap confidence interval. Returns (estimate, ci_lo, ci_hi)."""
+    rng = np.random.default_rng(rng_seed)
+    data = data[~np.isnan(data)]
+    if len(data) == 0:
+        return (0.0, 0.0, 0.0)
+    estimate = float(stat_fn(data))
+    boot_stats = np.array([
+        stat_fn(rng.choice(data, size=len(data), replace=True))
+        for _ in range(n_boot)
+    ])
+    alpha = (1 - ci) / 2
+    lo = float(np.percentile(boot_stats, 100 * alpha))
+    hi = float(np.percentile(boot_stats, 100 * (1 - alpha)))
+    return estimate, lo, hi
+
+
+def _iqm(data: np.ndarray) -> float:
+    """Interquartile mean — robust central tendency (NeurIPS'21 rliable)."""
+    data = data[~np.isnan(data)]
+    if len(data) == 0:
+        return 0.0
+    q25, q75 = np.percentile(data, [25, 75])
+    mask = (data >= q25) & (data <= q75)
+    return float(data[mask].mean()) if mask.any() else float(np.mean(data))
+
+
+def _cliffs_delta(x: np.ndarray, y: np.ndarray) -> tuple[float, str]:
+    """Cliff's delta effect size. Returns (delta, magnitude)."""
+    x = x[~np.isnan(x)]
+    y = y[~np.isnan(y)]
+    if len(x) == 0 or len(y) == 0:
+        return 0.0, "negligible"
+    n = len(x) * len(y)
+    more = sum(1 for xi in x for yi in y if xi > yi)
+    less = sum(1 for xi in x for yi in y if xi < yi)
+    delta = (more - less) / n
+    magnitude = (
+        "large" if abs(delta) >= 0.474 else
+        "medium" if abs(delta) >= 0.33 else
+        "small" if abs(delta) >= 0.147 else
+        "negligible"
+    )
+    return delta, magnitude
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +333,7 @@ def fig_boxplot_path_length(df: pd.DataFrame) -> None:
             patch.set_facecolor(PLANNER_COLORS[pid])
             patch.set_alpha(0.7)
         ax.set_title(f"{diff.capitalize()}", fontsize=12, fontweight="bold")
-        ax.set_ylabel("Path Length" if diff == "easy" else "")
+        ax.set_ylabel("Path Length" if diff == "medium" else "")
         ax.tick_params(axis="x", rotation=30)
         ax.grid(axis="y", alpha=0.3)
 
@@ -375,12 +428,215 @@ def fig_replanning_comparison(df: pd.DataFrame) -> None:
         ax.set_xticks(x)
         ax.set_xticklabels([_label(p) for p in PLANNER_ORDER], rotation=30, fontsize=8)
         ax.set_title(f"{diff.capitalize()}", fontsize=12, fontweight="bold")
-        ax.set_ylabel("Replans" if diff == "easy" else "")
+        ax.set_ylabel("Replans" if diff == "medium" else "")
         ax.grid(axis="y", alpha=0.3)
 
     fig.suptitle("Replanning Frequency by Difficulty", fontsize=13, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     _save_fig(fig, "replanning_comparison")
+
+
+# ---------------------------------------------------------------------------
+# Advanced statistical tables + figures
+# ---------------------------------------------------------------------------
+
+
+def gen_table_iqm_bootstrap(df: pd.DataFrame) -> str:
+    """LaTeX table: IQM success rate with 95% bootstrap CI per planner."""
+    lines = [
+        r"\begin{table}[htbp]",
+        r"\centering",
+        r"\caption{IQM success rate with 95\% bootstrap CI (10k resamples).}",
+        r"\label{tab:iqm_bootstrap}",
+        r"\begin{tabular}{l" + "r" * 4 + "}",
+        r"\toprule",
+        r"Planner & IQM SR (\%) & 95\% CI & Mean SR (\%) & Median SR (\%) \\",
+        r"\midrule",
+    ]
+
+    for pid in PLANNER_ORDER:
+        ps = df[df["planner_id"] == pid]["success"].values.astype(float)
+        iqm_val = _iqm(ps * 100)
+        est, lo, hi = _bootstrap_ci(ps * 100, stat_fn=_iqm)
+        mean_val = 100 * ps.mean()
+        median_val = 100 * np.median(ps)
+        lines.append(
+            f"  {_label(pid)} & {iqm_val:.1f} & [{lo:.1f}, {hi:.1f}] "
+            f"& {mean_val:.1f} & {median_val:.1f} \\\\"
+        )
+
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+    return "\n".join(lines)
+
+
+def gen_table_friedman_nemenyi(df: pd.DataFrame) -> str:
+    """LaTeX table: Friedman test + Nemenyi post-hoc p-values."""
+    # Pivot: one row per (scenario, seed), columns = planner success
+    pivot = df.pivot_table(
+        index=["scenario_id", "seed"],
+        columns="planner_id",
+        values="success",
+        aggfunc="first",
+    ).dropna()
+
+    present = [p for p in PLANNER_ORDER if p in pivot.columns]
+    if len(present) < 3:
+        return "% Not enough planners for Friedman test"
+
+    # Friedman test
+    groups = [pivot[p].values for p in present]
+    try:
+        chi2, p_friedman = stats.friedmanchisq(*groups)
+    except Exception:
+        chi2, p_friedman = 0.0, 1.0
+
+    lines = [
+        r"\begin{table}[htbp]",
+        r"\centering",
+        r"\caption{Friedman test ($\chi^2$="
+        + f"{chi2:.1f}, p={p_friedman:.4f}"
+        + r") + Nemenyi post-hoc p-values.}",
+        r"\label{tab:friedman_nemenyi}",
+        r"\footnotesize",
+        r"\begin{tabular}{l" + "c" * len(present) + "}",
+        r"\toprule",
+        " & " + " & ".join(_label(p) for p in present) + r" \\",
+        r"\midrule",
+    ]
+
+    # Nemenyi post-hoc (Wilcoxon pairwise with Bonferroni correction)
+    n_comparisons = len(present) * (len(present) - 1) / 2
+    for pa in present:
+        vals = []
+        for pb in present:
+            if pa == pb:
+                vals.append("--")
+            else:
+                a = pivot[pa].values
+                b = pivot[pb].values
+                try:
+                    _, p_raw = stats.wilcoxon(a, b, zero_method="wilcox")
+                except ValueError:
+                    p_raw = 1.0
+                p_adj = min(p_raw * n_comparisons, 1.0)  # Bonferroni
+                if p_adj < 0.001:
+                    vals.append(r"\textbf{<.001}")
+                elif p_adj < 0.05:
+                    vals.append(f"\\textbf{{{p_adj:.3f}}}")
+                else:
+                    vals.append(f"{p_adj:.3f}")
+        lines.append(f"  {_label(pa)} & " + " & ".join(vals) + r" \\")
+
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+    return "\n".join(lines)
+
+
+def gen_table_effect_sizes(df: pd.DataFrame) -> str:
+    """LaTeX table: Cliff's delta effect sizes between planner pairs."""
+    lines = [
+        r"\begin{table}[htbp]",
+        r"\centering",
+        r"\caption{Cliff's delta effect sizes on success rate (all episodes).}",
+        r"\label{tab:effect_sizes}",
+        r"\footnotesize",
+        r"\begin{tabular}{l" + "c" * len(PLANNER_ORDER) + "}",
+        r"\toprule",
+        " & " + " & ".join(_label(p) for p in PLANNER_ORDER) + r" \\",
+        r"\midrule",
+    ]
+
+    for pa in PLANNER_ORDER:
+        vals = []
+        for pb in PLANNER_ORDER:
+            if pa == pb:
+                vals.append("--")
+            else:
+                a = df[df["planner_id"] == pa]["success"].values.astype(float)
+                b = df[df["planner_id"] == pb]["success"].values.astype(float)
+                delta, mag = _cliffs_delta(a, b)
+                cell = f"{delta:+.2f}"
+                if mag in ("large", "medium"):
+                    cell = f"\\textbf{{{cell}}}"
+                vals.append(cell)
+        lines.append(f"  {_label(pa)} & " + " & ".join(vals) + r" \\")
+
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+    return "\n".join(lines)
+
+
+def fig_performance_profiles(df: pd.DataFrame) -> None:
+    """Performance profiles: fraction of episodes solved within tau * best."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    # Use executed_steps as the performance metric
+    metric_col = "executed_steps" if "executed_steps" in df.columns else "executed_steps_len"
+    if metric_col not in df.columns:
+        print("  Skipping performance profiles: no executed_steps column")
+        return
+
+    # Only consider successful episodes
+    success_df = df[df["success"] == True].copy()
+    if success_df.empty:
+        print("  Skipping performance profiles: no successful episodes")
+        return
+
+    # Per (scenario, seed), find best (minimum) steps
+    best_per_task = success_df.groupby(["scenario_id", "seed"])[metric_col].min()
+
+    taus = np.linspace(1.0, 5.0, 200)
+
+    for pid in PLANNER_ORDER:
+        ps = success_df[success_df["planner_id"] == pid]
+        if ps.empty:
+            continue
+
+        ratios = []
+        for _, row in ps.iterrows():
+            key = (row["scenario_id"], row["seed"])
+            if key in best_per_task.index:
+                best = best_per_task[key]
+                if best > 0:
+                    ratios.append(row[metric_col] / best)
+
+        if not ratios:
+            continue
+
+        ratios = np.array(ratios)
+        fractions = [np.mean(ratios <= tau) for tau in taus]
+        ax.plot(taus, fractions, label=_label(pid),
+                color=PLANNER_COLORS[pid], linewidth=2)
+
+    ax.set_xlabel(r"Performance ratio $\tau$", fontsize=11)
+    ax.set_ylabel(r"Fraction of episodes $\leq \tau \times$ best", fontsize=11)
+    ax.set_xlim(1.0, 5.0)
+    ax.set_ylim(0, 1.05)
+    ax.legend(loc="lower right", fontsize=10)
+    ax.grid(alpha=0.3)
+    fig.suptitle("Performance Profiles (Executed Steps)", fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    _save_fig(fig, "performance_profiles")
+
+
+def fig_bootstrap_ci_bars(df: pd.DataFrame) -> None:
+    """Bar chart with 95% bootstrap CI for success rate per planner."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    x = np.arange(len(PLANNER_ORDER))
+    for i, pid in enumerate(PLANNER_ORDER):
+        ps = df[df["planner_id"] == pid]["success"].values.astype(float) * 100
+        est, lo, hi = _bootstrap_ci(ps)
+        ax.bar(i, est, color=PLANNER_COLORS[pid], alpha=0.85, width=0.6)
+        ax.errorbar(i, est, yerr=[[est - lo], [hi - est]],
+                     fmt="none", ecolor="black", capsize=5, linewidth=1.5)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([_label(p) for p in PLANNER_ORDER], fontsize=10)
+    ax.set_ylabel("Success Rate (%)", fontsize=11)
+    ax.set_ylim(0, 105)
+    ax.grid(axis="y", alpha=0.3)
+    fig.suptitle("Success Rate with 95% Bootstrap CI", fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    _save_fig(fig, "bootstrap_ci_success")
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +669,7 @@ def main() -> None:
     FIG_DIR = args.fig_dir
 
     if not os.path.exists(input_csv):
-        print(f"Error: {input_csv} not found. Run run_v2_paper_experiments.py first.")
+        print(f"Error: {input_csv} not found. Run run_paper_experiments.py first.")
         sys.exit(1)
 
     os.makedirs(TABLE_DIR, exist_ok=True)
@@ -438,6 +694,9 @@ def main() -> None:
     _save_tex(gen_table_by_difficulty(df), "planner_by_difficulty")
     _save_tex(gen_table_exclusion(df), "exclusion_rate")
     _save_tex(gen_table_significance(df), "significance_matrix")
+    _save_tex(gen_table_iqm_bootstrap(df), "iqm_bootstrap")
+    _save_tex(gen_table_friedman_nemenyi(df), "friedman_nemenyi")
+    _save_tex(gen_table_effect_sizes(df), "effect_sizes")
 
     # --- Figures ---
     print("\nGenerating figures...")
@@ -445,6 +704,8 @@ def main() -> None:
     fig_bar_success_rate(df)
     fig_heatmap_success(df)
     fig_replanning_comparison(df)
+    fig_performance_profiles(df)
+    fig_bootstrap_ci_bars(df)
 
     # --- Summary stats to stdout ---
     print("\n--- Summary Statistics ---")

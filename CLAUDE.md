@@ -22,8 +22,8 @@ src/uavbench/
   envs/                         # base, urban (UrbanEnvV2)
   dynamics/                     # fire_ca, traffic, restriction_zones,
                                 # interaction_engine, forced_block
-  planners/                     # base, astar, periodic_replan,
-                                # aggressive_replan, dstar_lite
+  planners/                     # base, astar, theta_star, periodic_replan,
+                                # aggressive_replan, dstar_lite, apf
   blocking.py                   # ONE compute_blocking_mask() (MP-1)
   guardrail/feasibility.py      # multi-depth relaxation
   benchmark/                    # runner, determinism, sanity_check
@@ -31,11 +31,13 @@ src/uavbench/
   visualization/                # renderer, overlays, hud
 ```
 
-## Planners (4)
-- `astar` — static baseline, never replans
+## Planners (6)
+- `astar` — A* static baseline, never replans
+- `theta_star` — Theta* any-angle static, never replans
 - `periodic_replan` — replans every N steps
 - `aggressive_replan` — replans when obstacle mask changes near path
 - `dstar_lite` — incremental graph repair
+- `apf` — Artificial Potential Field, reactive (replans every step)
 
 ## Key Commands
 ```bash

@@ -137,6 +137,18 @@ class MissionEngine:
         return str(self._meta["deliverable_name"])
 
     @property
+    def origin_name(self) -> str:
+        return str(self._meta.get("origin_name", "Base"))
+
+    @property
+    def destination_name(self) -> str:
+        return str(self._meta.get("destination_name", "Objective"))
+
+    @property
+    def priority(self) -> str:
+        return str(self._meta.get("priority", "normal"))
+
+    @property
     def service_time_s(self) -> int:
         """Service time for the current active task."""
         for t in self._tasks:

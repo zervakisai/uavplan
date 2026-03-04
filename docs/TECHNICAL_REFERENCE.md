@@ -27,7 +27,6 @@ src/uavbench/
 ├── benchmark/
 │   ├── runner.py                 # Episode orchestrator (owns step_idx)
 │   ├── determinism.py            # SHA-256 episode hashing (DC-2)
-│   ├── fairness.py               # Fairness verification
 │   └── sanity_check.py           # Post-run SC-1/SC-2/SC-4 analysis
 ├── envs/
 │   ├── base.py                   # Enums: TerminationReason, RejectReason, BlockLifecycle, TaskStatus
@@ -46,40 +45,43 @@ src/uavbench/
 │   ├── fire_ca.py                # Fire CA: 8-neighbor Moore, isotropic, no wind
 │   ├── traffic.py                # Emergency vehicle traffic
 │   ├── restriction_zones.py      # Dynamic NFZ (staggered activation)
-│   ├── forced_block.py           # Interdictions on BFS corridor (FC-1)
-│   ├── interaction_engine.py     # Fire↔traffic coupling → traffic_closure_mask
-│   └── battery.py                # Battery model
+│   ├── forced_block.py           # Interdictions on reference corridor (FC-1)
+│   └── interaction_engine.py     # Fire↔traffic coupling → traffic_closure_mask
 ├── planners/
 │   ├── base.py                   # PlannerBase ABC + PlanResult
 │   ├── astar.py                  # A* (4-connected, static)
+│   ├── theta_star.py             # Theta* (any-angle, static)
+│   ├── apf.py                    # APF (artificial potential field, reactive)
 │   ├── periodic_replan.py        # Time-triggered replan
 │   ├── aggressive_replan.py      # Event-driven replan
 │   ├── dstar_lite.py             # Incremental (simplified)
-│   └── __init__.py               # PLANNERS registry (4 planners)
+│   └── __init__.py               # PLANNERS registry (6 planners)
 ├── guardrail/feasibility.py      # Multi-depth relaxation (GC-1..4)
 ├── metrics/
 │   ├── schema.py                 # EpisodeMetrics dataclass
 │   └── compute.py                # compute_episode_metrics()
 └── visualization/
     ├── renderer.py               # Frame renderer (paper_min / ops_full)
-    ├── overlays.py               # Path, fire, agent, markers
+    ├── overlays.py               # Path, fire, NFZ, traffic, agent, markers
     └── hud.py                    # HUD badges + text (VC-2, VC-3, MC-3)
 ```
 
-### 4 Planners
-| ID | Type | Replanning | Algorithm |
-|----|------|------------|-----------|
-| `astar` | Static | Never | A* 4-connected, Manhattan heuristic |
-| `periodic_replan` | Adaptive | Every N steps | A* on dynamic blocking mask |
-| `aggressive_replan` | Adaptive | On mask change | A* on dynamic blocking mask |
-| `dstar_lite` | Adaptive | On path blocked | A* internal (simplified incremental) |
+### 6 Planners (3 families)
+| ID | Family | Replanning | Algorithm |
+|----|--------|------------|-----------|
+| `astar` | Search (static) | Never | A* 4-connected, Manhattan heuristic |
+| `theta_star` | Search (static) | Never | Theta* any-angle with line-of-sight shortcuts, grid-expanded output (PC-1) |
+| `periodic_replan` | Search (adaptive) | Every N steps | A* on dynamic blocking mask |
+| `aggressive_replan` | Search (adaptive) | On mask change | A* on dynamic blocking mask |
+| `dstar_lite` | Search (adaptive) | On path blocked | A* internal (simplified incremental) |
+| `apf` | Reactive | Every step | Artificial potential field with A* fallback |
 
 ### 9 Scenarios
 | Difficulty | Fire Delivery | Fire Surveillance | Flood Rescue |
 |-----------|---------------|-------------------|--------------|
-| Easy (static) | density=0.18 | density=0.16 | density=0.15 |
-| Medium (dynamic) | fire=2, traffic=2, nfz=1 | fire=3, traffic=2, nfz=2 | fire=2, traffic=3, nfz=1 |
-| Hard (dynamic) | fire=4, traffic=4, nfz=2 | fire=5, traffic=3, nfz=3 | fire=3, traffic=5, nfz=2 |
+| Easy (static, 50×50) | density=0.18 | density=0.16 | density=0.15 |
+| Medium (dynamic, 500×500) | fire=3, traffic=2, nfz=1 | fire=3, traffic=2, nfz=2 | fire=2, traffic=3, nfz=1 |
+| Hard (dynamic, 500×500) | fire=4, traffic=4, nfz=2 | fire=5, traffic=3, nfz=3 | fire=3, traffic=5, nfz=2 |
 
 ---
 
@@ -87,7 +89,7 @@ src/uavbench/
 
 ### Full Step Loop (runner.py)
 ```
-run_episode(scenario_id, planner_id, seed):
+run_episode(scenario_id, planner_id, seed, frame_callback=None):
   1. config = load_scenario(scenario_id)
   2. env = UrbanEnvV2(config)
   3. obs, info = env.reset(seed=seed)           # DC-1: creates ONE root RNG
@@ -107,6 +109,7 @@ run_episode(scenario_id, planner_id, seed):
     g. should, reason = planner.should_replan(...)
     h. if should: plan_result = planner.plan(agent_xy, goal)
        → update path, path_idx=0, replan_count++
+    i. frame_callback(heightmap, state, dyn_state, config)  # Optional viz
 
   9. metrics = compute_episode_metrics(...)
   10. return EpisodeResult(events, trajectory, metrics, frame_hashes)
@@ -168,11 +171,13 @@ root_rng = np.random.default_rng(seed)
 1. BUILDING (heightmap > 0)
 2. NO_FLY (static NFZ)
 3. FIRE (burning cell)
-4. FIRE (smoke >= 0.5)
-5. TRAFFIC_CLOSURE (fire-road interaction)
-6. TRAFFIC_BUFFER (vehicle occupancy)
-7. DYNAMIC_NFZ (mission zone)
-8. FORCED_BLOCK (interdiction)
+4. FIRE_BUFFER (safety buffer around fire)
+5. SMOKE (smoke >= 0.5)
+6. TRAFFIC_CLOSURE (fire-road interaction)
+7. TRAFFIC_BUFFER (vehicle occupancy)
+8. DYNAMIC_NFZ (mission zone)
+9. FORCED_BLOCK (interdiction)
+10. OUT_OF_BOUNDS (off-map)
 
 **Key Methods:**
 - `reset(seed)` → obs, info
@@ -188,9 +193,14 @@ root_rng = np.random.default_rng(seed)
     "forced_block_active", "forced_block_lifecycle",
     "objective_poi", "objective_reason", "objective_label",
     "mission_domain", "distance_to_task", "task_progress",
-    "deliverable_name", "service_time_s"
+    "deliverable_name", "service_time_s",
+    "origin_name", "destination_name", "priority",
 }
 ```
+
+### Reference Corridor
+
+The environment computes a reference corridor at `reset()` using **A*** (same algorithm as planners). This ensures fire ignition and forced block placement intersect the actual paths planners take. BFS serves as fallback if A* fails.
 
 ### Blocking Mask (`blocking.py`)
 ```python
@@ -201,11 +211,13 @@ Layers (OR-merged):
   2. no_fly (static)
   3. forced_block_mask
   4. traffic_closure_mask
-  5. fire_mask (if fire_blocks_movement)
+  5. fire_mask + fire_buffer (if fire_blocks_movement)
   6. smoke >= 0.5 (if fire_blocks_movement)
   7. traffic_occupancy_mask (if traffic_blocks_movement)
   8. dynamic_nfz_mask
 ```
+
+Fire buffer uses `scipy.ndimage.binary_dilation` with 4-connected structure, `iterations=fire_buffer_radius`.
 
 ---
 
@@ -236,6 +248,22 @@ class PlanResult:
 - Uniform cost (all moves cost 1)
 - Never replans. Deterministic. Optimal.
 
+### Theta* (`planners/theta_star.py`)
+- Any-angle path planning with line-of-sight shortcuts
+- Extends A* with parent-vertex visibility checks
+- **Output path is grid-expanded** to 4-connected steps (PC-1 compliance)
+- `_expand_to_grid()` converts any-angle waypoints to legal grid moves
+- Tries all 4 directions with fallback when stuck (prevents path truncation)
+- Static planner: never replans
+
+### APF (`planners/apf.py`)
+- Artificial potential field: attractive (quadratic Euclidean) + repulsive (distance transform)
+- Quadratic attractive: `U_att = 0.5 * k_att * ||pos - goal||²` (Khatib 1986)
+- Repulsive: `scipy.distance_transform_cdt` from blocking mask
+- Greedy descent on combined field, random perturbation on plateau
+- Fallback: full A* when stuck in local minimum
+- Reactive planner: effectively replans every step
+
 ### Periodic Replan (`planners/periodic_replan.py`)
 - Wraps A* internally
 - Replans every `replan_every_steps` (default 6)
@@ -248,6 +276,7 @@ class PlanResult:
 - Replans when blocking mask changes (SHA-256 hash comparison)
 - Same cooldown and RS-1 storm prevention
 - More responsive than periodic (event-driven vs time-triggered)
+- Calibration: first call records baseline mask hash (no replan)
 
 ### D* Lite (`planners/dstar_lite.py`)
 - **Simplified implementation** (uses A* internally, not true incremental D* Lite)
@@ -255,7 +284,8 @@ class PlanResult:
 - First call: calibration (baseline mask hash)
 - If mask changed but path clear → skip replan
 - If mask changed AND path blocked → replan
-- **PC-4:** Expected to underperform full-replan planners in fire scenarios (mass cell changes)
+- **PC-4:** Expected to underperform full-replan planners in fire scenarios (mass cell changes),
+  but uses far fewer replans (incremental efficiency)
 
 ---
 
@@ -279,11 +309,13 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 | Industrial | 3 | 0.03 |
 | Water | 4 | 0.00 |
 
+**Default landuse:** Urban (code 2, p_spread=0.06) for synthetic grids.
+
 - Roads: 50% firebreak (prob *= 0.5)
 - Burnout: after 100-200 steps per cell (random)
-- Smoke: diffused from fire via box blur, persistence=0.7
+- Smoke: diffused from fire via 3×3 box blur (2 passes), persistence=0.7
 
-**Ignition:** Corridor-aware placement (fire near BFS path, not random everywhere)
+**Ignition:** Random placement on burnable cells. Fire acts as a distributed environmental hazard that adaptive planners must detect and route around.
 
 **Properties:** fire_mask, burned_mask, smoke_mask, total_affected
 
@@ -301,10 +333,12 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 - Supports guardrail relaxation (shrink_px)
 
 ### Forced Block (`dynamics/forced_block.py`)
-- BFS reference corridor (planner-agnostic, FC-1)
-- Cells evenly spaced along corridor interior
+- Reference corridor computed via A* on static grid (planner-agnostic, FC-1)
+- 3-wide perpendicular area interdictions centered on corridor
+- **Placement:** blocks positioned within the agent's active window [event_t1, event_t2]
+  along the corridor, where the agent is expected to be during that window
 - Lifecycle: PENDING → ACTIVE (at event_t1) → CLEARED (at event_t2)
-- Fairness: same corridor for all planners
+- Fairness: same corridor for all planners (computed at reset, seed-dependent)
 
 ### Interaction Engine (`dynamics/interaction_engine.py`)
 - Couples fire and traffic → traffic_closure_mask
@@ -358,6 +392,7 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 | Field | Type | Default |
 |-------|------|---------|
 | fire_ignition_points | int | 0 |
+| fire_buffer_radius | int | 3 |
 | num_emergency_vehicles | int | 0 |
 | num_nfz_zones | int | 0 |
 | force_replan_count | int | 0 |
@@ -372,21 +407,21 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 
 ### All 9 Scenario Configs
 
-| Scenario | Density | Fire | Traffic | NFZ | Forced | t1 | t2 |
-|----------|---------|------|---------|-----|--------|----|----|
-| fire_delivery_easy | 0.18 | 0 | 0 | 0 | 0 | — | — |
-| fire_surveillance_easy | 0.16 | 0 | 0 | 0 | 0 | — | — |
-| flood_rescue_easy | 0.15 | 0 | 0 | 0 | 0 | — | — |
-| fire_delivery_medium | 0.18 | 2 | 2 | 1 | 1 | 40 | 120 |
-| fire_surveillance_medium | 0.16 | 3 | 2 | 2 | 1 | 40 | 120 |
-| flood_rescue_medium | 0.15 | 2 | 3 | 1 | 1 | 40 | 120 |
-| fire_delivery_hard | 0.22 | 4 | 4 | 2 | 2 | 30 | 90 |
-| fire_surveillance_hard | 0.22 | 5 | 3 | 3 | 2 | 25 | 80 |
-| flood_rescue_hard | 0.20 | 3 | 5 | 2 | 2 | 30 | 90 |
+| Scenario | Map | Density | Fire | Buffer | Traffic | NFZ | Forced | t1 | t2 |
+|----------|-----|---------|------|--------|---------|-----|--------|----|----|
+| fire_delivery_easy | 50 | 0.18 | 0 | 3 | 0 | 0 | 0 | — | — |
+| fire_surveillance_easy | 50 | 0.16 | 0 | 3 | 0 | 0 | 0 | — | — |
+| flood_rescue_easy | 50 | 0.15 | 0 | 3 | 0 | 0 | 0 | — | — |
+| fire_delivery_medium | 500 | 0.18 | 3 | 2 | 2 | 1 | 1 | 40 | 120 |
+| fire_surveillance_medium | 500 | 0.16 | 3 | 2 | 2 | 2 | 1 | 40 | 120 |
+| flood_rescue_medium | 500 | 0.15 | 2 | 2 | 3 | 1 | 1 | 40 | 120 |
+| fire_delivery_hard | 500 | 0.22 | 4 | 3 | 4 | 2 | 2 | 30 | 90 |
+| fire_surveillance_hard | 500 | 0.22 | 5 | 3 | 3 | 3 | 2 | 25 | 80 |
+| flood_rescue_hard | 500 | 0.20 | 3 | 3 | 5 | 2 | 2 | 30 | 90 |
 
-Easy: static (no dynamics), fixed start/goal (50,50)→(450,450)
-Medium: all dynamics enabled, moderate obstacle counts
-Hard: higher density, more obstacles, tighter time windows
+**Easy:** Static (no dynamics), 50×50 map, fixed start=(5,5) goal=(45,45).
+**Medium:** All dynamics enabled, 500×500, fire_buffer_radius=2, moderate obstacle counts.
+**Hard:** Higher density, more obstacles, tighter event windows, fire_buffer_radius=3.
 
 ---
 
@@ -394,20 +429,28 @@ Hard: higher density, more obstacles, tighter time windows
 
 ### Mission Types
 
-| Type | Service Time | Task Placement | Deliverable |
-|------|-------------|----------------|-------------|
-| fire_delivery | 0 (fly-through) | At goal | medical_supplies |
-| flood_rescue | 2 steps (STAY) | At midpoint | rescue_assessment |
-| fire_surveillance | 3 steps (STAY) | At midpoint | perimeter_report |
+| Type | Service Time | Task Placement | Deliverable | Priority |
+|------|-------------|----------------|-------------|----------|
+| fire_delivery | 0 (fly-through) | At goal | medical_supplies | critical |
+| flood_rescue | 2 steps (STAY) | At midpoint | rescue_assessment | critical |
+| fire_surveillance | 3 steps (STAY) | At midpoint | perimeter_report | high |
+
+### Mission Metadata
+
+| Type | Origin | Destination | Objective Label |
+|------|--------|-------------|----------------|
+| fire_delivery | Hospital Depot Alpha | Fire-Isolated Settlement | Emergency Medical Supply Delivery |
+| flood_rescue | Emergency Operations Center | Flood-Stranded Area | Flood Search & Rescue Assessment |
+| fire_surveillance | Fire Command Post | Active Fire Perimeter | Aerial Fire Perimeter Survey |
 
 ### Mission Engine (`missions/engine.py`)
 
-**Completion:** Agent must reach objective POI + stay for service_time consecutive steps.
-- fire_delivery: arrive at goal = complete
+**Completion (MC-2):** Agent must reach objective POI + stay for service_time consecutive steps.
+- fire_delivery: arrive at goal = complete (service_time=0)
 - flood_rescue: arrive at midpoint, STAY 2 steps
 - fire_surveillance: arrive at midpoint, STAY 3 steps
 
-**Properties:** objective_poi, objective_reason, objective_label, deliverable_name, service_time_s, task_progress, all_tasks_completed, distance_to_task(xy)
+**Properties:** objective_poi, objective_reason, objective_label, deliverable_name, service_time_s, task_progress, all_tasks_completed, distance_to_task(xy), origin_name, destination_name, priority
 
 **Events:** mission_briefing (at reset), task_completed (when service_time met)
 
@@ -428,6 +471,8 @@ Hard: higher density, more obstacles, tighter time windows
 | replans | int | Number of replans |
 | collision_count | int | Failed move attempts |
 | nfz_violations | int | NFZ violations |
+| distance_to_goal_final | float | Manhattan distance to goal at end |
+| fire_exposure_steps | int | Steps where fire/buffer rejected move |
 
 ### Paper Table Mapping
 - **Table 1:** success_rate per (scenario, planner) × 30 seeds
@@ -443,18 +488,25 @@ Hard: higher density, more obstacles, tighter time windows
 ### Renderer (`visualization/renderer.py`)
 
 **Two modes:**
-- `paper_min`: 300 DPI, 15 px/cell, minimal HUD (rows 1-2 only)
-- `ops_full`: 150 DPI, 8 px/cell, full HUD (rows 1-4)
+- `paper_min`: 15 px/cell, minimal HUD (rows 1-2 only)
+- `ops_full`: 10 px/cell, full HUD (rows 1-4)
 
 **Z-order (bottom to top):**
-1. Basemap (terrain + buildings)
-3-4. Fire/smoke overlay (0.65 alpha)
-8. Forced block X-markers
-9. Trajectory (white outline + blue line)
-9.5. Planned path (dashed cyan)
-9.6. Start (green) / Goal (gold) markers
-10. Agent (blue circle + white border)
-12. HUD badges + text
+| Z | Layer | Color |
+|---|-------|-------|
+| 1 | Basemap (terrain + buildings) | Grey gradient by height |
+| 3 | Fire buffer zone | Vermillion (204,121,0) semi-transparent |
+| 3.5 | Smoke overlay | (180,180,180) |
+| 4 | Fire overlay | Red-orange (213,94,0) |
+| 5 | Dynamic NFZ | Purple (204,121,167) with diagonal hatching |
+| 6 | Traffic closures/occupancy | Orange (230,159,0) |
+| 8 | Forced block markers | Red (180,20,20) |
+| 9 | Trajectory trail | Blue (0,114,178) |
+| 9.5 | Planned path | Cyan (86,180,233) |
+| 9.6 | Start marker (green) / Goal marker (gold) | |
+| 10 | Agent icon | Blue (0,114,178) circle + white border |
+| 12 | HUD badges + text | |
+| 13 | Color legend bar | |
 
 ### HUD Badges (hud.py)
 
@@ -469,11 +521,14 @@ Hard: higher density, more obstacles, tighter time windows
 
 **HUD Lines (ops_full):**
 ```
-Row 1: SCN: {scenario_id}  |  MSN: {mission_domain}
-Row 2: PLN: {planner_name}  |  MOD: {mode}
-Row 3: T: {step_idx}  |  REP: {replans}  |  {plan_badge}
-Row 4: OBJ: {objective_label}  D: {distance}  P: {progress}
+Row 1 (yellow):  MISSION: {objective_label} [{PRIORITY}]
+Row 2 (light):   {origin_name} > {destination_name}  |  PLN: {planner}
+Row 3 (white):   T: {step_idx}  |  REP: {replans}  |  {plan_badge}  |  {block_badge}
+Row 4 (blue):    DIST: {distance}  |  TASKS: {progress}  |  {deliverable}
 ```
+
+### Mission Briefing Title Card
+Shown before GIF animation (3 seconds default). Displays: MISSION BRIEFING, objective, FROM/TO, PLANNER [DIFFICULTY], CARGO, constraints.
 
 ---
 
@@ -502,9 +557,19 @@ Returns `GuardrailResult(feasible, depth, relaxations)`.
 **CC-2: Difficulty thresholds:**
 | Difficulty | Min Feasibility Rate |
 |-----------|---------------------|
-| Easy | ≥ 80% |
-| Medium | ≥ 50% |
-| Hard | ≥ 15% |
+| Easy | >= 80% |
+| Medium | >= 50% |
+| Hard | >= 15% |
+
+### Medium Calibration Results (10 seeds, fire_delivery_medium)
+| Planner | Success Rate | Avg Replans |
+|---------|-------------|-------------|
+| A* (static) | 0% | 0 |
+| Aggressive Replan | 70% | ~94 |
+| Periodic Replan | ~67% | ~36 |
+| D* Lite | ~67% | ~4 |
+
+A* blocked by forced interdiction at step ~81. Adaptive planners detect and route around.
 
 ---
 
@@ -550,19 +615,19 @@ assert report.passed  # No ERROR-level violations
 
 ### Commands
 ```bash
-# Run all scenarios × planners × 30 seeds
+# Run all 6 planners × 6 scenarios × 30 seeds
 python scripts/run_paper_experiments.py --trials 30
 
 # Analyze results → LaTeX tables + figures
 python scripts/analyze_paper_results.py
 
-# Generate visual artifacts (GIFs)
-bash scripts/regenerate_paper_gifs.sh
+# Generate demo GIFs (animated visualization)
+python scripts/gen_demo_gifs.py [--easy] [--fps 10]
 
 # Export determinism + viz evidence
 python scripts/export_artifacts.py
 
-# Single episode GIF for debugging
+# Single episode rendering for debugging
 python scripts/render_episode.py gov_fire_delivery_medium aggressive_replan 42
 ```
 
@@ -572,6 +637,7 @@ outputs/
 ├── paper_results/all_episodes.csv   # Raw results (scenario, planner, seed, success, ...)
 ├── paper_tables/                     # LaTeX .tex files
 ├── paper_figures/                    # PNG 300dpi + PDF
+├── demo_gifs/                        # Animated GIFs per scenario×planner
 ├── determinism_hashes.json           # DC-2 verification
 ├── viz_manifest.csv                  # Rendering manifest
 ├── viz_frame_checks.json             # Per-frame validation
@@ -627,18 +693,6 @@ config = load_scenario("gov_fire_delivery_hard")
 result = feasibility_pre_check(config, seed=42)
 print(f"Feasible: {result.feasible}, infeasible at step: {result.first_infeasible_step}")
 
-# Run sanity check
-from uavbench.benchmark.sanity_check import run_sanity_check
-report = run_sanity_check(results_list)
-for v in report.violations:
-    print(f"{v.violation_type.value}: {v.details}")
-
-# Determinism verification
-from uavbench.benchmark.determinism import hash_episode
-h1 = hash_episode(run_episode("gov_fire_delivery_easy", "astar", 42))
-h2 = hash_episode(run_episode("gov_fire_delivery_easy", "astar", 42))
-assert h1 == h2, "DC-2 violation!"
-
 # Blocking mask inspection
 from uavbench.blocking import compute_blocking_mask
 mask = compute_blocking_mask(heightmap, no_fly, config, dyn_state)
@@ -649,4 +703,3 @@ print(f"Blocked cells: {mask.sum()} / {mask.size} ({100*mask.mean():.1f}%)")
 - **Paths:** (x, y) tuples — x=column, y=row
 - **Heightmap indexing:** heightmap[y, x]
 - **Actions:** UP=0 (y-1), DOWN=1 (y+1), LEFT=2 (x-1), RIGHT=3 (x+1), STAY=4
-- **Traffic positions:** (y, x) internally

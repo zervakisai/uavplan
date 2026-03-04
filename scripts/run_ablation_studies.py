@@ -65,8 +65,8 @@ MEDIUM_SCENARIO_IDS = [
     "gov_flood_rescue_medium",
 ]
 
-# All 4 paper planners.
-ALL_PLANNERS = ["astar", "periodic_replan", "aggressive_replan", "dstar_lite"]
+# All 6 paper planners.
+ALL_PLANNERS = ["astar", "theta_star", "periodic_replan", "aggressive_replan", "dstar_lite", "apf"]
 
 # Shared CSV columns across all ablation outputs.
 BASE_COLUMNS = [
@@ -397,7 +397,7 @@ def _extract_row(
 def run_ablation_1(n_seeds: int) -> str:
     """Ablation 1: Dynamics isolation.
 
-    Runs all 4 planners x 3 medium scenarios x 4 variants x n_seeds.
+    Runs all 6 planners x 3 medium scenarios x 4 variants x n_seeds.
     Returns path to output CSV.
     """
     ablation_name = "dynamics_isolation"
@@ -546,7 +546,7 @@ def run_ablation_2(n_seeds: int) -> str:
 def run_ablation_3(n_seeds: int) -> str:
     """Ablation 3: Fire intensity sweep (all planners, fire_delivery_medium).
 
-    Runs all 4 planners x 5 ignition counts x n_seeds.
+    Runs all 6 planners x 5 ignition counts x n_seeds.
     Returns path to output CSV.
     """
     ablation_name = "fire_intensity"

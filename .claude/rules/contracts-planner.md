@@ -1,12 +1,13 @@
 # Planner↔Env Contract (PC)
 
-## 5 Planners (NO MPPI)
+## 6 Planners (NO MPPI)
 1. A* — static baseline, grid-constrained, never replans
 2. Theta* — static any-angle, line-of-sight shortcuts, never replans
    IMPORTANT: Theta* path EXPANDED to grid steps for execution
 3. Periodic Replan — replans every N steps
 4. Aggressive Replan — replans when obstacle mask changes near path
 5. D* Lite — incremental graph repair
+6. APF — Artificial Potential Field, reactive (replans every step)
 
 ## PC-1: Legal Motion
 Executed motion = 4-connected grid. If planner produces any-angle path →

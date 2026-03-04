@@ -44,15 +44,17 @@ src/uavbench/
 │   ├── traffic.py                       # TrafficModel (road-following vehicles)
 │   ├── restriction_zones.py             # RestrictionZoneModel (dynamic NFZ)
 │   ├── interaction_engine.py            # InteractionEngine (fire↔traffic coupling)
-│   └── forced_block.py                  # ForcedBlockManager (BFS corridor interdictions, FC-1)
+│   └── forced_block.py                  # ForcedBlockManager (A* corridor interdictions, FC-1)
 │
 ├── planners/
-│   ├── __init__.py                      # PLANNERS registry: 4 planners (PL-3)
+│   ├── __init__.py                      # PLANNERS registry: 6 planners (PL-3)
 │   ├── base.py                          # PlannerBase ABC + PlanResult (PL-1, PL-2)
 │   ├── astar.py                         # AStarPlanner (static baseline)
+│   ├── theta_star.py                    # ThetaStarPlanner (any-angle static)
 │   ├── periodic_replan.py               # PeriodicReplanPlanner (time-triggered)
 │   ├── aggressive_replan.py             # AggressiveReplanPlanner (event-driven)
-│   └── dstar_lite.py                    # DStarLitePlanner (incremental, simplified)
+│   ├── dstar_lite.py                    # DStarLitePlanner (incremental)
+│   └── apf.py                           # APFPlanner (reactive potential field)
 │
 ├── guardrail/
 │   ├── __init__.py
@@ -247,7 +249,7 @@ cli/benchmark.py
         │     ├── dynamics/*               ← all dynamic layers
         │     ├── guardrail/feasibility.py ← uses blocking.py
         │     └── missions/engine.py
-        ├── planners/__init__.py → planners/base.py + all 4 planners
+        ├── planners/__init__.py → planners/base.py + all 6 planners
         ├── metrics/compute.py → metrics/schema.py
         └── visualization/renderer.py → visualization/overlays.py, hud.py
 ```
@@ -286,6 +288,8 @@ class RejectReason(str, Enum):
     FORCED_BLOCK = "forced_block"
     TRAFFIC_CLOSURE = "traffic_closure"
     FIRE = "fire"
+    FIRE_BUFFER = "fire_buffer"
+    SMOKE = "smoke"
     TRAFFIC_BUFFER = "traffic_buffer"
     DYNAMIC_NFZ = "dynamic_nfz"
     OUT_OF_BOUNDS = "out_of_bounds"
