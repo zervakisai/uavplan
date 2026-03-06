@@ -25,7 +25,9 @@ event_t1: 30
 event_t2: 90
 
 fire_ignition_points: 3
-num_emergency_vehicles: 5
+fire_buffer_radius: 3
+num_emergency_vehicles: 8
+num_corridor_vehicles: 2
 num_nfz_zones: 2
 force_replan_count: 2
 replan_every_steps: 6

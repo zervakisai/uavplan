@@ -25,7 +25,8 @@ event_t2: 120
 # burnable area, so fewer ignition points are needed for equivalent fire load.
 fire_ignition_points: 1
 fire_buffer_radius: 2
-num_emergency_vehicles: 3
+num_emergency_vehicles: 8
+num_corridor_vehicles: 2
 num_nfz_zones: 1
 force_replan_count: 1
 replan_every_steps: 6

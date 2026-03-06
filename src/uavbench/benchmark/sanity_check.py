@@ -56,7 +56,7 @@ class SanityReport:
 # ---------------------------------------------------------------------------
 
 _STATIC_PLANNERS = {"astar"}
-_ADAPTIVE_PLANNERS = {"periodic_replan", "aggressive_replan", "dstar_lite"}
+_ADAPTIVE_PLANNERS = {"periodic_replan", "aggressive_replan", "dstar_lite", "apf"}
 
 # Scenarios with expanding fire (vs. moving obstacles)
 _FIRE_SCENARIO_KEYWORDS = {"fire"}
