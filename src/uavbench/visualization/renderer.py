@@ -42,9 +42,21 @@ from uavbench.visualization.overlays import (
     draw_trajectory,
 )
 
-# Pixel-per-cell scaling
+# Target max image dimension (~1200px).  Auto-scale replaces old fixed
+# _CELL_PX_OPS = 10 which produced 5000px frames on 500×500 maps.
+_TARGET_IMG_PX = 1200
 _CELL_PX_PAPER = 15   # 300 DPI paper mode
-_CELL_PX_OPS = 10     # ops mode (meets 480px min for 50x50 grid)
+
+# Landuse color table: code → RGB uint8
+_LANDUSE_COLORS: dict[int, tuple[int, int, int]] = {
+    0: (232, 224, 208),  # ground / free — warm cream
+    1: (58, 125, 68),    # forest — dark green
+    2: (232, 224, 208),  # urban — same as ground
+    3: (200, 184, 152),  # industrial — light brown
+    4: (74, 144, 217),   # water — blue
+}
+_ROAD_COLOR = np.array([208, 208, 208], dtype=np.uint8)     # light grey
+_GROUND_COLOR = np.array([232, 224, 208], dtype=np.uint8)   # warm cream
 
 
 class Renderer:
@@ -61,8 +73,14 @@ class Renderer:
     ) -> None:
         self.config = config
         self.mode = mode
-        self._cell_px = _CELL_PX_PAPER if mode == "paper_min" else _CELL_PX_OPS
         self._map_size = config.map_size
+        # Auto-scale: target ~1200px max dimension
+        if mode == "paper_min":
+            self._cell_px = _CELL_PX_PAPER
+        else:
+            self._cell_px = max(2, _TARGET_IMG_PX // config.map_size)
+        # Basemap cache (static per episode — buildings + landuse + roads)
+        self._basemap_cache: np.ndarray | None = None
 
     def render_frame(
         self,
@@ -83,11 +101,15 @@ class Renderer:
         """
         H, W = heightmap.shape
         cell = self._cell_px
-        img_h = H * cell
-        img_w = W * cell
 
-        # Z=1: Base map
-        frame = self._render_basemap(heightmap, H, W, cell)
+        # Z=1: Base map (cached — static per episode)
+        if self._basemap_cache is None:
+            landuse_map = state.get("landuse_map")
+            roads_mask = state.get("roads_mask")
+            self._basemap_cache = self._render_basemap(
+                heightmap, H, W, cell, landuse_map, roads_mask,
+            )
+        frame = self._basemap_cache.copy()
 
         # Z=3-4: Fire/smoke (if dynamic_state provided)
         if dynamic_state is not None:
@@ -177,25 +199,35 @@ class Renderer:
         heightmap: np.ndarray,
         H: int, W: int,
         cell: int,
+        landuse_map: np.ndarray | None = None,
+        roads_mask: np.ndarray | None = None,
     ) -> np.ndarray:
-        """Render base map layer (z=1), vectorized."""
-        img_h = H * cell
-        img_w = W * cell
-        frame = np.full((img_h, img_w, 3), 230, dtype=np.uint8)  # light ground
+        """Render base map layer (z=1) with landuse, roads, buildings."""
+        # Start with ground color
+        color_map = np.broadcast_to(
+            _GROUND_COLOR, (H, W, 3),
+        ).copy()
 
-        # Buildings: intensity varies with height (vectorized)
+        # Landuse layer (before roads and buildings)
+        if landuse_map is not None:
+            for code, rgb in _LANDUSE_COLORS.items():
+                mask = landuse_map == code
+                if mask.any():
+                    color_map[mask] = rgb
+
+        # Roads layer
+        if roads_mask is not None and roads_mask.any():
+            color_map[roads_mask] = _ROAD_COLOR
+
+        # Buildings: grey, intensity varies with height
         building_mask = heightmap > 0
         if building_mask.any():
             intensity = np.clip(120 - (heightmap * 15).astype(int), 40, 120)
-            # Create per-cell color array
-            color_map = np.where(
-                building_mask[:, :, np.newaxis],
-                np.stack([intensity] * 3, axis=-1).astype(np.uint8),
-                230,
-            ).astype(np.uint8)
-            # Upscale to pixel resolution
-            frame = np.repeat(np.repeat(color_map, cell, axis=0), cell, axis=1)
+            bldg_colors = np.stack([intensity] * 3, axis=-1).astype(np.uint8)
+            color_map[building_mask] = bldg_colors[building_mask]
 
+        # Upscale to pixel resolution
+        frame = np.repeat(np.repeat(color_map, cell, axis=0), cell, axis=1)
         return frame
 
     @staticmethod
@@ -246,8 +278,15 @@ class Renderer:
         H, W = heightmap.shape
         cell = self._cell_px
 
-        # Render base map
-        frame = self._render_basemap(heightmap, H, W, cell)
+        # Render base map (reuse cache if available)
+        if self._basemap_cache is not None:
+            frame = self._basemap_cache.copy()
+        else:
+            landuse_map = state.get("landuse_map")
+            roads_mask = state.get("roads_mask")
+            frame = self._render_basemap(
+                heightmap, H, W, cell, landuse_map, roads_mask,
+            )
 
         # Start and goal markers (prominent)
         start_xy = state.get("start_xy", state.get("agent_xy", (0, 0)))

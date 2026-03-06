@@ -17,6 +17,7 @@ class TerminationReason(str, Enum):
     COLLISION_NFZ = "collision_nfz"
     TIMEOUT = "timeout"
     INFEASIBLE = "infeasible"
+    WALL_TIMEOUT = "wall_timeout"
     IN_PROGRESS = "in_progress"
 
 

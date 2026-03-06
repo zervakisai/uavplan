@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from uavbench.blocking import SMOKE_BLOCKING_THRESHOLD
+
 
 # ---------------------------------------------------------------------------
 # Colors (RGB uint8) — Okabe-Ito colorblind-safe palette (Wong 2011)
@@ -20,12 +22,12 @@ COLOR_TRAJ_OUTLINE = np.array([255, 255, 255], dtype=np.uint8)  # white outline
 COLOR_START = np.array([0, 158, 115], dtype=np.uint8)      # #009E73 — start (bluish-green)
 COLOR_GOAL = np.array([240, 228, 66], dtype=np.uint8)      # #F0E442 — goal (yellow)
 COLOR_AGENT = np.array([0, 114, 178], dtype=np.uint8)      # #0072B2 — UAV (blue)
-COLOR_FIRE = np.array([230, 159, 0], dtype=np.uint8)       # #E69F00 — fire (orange)
-COLOR_SMOKE = np.array([160, 160, 160], dtype=np.uint8)    # #A0A0A0 — smoke (grey)
-COLOR_FORCED_BLOCK = np.array([213, 94, 0], dtype=np.uint8)  # #D55E00 — forced block (vermillion)
+COLOR_FIRE = np.array([255, 80, 20], dtype=np.uint8)        # vivid red-orange — fire
+COLOR_SMOKE = np.array([160, 160, 160], dtype=np.uint8)     # #A0A0A0 — smoke (grey)
+COLOR_FORCED_BLOCK = np.array([213, 94, 0], dtype=np.uint8) # #D55E00 — forced block (vermillion)
 COLOR_NFZ = np.array([204, 121, 167], dtype=np.uint8)       # #CC79A7 — NFZ (reddish purple)
-COLOR_TRAFFIC = np.array([230, 159, 0], dtype=np.uint8)      # #E69F00 — traffic closure (orange)
-COLOR_FIRE_BUFFER = np.array([213, 94, 0], dtype=np.uint8)   # #D55E00 — fire buffer (vermillion)
+COLOR_TRAFFIC = np.array([230, 159, 0], dtype=np.uint8)     # #E69F00 — traffic closure (orange)
+COLOR_FIRE_BUFFER = np.array([255, 180, 100], dtype=np.uint8)  # light orange — fire buffer
 
 
 # ---------------------------------------------------------------------------
@@ -123,20 +125,21 @@ def draw_path(
 ) -> None:
     """Draw planned path as dashed cyan line with black outline (VC-1).
 
-    Uses dashed pattern: 6px on, 4px off.
+    Line width scales with cell size; dashed every 3 segments.
     """
     if len(path) < 2:
         return
 
-    # Draw outline first (wider, black), then cyan on top
     points = [_cell_center(x, y, cell) for x, y in path]
+    w_outer = max(3, cell)
+    w_inner = max(2, cell - 1)
 
-    for color, width in [(COLOR_PATH_OUTLINE, 3), (COLOR_CYAN, 2)]:
+    for color, width in [(COLOR_PATH_OUTLINE, w_outer), (COLOR_CYAN, w_inner)]:
         for i in range(len(points) - 1):
             px0, py0 = points[i]
             px1, py1 = points[i + 1]
-            # Dashed: draw every other segment
-            if i % 2 == 0:
+            # Dashed: draw 2 of every 3 segments
+            if i % 3 != 2:
                 _draw_line(frame, px0, py0, px1, py1, color, width)
 
 
@@ -155,8 +158,10 @@ def draw_trajectory(
         return
 
     points = [_cell_center(x, y, cell) for x, y in trajectory]
+    w_outer = max(3, cell)
+    w_inner = max(1, cell - 1)
 
-    for color, width in [(COLOR_TRAJ_OUTLINE, 3), (COLOR_TRAJ_BLUE, 1)]:
+    for color, width in [(COLOR_TRAJ_OUTLINE, w_outer), (COLOR_TRAJ_BLUE, w_inner)]:
         for i in range(len(points) - 1):
             px0, py0 = points[i]
             px1, py1 = points[i + 1]
@@ -173,9 +178,10 @@ def draw_start(
     start_xy: tuple[int, int],
     cell: int,
 ) -> None:
-    """Draw start marker (green circle)."""
+    """Draw start marker (green circle with black outline)."""
     cx, cy = _cell_center(start_xy[0], start_xy[1], cell)
-    radius = max(3, cell // 2)
+    radius = max(6, cell * 2)
+    _draw_circle(frame, cx, cy, radius + 1, COLOR_PATH_OUTLINE, filled=True)
     _draw_circle(frame, cx, cy, radius, COLOR_START, filled=True)
 
 
@@ -184,9 +190,12 @@ def draw_goal(
     goal_xy: tuple[int, int],
     cell: int,
 ) -> None:
-    """Draw goal marker (gold circle, slightly larger)."""
+    """Draw goal marker (gold circle with black outline + concentric ring)."""
     cx, cy = _cell_center(goal_xy[0], goal_xy[1], cell)
-    radius = max(4, cell // 2 + 1)
+    radius = max(7, int(cell * 2.5))
+    # Concentric outer ring
+    _draw_circle(frame, cx, cy, radius + 3, COLOR_PATH_OUTLINE, filled=False)
+    _draw_circle(frame, cx, cy, radius + 1, COLOR_PATH_OUTLINE, filled=True)
     _draw_circle(frame, cx, cy, radius, COLOR_GOAL, filled=True)
 
 
@@ -195,16 +204,42 @@ def draw_goal(
 # ---------------------------------------------------------------------------
 
 
+def _draw_cross(
+    frame: np.ndarray,
+    cx: int, cy: int,
+    size: int,
+    color: np.ndarray,
+    width: int = 1,
+) -> None:
+    """Draw a + cross marker at (cx, cy)."""
+    H, W = frame.shape[:2]
+    half = width // 2
+    for i in range(-size, size + 1):
+        for w in range(-half, half + 1):
+            # Horizontal arm
+            py, px = cy + w, cx + i
+            if 0 <= py < H and 0 <= px < W:
+                frame[py, px] = color
+            # Vertical arm
+            py, px = cy + i, cx + w
+            if 0 <= py < H and 0 <= px < W:
+                frame[py, px] = color
+
+
 def draw_agent(
     frame: np.ndarray,
     agent_xy: tuple[int, int],
     cell: int,
 ) -> None:
-    """Draw UAV agent icon (blue circle with white border)."""
+    """Draw UAV agent icon (white ring + blue disc + white rotor cross)."""
     cx, cy = _cell_center(agent_xy[0], agent_xy[1], cell)
-    radius = max(2, cell // 3)
-    _draw_circle(frame, cx, cy, radius + 1, COLOR_TRAJ_OUTLINE, filled=True)
-    _draw_circle(frame, cx, cy, radius, COLOR_AGENT, filled=True)
+    r_outer = max(8, cell * 3)
+    r_inner = max(6, int(cell * 2.5))
+    _draw_circle(frame, cx, cy, r_outer, COLOR_TRAJ_OUTLINE, filled=True)
+    _draw_circle(frame, cx, cy, r_inner, COLOR_AGENT, filled=True)
+    # White rotor cross
+    cross_size = max(4, int(r_inner * 0.6))
+    _draw_cross(frame, cx, cy, cross_size, COLOR_TRAJ_OUTLINE, width=max(1, cell // 2))
 
 
 # ---------------------------------------------------------------------------
@@ -217,13 +252,14 @@ def draw_fire(
     fire_mask: np.ndarray,
     cell: int,
 ) -> None:
-    """Draw fire cells as red-orange overlay (vectorized)."""
+    """Draw fire cells as vivid red-orange overlay at 80% opacity."""
     if not fire_mask.any():
         return
     fire_px = np.repeat(np.repeat(fire_mask, cell, axis=0), cell, axis=1)
     mask_3d = fire_px[:, :, np.newaxis]
     fg = COLOR_FIRE.astype(np.uint16)
-    blended = ((frame.astype(np.uint16) * 90 + fg * 166) >> 8).astype(np.uint8)
+    # 80% opacity: (256 - 204) = 52 for bg, 204 for fg
+    blended = ((frame.astype(np.uint16) * 52 + fg * 204) >> 8).astype(np.uint8)
     frame[:] = np.where(mask_3d, blended, frame)
 
 
@@ -233,7 +269,7 @@ def draw_smoke(
     cell: int,
 ) -> None:
     """Draw smoke cells as grey overlay (vectorized, z=3.5)."""
-    smoke_bool = smoke_mask >= 0.3
+    smoke_bool = smoke_mask >= SMOKE_BLOCKING_THRESHOLD
     if not smoke_bool.any():
         return
     smoke_px = np.repeat(np.repeat(smoke_bool, cell, axis=0), cell, axis=1)
@@ -319,12 +355,12 @@ def draw_fire_buffer(
     buffer_radius: int,
     cell: int,
 ) -> None:
-    """Draw fire safety buffer zone as semi-transparent vermillion."""
+    """Draw fire safety buffer zone as semi-transparent light orange with dots."""
     if not fire_mask.any() or buffer_radius <= 0:
         return
-    from scipy.ndimage import binary_dilation, generate_binary_structure
-    struct = generate_binary_structure(2, 1)
-    buffer_zone = binary_dilation(fire_mask, structure=struct, iterations=buffer_radius)
+    from scipy.ndimage import binary_dilation
+    from uavbench.blocking import _CROSS_STRUCT
+    buffer_zone = binary_dilation(fire_mask, structure=_CROSS_STRUCT, iterations=buffer_radius)
     # Buffer is the ring around fire, not the fire cells themselves
     buffer_ring = buffer_zone & ~fire_mask
     if not buffer_ring.any():
@@ -332,6 +368,12 @@ def draw_fire_buffer(
     buf_px = np.repeat(np.repeat(buffer_ring, cell, axis=0), cell, axis=1)
     mask_3d = buf_px[:, :, np.newaxis]
     fg = COLOR_FIRE_BUFFER.astype(np.uint16)
-    # Lighter blend than fire itself (alpha ~0.25)
-    blended = ((frame.astype(np.uint16) * 192 + fg * 64) >> 8).astype(np.uint8)
+    # 30% opacity: (256 - 77) = 179 for bg, 77 for fg
+    blended = ((frame.astype(np.uint16) * 179 + fg * 77) >> 8).astype(np.uint8)
     frame[:] = np.where(mask_3d, blended, frame)
+
+    # Dotted pattern for buffer zone (every 3rd pixel)
+    ys, xs = np.where(buf_px)
+    dots = (ys + xs) % 3 == 0
+    dot_color = np.array([220, 140, 60], dtype=np.uint8)
+    frame[ys[dots], xs[dots]] = dot_color

@@ -2,9 +2,8 @@
 
 ## GC-1: Multi-depth relaxations
 D1: Remove forced interdiction blocks
-D2: Erode NFZ by 1 cell
-D3: Remove traffic closures
-D4 (optional): Open corridor
+D2: Shrink NFZ zones by 2 cells
+D3: Remove traffic closures (occupancy + closure masks)
 
 ## GC-2: Logging
 Every relaxation: guardrail_depth, relaxations list, feasible_after
