@@ -1,7 +1,7 @@
 # UAVBench — Visual Truth Specification
 
 This document defines the visualization contracts: what MUST appear on screen,
-when, and in what order. It is the source of truth for contracts VC-1, VC-2, VC-3.
+when, and in what order. It is the source of truth for contracts VC-1 and VC-2.
 
 ---
 
@@ -9,10 +9,10 @@ when, and in what order. It is the source of truth for contracts VC-1, VC-2, VC-
 
 | Mode | Purpose | Layers Enabled | HUD |
 |------|---------|---------------|-----|
-| `paper_min` | Clean figures for paper (high-DPI PNG) | Base map, fire, smoke, forced blocks, trajectory, path, UAV, start/goal | Minimal: step counter, planner name |
+| `paper_min` | Clean figures for paper (high-DPI PNG) | Base map, fire, smoke, trajectory, path, UAV, start/goal | Minimal: step counter, planner name |
 | `ops_full` | Full operational rendering (animated GIF) | All 12+ layers | Full HUD, timeline bar, cartographic overlay |
 
-Both modes enforce the same visual truth contracts (VC-1, VC-2, VC-3).
+Both modes enforce the same visual truth contracts (VC-1, VC-2).
 
 ---
 
@@ -32,7 +32,6 @@ No layer may overwrite a higher-priority layer.
 | 5 | Dynamic restriction zones | Per-type colors (see zone table) | Hatch patterns per mission |
 | 6 | Traffic closures | Yellow `#FFFF00` diagonal stripes | From interaction engine |
 | 7 | Entities (vehicles, intruders) | Mission-specific icons | Traffic, intruders, moving target |
-| 8 | Forced block markers | `#1A1A1A` X-scatter, alpha=0.65 | Interdiction cells |
 | 9 | Trajectory + planned path | See path rendering rules below | Core visual truth layer |
 | 10 | UAV icon + safety bubble | Blue/orange/red by safety state | Always present |
 | 11 | Event annotations | Replan flash, corridor label | Transient overlays |
@@ -81,37 +80,13 @@ When a replan occurs, the OLD path is shown as a ghost for 3 frames:
 
 ---
 
-## 4. Forced Block Lifecycle Rendering (VC-3)
+## 4. (Removed — VC-3 Forced Block Lifecycle)
 
-Each forced interdiction has a lifecycle: `TRIGGERED → ACTIVE → CLEARED`.
-The HUD and map rendering reflect all states.
-
-### Map Rendering
-
-| Lifecycle State | Map Style | HUD Badge |
-|----------------|-----------|-----------|
-| `TRIGGERED` | Cells flash amber for 2 frames | — |
-| `ACTIVE` | X-markers at z=8, `#1A1A1A`, alpha=0.65 | `FORCED BLOCK: ACTIVE` (red) |
-| `CLEARED` | X-markers fade out over 3 frames | `FORCED BLOCK: CLEARED` (green) |
-
-### HUD Badge Rules
-
-| Condition | Badge | Color |
-|-----------|-------|-------|
-| Any block in ACTIVE state | `FORCED BLOCK: ACTIVE` | Red `#FF0000` |
-| Most recent block CLEARED, no active blocks | `FORCED BLOCK: CLEARED` | Green `#00CC44` |
-| No blocks ever triggered | (no badge) | — |
-
-### Lifecycle Timing
-
-```
-Step event_t1:   Block TRIGGERED → logged in events with step_idx
-Step event_t1+1: Block ACTIVE → cells blocked on map, HUD badge
-  ...
-Step guardrail clears: Block CLEARED → HUD badge, cells fade
-```
-
-**Test**: Frame sequence at event_t1 shows lifecycle transitions; HUD badge text matches block state.
+VC-3 has been removed. The abstract forced block system (ForcedBlockManager,
+BlockLifecycle enum) has been replaced by physical interdiction mechanisms:
+fire corridor closures and vehicle roadblocks. These are visible through the
+existing fire and traffic overlays and do not require a separate lifecycle
+rendering layer.
 
 ---
 
@@ -263,7 +238,7 @@ Requirements:
 |----------|------------|----------------------|
 | VC-1 | Planned path visible if `plan_len > 1` | Section 3 (Path Visibility) |
 | VC-2 | NO_PLAN/STALE badge when plan missing/stale | Section 3 (Plan Status Badges) |
-| VC-3 | Forced block lifecycle rendered | Section 4 (Forced Block Lifecycle) |
+| VC-3 | (Removed — interdictions now physical fire/traffic events) | Section 4 (historical note) |
 | VZ-1 | paper_min and ops_full modes | Section 1 (Renderer Modes) |
 | VZ-2 | 12-layer z-order stack | Section 2 (Layer Z-Order Stack) |
 | VZ-3 | Deterministic GIF export | Section 9 (Deterministic Rendering) |

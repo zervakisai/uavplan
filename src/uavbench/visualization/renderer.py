@@ -1,8 +1,7 @@
-"""Visualization renderer (VC-1, VC-2, VC-3, VZ-1, VZ-3).
+"""Visualization renderer (VC-1, VC-2, VZ-1, VZ-3).
 
 Two modes: paper_min (high-DPI PNG) and ops_full (animated GIF).
-Renders frames deterministically with path overlays, HUD badges,
-and forced block lifecycle markers.
+Renders frames deterministically with path overlays and HUD badges.
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from uavbench.visualization.overlays import (
     COLOR_CYAN,
     COLOR_FIRE,
     COLOR_FIRE_BUFFER,
-    COLOR_FORCED_BLOCK,
     COLOR_GOAL,
     COLOR_NFZ,
     COLOR_SMOKE,
@@ -32,7 +30,6 @@ from uavbench.visualization.overlays import (
     draw_agent,
     draw_fire,
     draw_fire_buffer,
-    draw_forced_blocks,
     draw_goal,
     draw_nfz,
     draw_path,
@@ -63,7 +60,7 @@ class Renderer:
     """Frame renderer for UAVBench v2 episodes.
 
     Enforces VC-1 (path visibility), VC-2 (plan badges),
-    VC-3 (forced block lifecycle), VZ-3 (determinism).
+    VZ-3 (determinism).
     """
 
     def __init__(
@@ -138,14 +135,6 @@ class Renderer:
             traffic_occ = dynamic_state.get("traffic_occupancy_mask")
             if traffic_occ is not None:
                 draw_traffic(frame, traffic_occ, cell)
-
-        # Z=8: Forced block markers
-        forced_active = state.get("forced_block_active", False)
-        forced_lifecycle = state.get("forced_block_lifecycle", "none")
-        if forced_active and dynamic_state is not None:
-            fb_mask = dynamic_state.get("forced_block_mask")
-            if fb_mask is not None:
-                draw_forced_blocks(frame, fb_mask, cell)
 
         # Z=9: Trajectory + planned path
         trajectory = state.get("trajectory", [])
@@ -248,7 +237,6 @@ class Renderer:
             (COLOR_SMOKE, "SMOKE"),
             (COLOR_NFZ, "NFZ"),
             (COLOR_TRAFFIC, "TRAFFIC"),
-            (COLOR_FORCED_BLOCK, "BLOCK"),
         ]
         x = 4
         swatch_size = 8

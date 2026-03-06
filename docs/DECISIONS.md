@@ -50,7 +50,7 @@ The STAY action replaces the 2 altitude actions, which simplifies the action mod
 and supports service-time completion at POIs (agent stays at task location).
 
 **Rationale**:
-- All 6 paper planners produce 2D (x,y) paths; altitude is cosmetic
+- All 5 paper planners produce 2D (x,y) paths; altitude is cosmetic
 - STAY action is needed for mission service_time semantics (MC-2)
 - Simpler action space → fewer untested code paths
 - 2.5D extension (altitude as optional dimension) deferred to post-paper
@@ -62,12 +62,11 @@ requires altitude metrics, revisit.
 
 ## Q4: Planner Suite
 
-**Decision**: Exactly 6 planners for the paper benchmark across 3 families.
+**Decision**: Exactly 5 planners for the paper benchmark across 3 families.
 
 | Registry Key           | Algorithm                       | Family            | Replanning Strategy  |
 |------------------------|---------------------------------|-------------------|----------------------|
 | `astar`                | A* (4-connected)                | Search (static)   | None (one-shot)      |
-| `theta_star`           | Theta* (any-angle)              | Search (static)   | None (one-shot)      |
 | `periodic_replan`      | A* + periodic replan            | Search (adaptive) | Every N steps        |
 | `aggressive_replan`    | A* + mask-change replan         | Search (adaptive) | On obstacle change   |
 | `dstar_lite`           | D* Lite (incremental)           | Search (adaptive) | On path blocked      |
@@ -75,17 +74,15 @@ requires altitude metrics, revisit.
 
 **Removed from v1 planner set:**
 - `mppi_grid`: Removed due to BUG-3 (dead code — registered but never executed).
+- `theta_star`: Removed due to BUG-1 (any-angle paths diverge from A* corridor on large grids, making corridor interdiction unreliable).
 - Deprecated aliases (`ad_star`, `dwa`, `mppi`) are NOT carried forward.
 
 **Design notes:**
 1. All planners implement unified `PlannerBase` with `plan()`, `update()`,
    `should_replan()` methods
-2. Theta* any-angle paths are expanded to grid steps for execution (PC-1)
-3. BUG-1 (Theta* paradox) fixed via area interdictions (FC-1) — 3-wide
-   perpendicular zones prevent any-angle paths from threading between blocked cells
-4. APF uses attractive (goal) + repulsive (obstacle) potential fields;
+2. APF uses attractive (goal) + repulsive (obstacle) potential fields;
    gradient descent determines next action each step
-5. `dstar_lite` uses A* internally with obstacle-change detection (simplified,
+3. `dstar_lite` uses A* internally with obstacle-change detection (simplified,
    not true incremental D* Lite — see PC-4)
 
 **Status**: DECIDED
@@ -133,12 +130,11 @@ always-on in guardrail). UAVBench eliminates this by construction.
 **Layers merged** (in order):
 1. Static: `heightmap > 0` (buildings)
 2. Static: `no_fly_mask` (static NFZ)
-3. Dynamic: `forced_block_mask` (interdictions)
-4. Dynamic: `traffic_closure_mask` (interaction engine)
-5. Dynamic: `fire_mask` (if `config.fire_blocks_movement`)
-6. Dynamic: `smoke_mask >= 0.5` (if `config.fire_blocks_movement`)
-7. Dynamic: traffic occupancy (if `config.traffic_blocks_movement`)
-8. Dynamic: `dynamic_nfz_mask` (if enabled)
+3. Dynamic: `traffic_closure_mask` (interaction engine)
+4. Dynamic: `fire_mask` (if `config.fire_blocks_movement`)
+5. Dynamic: `smoke_mask >= 0.5` (if `config.fire_blocks_movement`)
+6. Dynamic: traffic occupancy (if `config.traffic_blocks_movement`)
+7. Dynamic: `dynamic_nfz_mask` (if enabled)
 
 **Status**: DECIDED
 
@@ -152,12 +148,12 @@ always-on in guardrail). UAVBench eliminates this by construction.
 | Category | Layers | Effect |
 |----------|--------|--------|
 | Hard collision | buildings, static NFZ | Terminates episode (if `terminate_on_collision=True`) |
-| Soft rejection | fire, traffic, forced blocks, dynamic NFZ, traffic closures | Move rejected, agent stays, logged with `RejectReason` enum |
+| Soft rejection | fire, traffic, dynamic NFZ, traffic closures | Move rejected, agent stays, logged with `RejectReason` enum |
 
 **RejectReason enum**:
 ```
-BUILDING, NO_FLY, FORCED_BLOCK, TRAFFIC_CLOSURE,
-FIRE, TRAFFIC_BUFFER, DYNAMIC_NFZ, OUT_OF_BOUNDS
+BUILDING, NO_FLY, TRAFFIC_CLOSURE,
+FIRE, FIRE_BUFFER, SMOKE, TRAFFIC_BUFFER, DYNAMIC_NFZ, OUT_OF_BOUNDS
 ```
 
 Each rejection logs: `reject_reason`, `reject_layer`, `reject_cell`, `step_idx`.
@@ -186,7 +182,7 @@ making the runner the single source of truth.
 
 **Decision**: ONE `np.random.Generator` instance, seeded from
 `np.random.default_rng(seed)` during `reset()`. All stochastic components
-(fire, traffic, restriction zones, forced blocks)
+(fire, traffic, restriction zones)
 receive child generators via `rng.spawn(N)` to ensure independence AND
 reproducibility.
 
@@ -196,14 +192,24 @@ reproducibility.
 
 ---
 
-## Q11: Forced Interdiction Lifecycle (derived from failure mode analysis)
+## Q11: Physical Interdictions Replace Abstract Forced Blocks (derived from failure mode analysis)
 
-**Decision**: Each forced interdiction is tracked by ID with explicit lifecycle:
-`PENDING → TRIGGERED → ACTIVE → CLEARED`. The `forced_block_cleared_by_guardrail`
-flag is per-block, not global.
+**Decision**: The abstract `ForcedBlockManager` (forced_block.py) has been replaced
+by physical interdiction mechanisms that use existing dynamics layers:
+- **Fire corridor closures** (penteli, downtown): Fire ignition is guaranteed on
+  corridor cells via `fire_ca.py`, creating a physical barrier that adaptive planners
+  must route around.
+- **Vehicle roadblocks** (piraeus): Traffic vehicles are positioned on corridor cells
+  via `traffic.py`, blocking the path with physical vehicle occupancy.
 
-**Rationale**: v1 tracks a single global flag that never resets, causing stale
-"cleared" reporting when new blocks are injected.
+**Rationale**: Abstract forced blocks were an invisible, artificial mechanism with
+no physical justification. By using fire and traffic — systems already present in
+the simulation — interdictions become observable, physically motivated, and testable
+through the same dynamics that planners already handle. This also eliminates the
+`BlockLifecycle` enum, `ForcedBlockManager` class, and `FORCED_BLOCK` reject reason.
+
+**Guardrail impact**: D1 relaxation now clears roadblock vehicles (traffic) instead
+of clearing a forced_block_mask.
 
 **Status**: DECIDED
 
@@ -266,13 +272,13 @@ Multi-task episodes are a separate mode.
 
 ## Q16: Scenario Configuration Carry-Forward
 
-**Decision**: UAVBench includes all 9 government mission scenarios with identical
-parameters. The ScenarioConfig dataclass is redesigned from scratch but maps 1:1
-to v1 config values.
+**Decision**: UAVBench includes 3 OSM-based scenarios using real Greek urban maps.
+The ScenarioConfig dataclass is redesigned from scratch.
 
-**Scenarios** (9 total):
-- 3 easy (static track): `gov_{fire_delivery,fire_surveillance,flood_rescue}_easy`
-- 6 stress-test (dynamic track): `gov_{fire_delivery,fire_surveillance,flood_rescue}_{medium,hard}`
+**Scenarios** (3 total):
+- `osm_penteli_fire_delivery_medium` — fire delivery on Penteli, Attica tile
+- `osm_piraeus_flood_rescue_medium` — flood rescue on Piraeus port tile
+- `osm_downtown_fire_surveillance_medium` — fire surveillance on Athens center tile
 
 **Status**: DECIDED
 
@@ -290,14 +296,14 @@ to v1 config values.
 
 ## Q18: Reference Corridor Algorithm
 
-**Decision**: The reference corridor (used for forced block placement and fire-aware
-ignition) is computed using A* instead of BFS.
+**Decision**: The reference corridor (used for fire corridor closures, vehicle
+roadblock placement, and fire-aware ignition) is computed using A* instead of BFS.
 
 **Rationale**: BFS and A* produce different paths on large grids (500x500) due to
 tie-breaking. BFS (FIFO queue) explores UP first; A* (heap with Manhattan heuristic)
 prefers smaller x. Since all planners use A*-based search, the reference corridor
-must match actual planner paths — otherwise forced blocks and fire ignition land on
-cells that planners never visit, making interdictions irrelevant.
+must match actual planner paths — otherwise fire corridor closures, vehicle roadblocks,
+and fire ignition land on cells that planners never visit, making interdictions irrelevant.
 
 **Implementation**: `urban.py` computes corridor via `AStarPlanner.plan(start, goal)`
 at `reset()` time, with BFS fallback if A* fails.
@@ -317,7 +323,7 @@ environmental hazard that adaptive planners can detect and route around.
 
 **Additional changes**:
 - Default landuse: urban (p_spread=0.06) instead of forest (p_spread=0.15)
-- Fire buffer radius: 2 for medium, 3 for hard scenarios
+- Fire buffer radius: 2 for medium scenarios
 - Isotropic spread (8-neighbor Moore, no wind — FD-2)
 
 **Status**: DECIDED

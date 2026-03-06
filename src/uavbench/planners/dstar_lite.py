@@ -101,7 +101,7 @@ class DStarLitePlanner(PlannerBase):
         # Fallback: merge all provided masks directly
         mask = (self._heightmap > 0) | self._no_fly
         for key in (
-            "fire_mask", "forced_block_mask", "traffic_closure_mask",
+            "fire_mask", "traffic_closure_mask",
             "traffic_occupancy_mask", "dynamic_nfz_mask",
         ):
             val = dyn_state.get(key)

@@ -27,11 +27,18 @@ class TrafficModel:
         buffer_radius: int = 5,
         corridor_cells: list[tuple[int, int]] | None = None,
         num_corridor_vehicles: int = 0,
+        roadblock_cells: list[tuple[int, int]] | None = None,
+        roadblock_step: int | None = None,
     ) -> None:
         self._rng = rng
         self._roads = roads_mask.astype(bool)
         self._H, self._W = roads_mask.shape
         self._buffer_radius = buffer_radius
+
+        # Roadblock state: vehicles that freeze at corridor chokepoints
+        self._roadblock_targets = roadblock_cells or []  # (y, x) road cells
+        self._roadblock_step = roadblock_step
+        self._roadblock_frozen: list[bool] = []  # per-vehicle freeze flag
 
         # Find road pixels
         road_ys, road_xs = np.where(self._roads)
@@ -69,6 +76,9 @@ class TrafficModel:
                 self._positions = rand_positions
                 self._targets = rand_targets
 
+        # Initialize per-vehicle freeze flags (all unfrozen initially)
+        self._roadblock_frozen = [False] * self._num_vehicles
+
         self._fire_avoidance_events = 0
 
     # -- Public properties --
@@ -84,14 +94,31 @@ class TrafficModel:
 
     # -- Step --
 
-    def step(self, dt: float = 1.0, fire_mask: np.ndarray | None = None) -> None:
+    def step(
+        self,
+        dt: float = 1.0,
+        fire_mask: np.ndarray | None = None,
+        step_idx: int = 0,
+    ) -> None:
         """Move each vehicle one step toward its target.
 
         Avoids fire cells. Picks new target when close to current one.
+        Roadblock vehicles freeze at their assigned corridor position
+        once step_idx >= roadblock_step.
         """
         self._fire_avoidance_events = 0
 
+        # Activate roadblocks at the designated step
+        if (self._roadblock_targets
+                and self._roadblock_step is not None
+                and step_idx >= self._roadblock_step):
+            self._activate_roadblocks()
+
         for i in range(self._num_vehicles):
+            # Skip frozen roadblock vehicles
+            if self._roadblock_frozen[i]:
+                continue
+
             y, x = self._positions[i]
             ty, tx = self._targets[i]
 
@@ -142,6 +169,44 @@ class TrafficModel:
                             mask[ny, nx] = True
 
         return mask
+
+    # -- Roadblock API --
+
+    def _activate_roadblocks(self) -> None:
+        """Freeze the closest vehicle to each roadblock target cell.
+
+        Called once when step_idx >= roadblock_step. Each roadblock target
+        (y, x) snaps the nearest unfrozen vehicle to that position and
+        freezes it permanently (until clear_roadblocks).
+        """
+        for ry, rx in self._roadblock_targets:
+            # Find closest unfrozen vehicle
+            best_i = -1
+            best_dist = float("inf")
+            for i in range(self._num_vehicles):
+                if self._roadblock_frozen[i]:
+                    continue
+                vy, vx = self._positions[i]
+                d = abs(vy - ry) + abs(vx - rx)
+                if d < best_dist:
+                    best_dist = d
+                    best_i = i
+            if best_i >= 0:
+                self._positions[best_i] = [ry, rx]
+                self._roadblock_frozen[best_i] = True
+
+        # Clear targets so we don't re-activate next step
+        self._roadblock_targets = []
+
+    def clear_roadblocks(self) -> None:
+        """Unfreeze all roadblock vehicles (guardrail D1 relaxation)."""
+        for i in range(self._num_vehicles):
+            self._roadblock_frozen[i] = False
+
+    @property
+    def has_active_roadblocks(self) -> bool:
+        """True if any vehicle is currently frozen as a roadblock."""
+        return any(self._roadblock_frozen)
 
     # -- Internal --
 

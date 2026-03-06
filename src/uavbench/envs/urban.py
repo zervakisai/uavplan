@@ -17,11 +17,11 @@ from scipy.ndimage import binary_dilation
 
 from uavbench.blocking import SMOKE_BLOCKING_THRESHOLD, _CROSS_STRUCT, compute_blocking_mask
 from uavbench.dynamics.fire_ca import FireSpreadModel
-from uavbench.dynamics.forced_block import ForcedBlockManager, bfs_shortest_path
 from uavbench.planners.astar import AStarPlanner
 from uavbench.dynamics.interaction_engine import InteractionEngine
 from uavbench.dynamics.restriction_zones import RestrictionZoneModel
 from uavbench.dynamics.traffic import TrafficModel
+from uavbench.dynamics.pathfinding import bfs_shortest_path
 from uavbench.envs.base import RejectReason, TerminationReason
 from uavbench.missions.engine import MissionEngine
 from uavbench.scenarios.schema import ScenarioConfig
@@ -92,7 +92,6 @@ class UrbanEnvV2(gym.Env):
         self._traffic: TrafficModel | None = None
         self._nfz: RestrictionZoneModel | None = None
         self._interaction: InteractionEngine | None = None
-        self._forced_block: ForcedBlockManager | None = None
         self._bfs_corridor: list[tuple[int, int]] = []
         self._use_dynamics: bool = (
             config.enable_fire
@@ -118,13 +117,6 @@ class UrbanEnvV2(gym.Env):
     def bfs_corridor(self) -> list[tuple[int, int]]:
         """BFS reference corridor on static grid (FC-1)."""
         return list(self._bfs_corridor)
-
-    @property
-    def forced_block_cells(self) -> list[tuple[int, int]]:
-        """Cells selected for forced interdiction (FC-1)."""
-        if self._forced_block is not None:
-            return self._forced_block.forced_cells
-        return []
 
     # -- Gymnasium API --
 
@@ -220,10 +212,10 @@ class UrbanEnvV2(gym.Env):
 
         # Snap mission POI to corridor midpoint for path alignment (FC-1).
         # This ensures the agent visits the POI while following the
-        # start→goal path, and the forced block on the corridor
-        # intersects the executed path.  Without this, two-leg routing
+        # start→goal path, and corridor interdictions (fire/roadblock)
+        # intersect the executed path.  Without this, two-leg routing
         # (start→POI→goal) takes a different geometry that bypasses
-        # forced blocks placed on the start→goal corridor.
+        # interdictions placed on the start→goal corridor.
         if (self._mission is not None
                 and self._mission.service_time_s > 0
                 and len(self._bfs_corridor) > 2):
@@ -242,6 +234,11 @@ class UrbanEnvV2(gym.Env):
         self._interaction = None
 
         if self.config.enable_fire and self.config.fire_ignition_points > 0:
+            # Fire corridor guarantee: pick corridor interior targets
+            guarantee_targets = _pick_corridor_targets(
+                self._bfs_corridor,
+                self.config.num_fire_corridor_closures,
+            )
             self._fire = FireSpreadModel(
                 map_shape=map_shape,
                 rng=fire_rng,
@@ -249,15 +246,25 @@ class UrbanEnvV2(gym.Env):
                 landuse_map=landuse_map,
                 roads_mask=self._roads,
                 corridor_cells=self._bfs_corridor,
+                guarantee_targets=guarantee_targets,
+                guarantee_step=self.config.event_t1 or 30,
             )
 
         if self.config.enable_traffic and self.config.num_emergency_vehicles > 0:
+            # Roadblock vehicles: find road cells closest to corridor
+            roadblock_cells = _pick_roadblock_cells(
+                self._bfs_corridor,
+                self._roads,
+                self.config.num_roadblock_vehicles,
+            )
             self._traffic = TrafficModel(
                 roads_mask=self._roads,
                 num_vehicles=self.config.num_emergency_vehicles,
                 rng=traffic_rng,
                 corridor_cells=self._bfs_corridor,
                 num_corridor_vehicles=self.config.num_corridor_vehicles,
+                roadblock_cells=roadblock_cells,
+                roadblock_step=self.config.event_t1 or 30,
             )
 
         if self.config.enable_dynamic_nfz and self.config.num_nfz_zones > 0:
@@ -273,19 +280,6 @@ class UrbanEnvV2(gym.Env):
             self._interaction = InteractionEngine(
                 map_shape=map_shape,
                 roads_mask=self._roads,
-            )
-
-        self._forced_block = None
-        if self.config.force_replan_count > 0 and len(self._bfs_corridor) > 2:
-            # Use a dedicated child RNG for forced block cell selection
-            fb_rng = _reserved_rng
-            self._forced_block = ForcedBlockManager(
-                bfs_corridor=self._bfs_corridor,
-                force_replan_count=self.config.force_replan_count,
-                event_t1=self.config.event_t1 or 30,
-                event_t2=self.config.event_t2 or 80,
-                map_shape=map_shape,
-                rng=fb_rng,
             )
 
         self._events.append({
@@ -447,11 +441,6 @@ class UrbanEnvV2(gym.Env):
                 if self._traffic is not None
                 else None
             ),
-            "forced_block_mask": (
-                self._forced_block.get_mask()
-                if self._forced_block is not None
-                else None
-            ),
             "risk_cost_map": None,  # Phase 4+
             "traffic_closure_mask": (
                 self._interaction.traffic_closure_mask
@@ -480,7 +469,7 @@ class UrbanEnvV2(gym.Env):
         fire_mask = self._fire.fire_mask if self._fire is not None else None
 
         if self._traffic is not None:
-            self._traffic.step(fire_mask=fire_mask)
+            self._traffic.step(fire_mask=fire_mask, step_idx=self._step_idx)
 
         if self._nfz is not None:
             self._nfz.step(fire_mask=fire_mask)
@@ -498,13 +487,6 @@ class UrbanEnvV2(gym.Env):
                 ),
             )
 
-        # Forced block lifecycle (FC-1)
-        if self._forced_block is not None:
-            events_before = len(self._forced_block.events)
-            self._forced_block.step(self._step_idx)
-            # Append any new forced block events
-            for evt in self._forced_block.events[events_before:]:
-                self._events.append(evt)
 
     def _classify_block(
         self,
@@ -515,7 +497,7 @@ class UrbanEnvV2(gym.Env):
         """Classify which layer blocked cell (ny, nx) (EC-1).
 
         Priority: building > no_fly > fire > smoke > traffic_closure >
-        traffic_buffer > dynamic_nfz > forced_block.
+        traffic_buffer > dynamic_nfz.
         """
         if self._heightmap[ny, nx] > 0:
             return RejectReason.BUILDING
@@ -539,8 +521,6 @@ class UrbanEnvV2(gym.Env):
             return RejectReason.TRAFFIC_BUFFER
         if dyn_state.get("dynamic_nfz_mask") is not None and dyn_state["dynamic_nfz_mask"][ny, nx]:
             return RejectReason.DYNAMIC_NFZ
-        if dyn_state.get("forced_block_mask") is not None and dyn_state["forced_block_mask"][ny, nx]:
-            return RejectReason.FORCED_BLOCK
         # Fallback (should not happen if blocking mask is consistent)
         return RejectReason.BUILDING
 
@@ -644,14 +624,6 @@ class UrbanEnvV2(gym.Env):
             "objective_completed": self._objective_completed,
         }
 
-        # Forced block state (FC-1)
-        if self._forced_block is not None:
-            info["forced_block_active"] = self._forced_block.active
-            info["forced_block_lifecycle"] = self._forced_block.lifecycle.value
-        else:
-            info["forced_block_active"] = False
-            info["forced_block_lifecycle"] = "none"
-
         # Mission fields (MC-1, MC-3)
         if self._mission is not None:
             info["objective_poi"] = self._mission.objective_poi
@@ -669,3 +641,54 @@ class UrbanEnvV2(gym.Env):
             info["priority"] = self._mission.priority
 
         return info
+
+
+# ---------------------------------------------------------------------------
+# Helpers for physical interdiction placement
+# ---------------------------------------------------------------------------
+
+
+def _pick_corridor_targets(
+    corridor: list[tuple[int, int]],
+    n: int,
+) -> list[tuple[int, int]]:
+    """Pick n evenly-spaced interior cells along the corridor.
+
+    Returns list of (x, y) corridor cells where fire must arrive.
+    Skips first and last (start/goal).
+    """
+    if n <= 0 or len(corridor) <= 2:
+        return []
+    interior = corridor[1:-1]
+    if n == 1:
+        mid = len(interior) // 2
+        return [interior[mid]]
+    step = max(1, len(interior) // (n + 1))
+    return [interior[min((i + 1) * step, len(interior) - 1)] for i in range(n)]
+
+
+def _pick_roadblock_cells(
+    corridor: list[tuple[int, int]],
+    roads_mask: np.ndarray,
+    n: int,
+) -> list[tuple[int, int]]:
+    """Find n road cells closest to corridor midpoints.
+
+    Returns list of (y, x) road cells suitable for stationary vehicles.
+    """
+    if n <= 0 or len(corridor) <= 2:
+        return []
+    road_ys, road_xs = np.where(roads_mask)
+    if len(road_ys) == 0:
+        return []
+
+    interior = corridor[1:-1]
+    step = max(1, len(interior) // (n + 1))
+    anchors = [interior[min((i + 1) * step, len(interior) - 1)] for i in range(n)]
+
+    result = []
+    for ax, ay in anchors:  # corridor cells are (x, y)
+        dists = np.abs(road_ys - ay) + np.abs(road_xs - ax)
+        closest_idx = int(np.argmin(dists))
+        result.append((int(road_ys[closest_idx]), int(road_xs[closest_idx])))
+    return result

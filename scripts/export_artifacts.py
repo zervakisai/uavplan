@@ -40,7 +40,7 @@ def _hash_obj(obj: object) -> str:
 
 def export_determinism_hashes() -> dict:
     """Run two identical episodes and verify bit-identical outputs (DC-2)."""
-    scenario_id = "gov_fire_delivery_easy"
+    scenario_id = "osm_penteli_fire_delivery_medium"
     planner_id = "astar"
     seed = 42
 
@@ -111,8 +111,6 @@ def export_viz_artifacts() -> None:
             "plan_path": plan_path,
             "plan_age_steps": 0,
             "plan_reason": "",
-            "forced_block_active": step == 3,
-            "forced_block_lifecycle": "active" if step == 3 else "none",
             "step_idx": step,
             "agent_xy": (5, 5),
             "goal_xy": (15, 15),

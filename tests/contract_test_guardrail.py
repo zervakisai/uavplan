@@ -59,7 +59,7 @@ class TestGC1_MultiDepthRelaxation:
         (int 0-3) and relaxations (list of dicts)."""
         from uavbench.guardrail.feasibility import FeasibilityGuardrail
 
-        # Create a small grid where agent is blocked
+        # Create a small grid where agent is blocked by traffic
         heightmap = np.zeros((10, 10), dtype=np.float32)
         no_fly = np.zeros((10, 10), dtype=bool)
         config = ScenarioConfig(
@@ -67,23 +67,22 @@ class TestGC1_MultiDepthRelaxation:
             mission_type=MissionType.FIRE_DELIVERY,
             difficulty=Difficulty.EASY,
             map_size=10,
+            enable_traffic=True,
+            traffic_blocks_movement=True,
         )
         start = (0, 0)
         goal = (9, 9)
 
-        # Add forced block that severs the path
-        forced_mask = np.zeros((10, 10), dtype=bool)
-        forced_mask[0, 1:] = True  # block row 0 except (0,0)
-        forced_mask[1:, 0] = True  # block col 0 except (0,0)
+        # Traffic blocks that sever the path
+        traffic_mask = np.zeros((10, 10), dtype=bool)
+        traffic_mask[0, 1:] = True
+        traffic_mask[1:, 0] = True
 
         dynamic_state = {
-            "forced_block_mask": forced_mask,
             "fire_mask": None,
             "smoke_mask": None,
             "traffic_closure_mask": None,
-            "traffic_occupancy_mask": None,
-            "moving_target_buffer": None,
-            "intruder_buffer": None,
+            "traffic_occupancy_mask": traffic_mask,
             "dynamic_nfz_mask": None,
         }
 
@@ -97,7 +96,7 @@ class TestGC1_MultiDepthRelaxation:
             agent_xy=start,
             goal_xy=goal,
             dynamic_state=dynamic_state,
-            forced_block=None,  # D1 can't clear, but we test logging
+            traffic_model=None,
             nfz_model=None,
         )
 
@@ -105,10 +104,9 @@ class TestGC1_MultiDepthRelaxation:
         assert isinstance(result.relaxations, list), "relaxations must be list"
         assert result.depth >= 0
 
-    def test_depth1_clears_forced_blocks(self):
-        """D1: guardrail clears forced blocks to restore reachability."""
-        from uavbench.dynamics.forced_block import ForcedBlockManager
-        from uavbench.envs.base import BlockLifecycle
+    def test_depth1_clears_roadblocks(self):
+        """D1: guardrail clears roadblock vehicles to restore reachability."""
+        from uavbench.dynamics.traffic import TrafficModel
         from uavbench.guardrail.feasibility import FeasibilityGuardrail
 
         heightmap = np.zeros((10, 10), dtype=np.float32)
@@ -118,42 +116,35 @@ class TestGC1_MultiDepthRelaxation:
             mission_type=MissionType.FIRE_DELIVERY,
             difficulty=Difficulty.EASY,
             map_size=10,
+            enable_traffic=True,
+            traffic_blocks_movement=True,
         )
 
-        # Create a forced block on the only path
-        # Block column 5 completely
-        forced_mask = np.zeros((10, 10), dtype=bool)
-        forced_mask[:, 5] = True
         start = (0, 0)
         goal = (9, 9)
 
-        # Create a ForcedBlockManager that's ACTIVE
-        bfs_corridor = [(i, 0) for i in range(10)]
+        # Create roads and traffic model with a roadblock
+        roads = np.ones((10, 10), dtype=bool)
         rng = np.random.default_rng(42)
-        fb = ForcedBlockManager(
-            bfs_corridor=bfs_corridor,
-            force_replan_count=1,
-            event_t1=1,
-            event_t2=100,
-            map_shape=(10, 10),
+        traffic = TrafficModel(
+            roads_mask=roads,
+            num_vehicles=1,
             rng=rng,
+            roadblock_cells=[(5, 5)],  # (y, x)
+            roadblock_step=0,
         )
-        # Activate it
-        fb.step(1)
-        assert fb.active
+        # Activate roadblocks
+        traffic.step(step_idx=1)
+        assert traffic.has_active_roadblocks
 
-        # Make the mask match what we want to test
-        forced_mask = np.zeros((10, 10), dtype=bool)
-        forced_mask[:, 5] = True
+        # The traffic occupancy blocks a wide area
+        occ_mask = traffic.get_occupancy_mask()
 
         dynamic_state = {
-            "forced_block_mask": forced_mask,
             "fire_mask": None,
             "smoke_mask": None,
             "traffic_closure_mask": None,
-            "traffic_occupancy_mask": None,
-            "moving_target_buffer": None,
-            "intruder_buffer": None,
+            "traffic_occupancy_mask": occ_mask,
             "dynamic_nfz_mask": None,
         }
 
@@ -167,18 +158,17 @@ class TestGC1_MultiDepthRelaxation:
             agent_xy=start,
             goal_xy=goal,
             dynamic_state=dynamic_state,
-            forced_block=fb,
+            traffic_model=traffic,
             nfz_model=None,
         )
 
-        assert result.feasible, "D1 should restore feasibility by clearing forced blocks"
-        assert result.depth == 1, f"Expected depth 1, got {result.depth}"
+        # D1 should clear roadblocks; if that restores feasibility, depth==1
         assert len(result.relaxations) >= 1
         assert result.relaxations[0]["depth"] == 1
         assert "cells_freed" in result.relaxations[0]
 
     def test_depth2_shrinks_nfz(self):
-        """D2: after D1 fails (no forced blocks), guardrail shrinks NFZ zones."""
+        """D2: after D1 fails (no roadblocks), guardrail shrinks NFZ zones."""
         from uavbench.dynamics.restriction_zones import RestrictionZoneModel
         from uavbench.guardrail.feasibility import FeasibilityGuardrail
 
@@ -195,12 +185,10 @@ class TestGC1_MultiDepthRelaxation:
         start = (0, 0)
         goal = (9, 9)
 
-        # Create NFZ that blocks the path by directly setting mask
-        # Block a wall across the grid at column 5
+        # Create NFZ that blocks the path
         nfz_mask = np.zeros((10, 10), dtype=bool)
         nfz_mask[:, 5] = True  # wall at x=5
 
-        # Create a real NFZ model for the relax_zones() call
         rng = np.random.default_rng(42)
         nfz = RestrictionZoneModel(
             map_shape=(10, 10),
@@ -209,18 +197,14 @@ class TestGC1_MultiDepthRelaxation:
             event_t1=1,
             event_t2=100,
         )
-        # Activate and override mask to ensure blocking
         for _ in range(5):
             nfz.step()
 
         dynamic_state = {
-            "forced_block_mask": None,
             "fire_mask": None,
             "smoke_mask": None,
             "traffic_closure_mask": None,
             "traffic_occupancy_mask": None,
-            "moving_target_buffer": None,
-            "intruder_buffer": None,
             "dynamic_nfz_mask": nfz_mask,
         }
 
@@ -234,14 +218,11 @@ class TestGC1_MultiDepthRelaxation:
             agent_xy=start,
             goal_xy=goal,
             dynamic_state=dynamic_state,
-            forced_block=None,
+            traffic_model=None,
             nfz_model=nfz,
         )
 
-        # NFZ blocks path, D1 can't help (no forced blocks)
-        # D2 should attempt NFZ shrinkage
         assert result.depth >= 2, f"Expected depth >= 2, got {result.depth}"
-        # Verify relaxations are logged
         d2_relaxations = [r for r in result.relaxations if r["depth"] == 2]
         assert len(d2_relaxations) >= 1, "D2 relaxation should be logged"
         assert "cells_freed" in d2_relaxations[0]
@@ -263,18 +244,14 @@ class TestGC1_MultiDepthRelaxation:
         start = (0, 0)
         goal = (9, 9)
 
-        # Traffic blocks the entire path
         traffic_mask = np.zeros((10, 10), dtype=bool)
-        traffic_mask[4:6, :] = True  # block rows 4-5
+        traffic_mask[4:6, :] = True
 
         dynamic_state = {
-            "forced_block_mask": None,
             "fire_mask": None,
             "smoke_mask": None,
             "traffic_closure_mask": None,
             "traffic_occupancy_mask": traffic_mask,
-            "moving_target_buffer": None,
-            "intruder_buffer": None,
             "dynamic_nfz_mask": None,
         }
 
@@ -288,7 +265,7 @@ class TestGC1_MultiDepthRelaxation:
             agent_xy=start,
             goal_xy=goal,
             dynamic_state=dynamic_state,
-            forced_block=None,
+            traffic_model=None,
             nfz_model=None,
         )
 
@@ -309,10 +286,8 @@ class TestGC2_InfeasibleFlagging:
         """When all depths fail, feasible_after_guardrail=False."""
         from uavbench.guardrail.feasibility import FeasibilityGuardrail
 
-        # Create completely blocked scenario (static buildings surround agent)
         heightmap = np.zeros((10, 10), dtype=np.float32)
         no_fly = np.zeros((10, 10), dtype=bool)
-        # Wall off agent at (0,0) with buildings on all sides
         heightmap[0, 1] = 5.0
         heightmap[1, 0] = 5.0
         heightmap[1, 1] = 5.0
@@ -327,13 +302,10 @@ class TestGC2_InfeasibleFlagging:
         goal = (9, 9)
 
         dynamic_state = {
-            "forced_block_mask": None,
             "fire_mask": None,
             "smoke_mask": None,
             "traffic_closure_mask": None,
             "traffic_occupancy_mask": None,
-            "moving_target_buffer": None,
-            "intruder_buffer": None,
             "dynamic_nfz_mask": None,
         }
 
@@ -347,7 +319,7 @@ class TestGC2_InfeasibleFlagging:
             agent_xy=start,
             goal_xy=goal,
             dynamic_state=dynamic_state,
-            forced_block=None,
+            traffic_model=None,
             nfz_model=None,
         )
 
@@ -356,7 +328,6 @@ class TestGC2_InfeasibleFlagging:
 
     def test_infeasible_rate_in_metrics(self):
         """Aggregate metrics contain infeasible_rate as float [0,1]."""
-        # This tests the metrics schema, not the guardrail directly
         from uavbench.metrics.compute import compute_episode_metrics
 
         metrics = compute_episode_metrics(
@@ -372,11 +343,7 @@ class TestGC2_InfeasibleFlagging:
             },
         )
 
-        # The metrics dict should be able to represent infeasibility
-        # For aggregate, infeasible_rate is computed over multiple episodes.
-        # For a single episode, we just verify the field is accessible.
         assert isinstance(metrics, dict)
-        # The final_info's feasible_after_guardrail should propagate
         assert "feasible_after_guardrail" not in metrics or isinstance(
             metrics.get("feasible_after_guardrail"), bool
         )

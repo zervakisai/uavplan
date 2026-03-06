@@ -18,7 +18,7 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 
 | ID   | Requirement | Acceptance Criterion | Test File | Phase |
 |------|------------|---------------------|-----------|-------|
-| FC-1 | Forced interdictions SHALL be placed on BFS reference corridor, NOT on any planner's actual path | Interdiction cells computed from BFS shortest path on static grid before any planner runs; verified planner-agnostic via two different planners yielding identical interdiction coordinates | `contract_test_fairness.py` | 5 |
+| FC-1 | Corridor interdictions (fire closures or vehicle roadblocks) SHALL be placed on A* reference corridor, NOT on any planner's actual path | Interdiction cells computed from A* shortest path on static grid before any planner runs; verified planner-agnostic via two different planners yielding identical interdiction coordinates | `contract_test_fairness.py` | 5 |
 | FC-2 | If latency/dropout enabled, all planners SHALL receive equivalent degraded observation snapshots | For same `(scenario, seed)`, `get_dynamic_state()` returns byte-identical arrays regardless of planner identity at each step | `contract_test_fairness.py` | 5 |
 
 ### EC — Decision Record Contract
@@ -47,7 +47,7 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 |------|------------|---------------------|-----------|-------|
 | VC-1 | If `plan_len > 1`, planned path overlay SHALL be visible (never silently absent) | Frame pixel analysis confirms path-colored pixels present when `plan_len > 1` | `contract_test_visual_truth.py` | 8 |
 | VC-2 | If plan missing/stale, HUD SHALL show `NO_PLAN` or `STALE` badge + `plan_reason` | HUD text extraction confirms badge presence when `plan_len <= 1` or `plan_age_steps > 2 * replan_every_steps` | `contract_test_visual_truth.py` | 8 |
-| VC-3 | Forced block lifecycle SHALL be rendered: `TRIGGERED` → `ACTIVE` → `CLEARED` (with reason) | Frame sequence at event_t1 shows lifecycle transitions; HUD badge text matches block state at each step | `contract_test_visual_truth.py` | 8 |
+| VC-3 | (Removed — forced block lifecycle no longer exists; interdictions are physical fire/traffic events visible in existing overlays) | — | — | — |
 
 ### MC — Mission Story Contract
 
@@ -78,11 +78,11 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 
 | ID    | Requirement | Acceptance Criterion |
 |-------|------------|---------------------|
-| SC-1  | UAVBench SHALL support 9 government mission scenarios | All 9 YAML configs load without validation errors; field values match v1 audit |
+| SC-1  | UAVBench SHALL support 3 OSM-based scenarios | All 3 YAML configs load without validation errors |
 | SC-2  | ScenarioConfig SHALL be a frozen dataclass with validation on construction | `ScenarioConfig(invalid_field=...)` raises `ValueError`; frozen instance rejects attribute assignment |
 | SC-3  | Scenario loader SHALL support both `osm` and `synthetic` map sources | `load_scenario()` succeeds for configs with `map_source: osm` and `map_source: synthetic` |
-| SC-4  | Scenario registry SHALL provide filter functions by mission_type, difficulty, track | `list_scenarios_by_track("dynamic")` returns exactly 6 scenario IDs |
-| SC-5  | Each scenario SHALL have `event_t1` and `event_t2` for dynamic track; None for static | Dynamic scenarios have `event_t1 < event_t2`; easy scenarios have both None |
+| SC-4  | Scenario registry SHALL provide filter functions by mission_type, difficulty, track | `list_scenarios_by_track("dynamic")` returns exactly 3 scenario IDs |
+| SC-5  | Each scenario SHALL have `event_t1` and `event_t2` for dynamic track | All scenarios have `event_t1 < event_t2` |
 
 ---
 
@@ -98,7 +98,7 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 | EN-6  | `export_planner_inputs()` SHALL return `(heightmap, no_fly, start_xy, goal_xy)` | Returns tuple of `(ndarray[H,W], ndarray[H,W], tuple, tuple)` after reset |
 | EN-7  | Start and goal SHALL be in same connected component of free cells | BFS from start reaches goal on initial free_mask |
 | EN-8  | Reward SHALL include step cost (-1.0), progress shaping, safety penalties, and goal bonus (+50.0) | Reward at goal step >= 49.0 (50 bonus - 1 step cost); reward at collision step <= -5.0 |
-| EN-9  | `get_dynamic_state()` SHALL return dict with all dynamic layer masks/positions | Keys include `fire_mask`, `smoke_mask`, `traffic_positions`, `forced_block_mask`, `risk_cost_map` (None if layer disabled) |
+| EN-9  | `get_dynamic_state()` SHALL return dict with all dynamic layer masks/positions | Keys include `fire_mask`, `smoke_mask`, `traffic_positions`, `risk_cost_map` (None if layer disabled) |
 
 ---
 
@@ -108,7 +108,7 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 |-------|------------|---------------------|
 | PL-1  | `PlannerBase` SHALL define abstract `plan(start, goal, cost_map) → PlanResult` | `PlannerBase` is ABC; calling `plan()` on base raises `NotImplementedError` |
 | PL-2  | `PlanResult` SHALL be a dataclass with `path`, `success`, `compute_time_ms`, `expansions` | All 4 fields present and typed correctly |
-| PL-3  | All 6 paper planners SHALL be registered in `PLANNERS` dict | `set(PLANNERS.keys()) == {"astar", "theta_star", "periodic_replan", "aggressive_replan", "dstar_lite", "mppi_grid"}` |
+| PL-3  | All 5 paper planners SHALL be registered in `PLANNERS` dict | `set(PLANNERS.keys()) == {"astar", "periodic_replan", "aggressive_replan", "dstar_lite", "apf"}` |
 | PL-4  | `should_replan(pos, path, dyn_state, step) → (bool, str)` SHALL be overridable | Default returns `(False, "")` for one-shot planners; replanning planners return `(True, reason)` |
 | PL-5  | `update(dyn_state)` SHALL accept dynamic state for incremental planners | D* Lite uses `update()` to track obstacle changes; A* ignores it |
 | PL-6  | Paths SHALL be `list[tuple[int, int]]` in (x, y) order, inclusive of start and goal | `path[0] == start` and `path[-1] == goal` for successful plans |
@@ -132,7 +132,7 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 |-------|------------|---------------------|
 | RU-1  | Exactly ONE runner at `benchmark/runner.py` | Single file; no `runner2.py` or `benchmark_runner.py` |
 | RU-2  | Exactly ONE CLI at `cli/benchmark.py` | Single entry point; `python -m uavbench` works |
-| RU-3  | Runner SHALL orchestrate: scenario load → env reset → plan → step loop → metrics | Full episode completes without error for `(gov_civil_protection_easy, astar, seed=42)` |
+| RU-3  | Runner SHALL orchestrate: scenario load → env reset → plan → step loop → metrics | Full episode completes without error for `(osm_penteli_fire_delivery_medium, astar, seed=42)` |
 | RU-4  | Runner SHALL own authoritative `step_idx` (EV-1) | Runner increments counter; passes to env/logger; no other counter exists |
 | RU-5  | CLI SHALL accept `--scenarios`, `--planners`, `--trials`, `--seed-base`, `--output-dir` | `python -m uavbench run --help` shows all flags |
 
@@ -153,5 +153,5 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 | ID    | Requirement | Acceptance Criterion |
 |-------|------------|---------------------|
 | GR-1  | Guardrail SHALL use `compute_blocking_mask()` for reachability checks (MP-1) | Same function used by step legality |
-| GR-2  | Depth 1: clear forced blocks; Depth 2: shrink NFZ + remove closures; Depth 3: emergency corridor | Each depth logged in `relaxations[]` with cells freed/removed |
+| GR-2  | Depth 1: clear roadblock vehicles; Depth 2: shrink NFZ + remove closures; Depth 3: emergency corridor | Each depth logged in `relaxations[]` with cells freed/removed |
 | GR-3  | Topology change counter SHALL skip BFS when unchanged | `guardrail_bfs_skips > 0` after 100 steps with no dynamics changes |
