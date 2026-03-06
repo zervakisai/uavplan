@@ -29,7 +29,7 @@ src/uavbench/
 │   ├── determinism.py            # SHA-256 episode hashing (DC-2)
 │   └── sanity_check.py           # Post-run SC-1/SC-2/SC-4 analysis
 ├── envs/
-│   ├── base.py                   # Enums: TerminationReason, RejectReason, BlockLifecycle, TaskStatus
+│   ├── base.py                   # Enums: TerminationReason, RejectReason, TaskStatus
 │   └── urban.py                  # UrbanEnvV2 (Gymnasium env)
 ├── blocking.py                   # ONE compute_blocking_mask() (MP-1)
 ├── scenarios/
@@ -37,7 +37,7 @@ src/uavbench/
 │   ├── loader.py                 # YAML → ScenarioConfig
 │   ├── registry.py               # SCENARIO_IDS list
 │   ├── calibration.py            # Feasibility pre-check (CC-1..4)
-│   └── configs/*.yaml            # 9 scenario configs
+│   └── configs/*.yaml            # 3 scenario configs
 ├── missions/
 │   ├── schema.py                 # TaskSpec, MissionBriefing
 │   └── engine.py                 # MissionEngine (task lifecycle)
@@ -45,17 +45,15 @@ src/uavbench/
 │   ├── fire_ca.py                # Fire CA: 8-neighbor Moore, isotropic, no wind
 │   ├── traffic.py                # Emergency vehicle traffic
 │   ├── restriction_zones.py      # Dynamic NFZ (staggered activation)
-│   ├── forced_block.py           # Interdictions on reference corridor (FC-1)
 │   └── interaction_engine.py     # Fire↔traffic coupling → traffic_closure_mask
 ├── planners/
 │   ├── base.py                   # PlannerBase ABC + PlanResult
 │   ├── astar.py                  # A* (4-connected, static)
-│   ├── theta_star.py             # Theta* (any-angle, static)
 │   ├── apf.py                    # APF (artificial potential field, reactive)
 │   ├── periodic_replan.py        # Time-triggered replan
 │   ├── aggressive_replan.py      # Event-driven replan
 │   ├── dstar_lite.py             # Incremental (simplified)
-│   └── __init__.py               # PLANNERS registry (6 planners)
+│   └── __init__.py               # PLANNERS registry (5 planners)
 ├── guardrail/feasibility.py      # Multi-depth relaxation (GC-1..4)
 ├── metrics/
 │   ├── schema.py                 # EpisodeMetrics dataclass
@@ -66,22 +64,21 @@ src/uavbench/
     └── hud.py                    # HUD badges + text (VC-2, VC-3, MC-3)
 ```
 
-### 6 Planners (3 families)
+### 5 Planners (3 families)
 | ID | Family | Replanning | Algorithm |
 |----|--------|------------|-----------|
 | `astar` | Search (static) | Never | A* 4-connected, Manhattan heuristic |
-| `theta_star` | Search (static) | Never | Theta* any-angle with line-of-sight shortcuts, grid-expanded output (PC-1) |
 | `periodic_replan` | Search (adaptive) | Every N steps | A* on dynamic blocking mask |
 | `aggressive_replan` | Search (adaptive) | On mask change | A* on dynamic blocking mask |
 | `dstar_lite` | Search (adaptive) | On path blocked | A* internal (simplified incremental) |
 | `apf` | Reactive | Every step | Artificial potential field with A* fallback |
 
-### 9 Scenarios
-| Difficulty | Fire Delivery | Fire Surveillance | Flood Rescue |
-|-----------|---------------|-------------------|--------------|
-| Easy (static, 50×50) | density=0.18 | density=0.16 | density=0.15 |
-| Medium (dynamic, 500×500) | fire=3, traffic=2, nfz=1 | fire=3, traffic=2, nfz=2 | fire=2, traffic=3, nfz=1 |
-| Hard (dynamic, 500×500) | fire=4, traffic=4, nfz=2 | fire=5, traffic=3, nfz=3 | fire=3, traffic=5, nfz=2 |
+### 3 Scenarios (OSM-based, all medium difficulty)
+| Scenario ID | Mission Type | OSM Tile | Dynamics |
+|-------------|-------------|----------|----------|
+| `osm_penteli_fire_delivery_medium` | fire_delivery | Penteli, Attica | fire=3, traffic=2, nfz=1 |
+| `osm_piraeus_flood_rescue_medium` | flood_rescue | Piraeus port | fire=2, traffic=3, nfz=1 |
+| `osm_downtown_fire_surveillance_medium` | fire_surveillance | Athens center | fire=3, traffic=2, nfz=2 |
 
 ---
 
@@ -126,8 +123,7 @@ step_idx += 1
 │      ├── fire.step()
 │      ├── traffic.step(fire_mask)
 │      ├── nfz.step()
-│      ├── interaction.update()
-│      └── forced_block.step(step_idx)
+│      └── interaction.update()
 ├── 6. mission.step(agent_xy, action, step_idx)
 ├── 7. Check goal/timeout/collision
 └── 8. Return (obs, reward, terminated, truncated, info)
@@ -140,7 +136,7 @@ root_rng = np.random.default_rng(seed)
   ├── fire_rng     → FireSpreadModel (ignition, spread)
   ├── traffic_rng  → TrafficModel (positions, targets)
   ├── nfz_rng      → RestrictionZoneModel (zone centers, radii)
-  └── reserved_rng → ForcedBlockManager (cell selection)
+  └── reserved_rng → (reserved for future use)
 ```
 
 ---
@@ -176,21 +172,19 @@ root_rng = np.random.default_rng(seed)
 6. TRAFFIC_CLOSURE (fire-road interaction)
 7. TRAFFIC_BUFFER (vehicle occupancy)
 8. DYNAMIC_NFZ (mission zone)
-9. FORCED_BLOCK (interdiction)
-10. OUT_OF_BOUNDS (off-map)
+9. OUT_OF_BOUNDS (off-map)
 
 **Key Methods:**
 - `reset(seed)` → obs, info
 - `step(action)` → obs, reward, terminated, truncated, info
 - `export_planner_inputs()` → heightmap, no_fly, start_xy, goal_xy
-- `get_dynamic_state()` → dict with fire_mask, smoke_mask, traffic_*, forced_block_mask, dynamic_nfz_mask
+- `get_dynamic_state()` → dict with fire_mask, smoke_mask, traffic_*, dynamic_nfz_mask
 
 **Info Dict (returned by step):**
 ```python
 {
     "agent_xy", "goal_xy", "step_idx",
     "termination_reason", "objective_completed",
-    "forced_block_active", "forced_block_lifecycle",
     "objective_poi", "objective_reason", "objective_label",
     "mission_domain", "distance_to_task", "task_progress",
     "deliverable_name", "service_time_s",
@@ -200,7 +194,7 @@ root_rng = np.random.default_rng(seed)
 
 ### Reference Corridor
 
-The environment computes a reference corridor at `reset()` using **A*** (same algorithm as planners). This ensures fire ignition and forced block placement intersect the actual paths planners take. BFS serves as fallback if A* fails.
+The environment computes a reference corridor at `reset()` using **A*** (same algorithm as planners). This ensures fire corridor closures, vehicle roadblock placement, and fire ignition intersect the actual paths planners take. BFS serves as fallback if A* fails.
 
 ### Blocking Mask (`blocking.py`)
 ```python
@@ -209,12 +203,11 @@ compute_blocking_mask(heightmap, no_fly, config, dynamic_state=None) → bool[H,
 Layers (OR-merged):
   1. heightmap > 0 (buildings)
   2. no_fly (static)
-  3. forced_block_mask
-  4. traffic_closure_mask
-  5. fire_mask + fire_buffer (if fire_blocks_movement)
-  6. smoke >= 0.5 (if fire_blocks_movement)
-  7. traffic_occupancy_mask (if traffic_blocks_movement)
-  8. dynamic_nfz_mask
+  3. traffic_closure_mask
+  4. fire_mask + fire_buffer (if fire_blocks_movement)
+  5. smoke >= 0.5 (if fire_blocks_movement)
+  6. traffic_occupancy_mask (if traffic_blocks_movement)
+  7. dynamic_nfz_mask
 ```
 
 Fire buffer uses `scipy.ndimage.binary_dilation` with 4-connected structure, `iterations=fire_buffer_radius`.
@@ -247,14 +240,6 @@ class PlanResult:
 - max_expansions = 200,000
 - Uniform cost (all moves cost 1)
 - Never replans. Deterministic. Optimal.
-
-### Theta* (`planners/theta_star.py`)
-- Any-angle path planning with line-of-sight shortcuts
-- Extends A* with parent-vertex visibility checks
-- **Output path is grid-expanded** to 4-connected steps (PC-1 compliance)
-- `_expand_to_grid()` converts any-angle waypoints to legal grid moves
-- Tries all 4 directions with fallback when stuck (prevents path truncation)
-- Static planner: never replans
 
 ### APF (`planners/apf.py`)
 - Artificial potential field: attractive (quadratic Euclidean) + repulsive (distance transform)
@@ -332,13 +317,16 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 - Max coverage cap: 30% of map
 - Supports guardrail relaxation (shrink_px)
 
-### Forced Block (`dynamics/forced_block.py`)
-- Reference corridor computed via A* on static grid (planner-agnostic, FC-1)
-- 3-wide perpendicular area interdictions centered on corridor
-- **Placement:** blocks positioned within the agent's active window [event_t1, event_t2]
-  along the corridor, where the agent is expected to be during that window
-- Lifecycle: PENDING → ACTIVE (at event_t1) → CLEARED (at event_t2)
+### Physical Corridor Interdictions (FC-1)
+The abstract `ForcedBlockManager` has been replaced by physical interdiction
+mechanisms using existing dynamics layers:
+- **Fire corridor closures** (penteli, downtown): Fire ignition is guaranteed on
+  corridor cells via `fire_ca.py`, creating a physical barrier that blocks the
+  reference path. Adaptive planners detect fire and reroute; static planners fail.
+- **Vehicle roadblocks** (piraeus): Traffic vehicles are positioned on corridor
+  cells via `traffic.py`, blocking the path with physical vehicle occupancy.
 - Fairness: same corridor for all planners (computed at reset, seed-dependent)
+- Guardrail D1 clears roadblock vehicles instead of abstract forced blocks
 
 ### Interaction Engine (`dynamics/interaction_engine.py`)
 - Couples fire and traffic → traffic_closure_mask
@@ -395,7 +383,6 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 | fire_buffer_radius | int | 3 |
 | num_emergency_vehicles | int | 0 |
 | num_nfz_zones | int | 0 |
-| force_replan_count | int | 0 |
 
 **Planning:**
 | Field | Type | Default |
@@ -405,23 +392,15 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 | plan_budget_static_ms | float | 500.0 |
 | plan_budget_dynamic_ms | float | 200.0 |
 
-### All 9 Scenario Configs
+### All 3 Scenario Configs (OSM-based, medium difficulty)
 
-| Scenario | Map | Density | Fire | Buffer | Traffic | NFZ | Forced | t1 | t2 |
-|----------|-----|---------|------|--------|---------|-----|--------|----|----|
-| fire_delivery_easy | 50 | 0.18 | 0 | 3 | 0 | 0 | 0 | — | — |
-| fire_surveillance_easy | 50 | 0.16 | 0 | 3 | 0 | 0 | 0 | — | — |
-| flood_rescue_easy | 50 | 0.15 | 0 | 3 | 0 | 0 | 0 | — | — |
-| fire_delivery_medium | 500 | 0.18 | 3 | 2 | 2 | 1 | 1 | 40 | 120 |
-| fire_surveillance_medium | 500 | 0.16 | 3 | 2 | 2 | 2 | 1 | 40 | 120 |
-| flood_rescue_medium | 500 | 0.15 | 2 | 2 | 3 | 1 | 1 | 40 | 120 |
-| fire_delivery_hard | 500 | 0.22 | 4 | 3 | 4 | 2 | 2 | 30 | 90 |
-| fire_surveillance_hard | 500 | 0.22 | 5 | 3 | 3 | 3 | 2 | 25 | 80 |
-| flood_rescue_hard | 500 | 0.20 | 3 | 3 | 5 | 2 | 2 | 30 | 90 |
+| Scenario | Map | Density | Fire | Buffer | Traffic | NFZ | Interdiction | t1 | t2 |
+|----------|-----|---------|------|--------|---------|-----|-------------|----|----|
+| osm_penteli_fire_delivery_medium | 500 | 0.18 | 3 | 2 | 2 | 1 | fire corridor | 40 | 120 |
+| osm_piraeus_flood_rescue_medium | 500 | 0.15 | 2 | 2 | 3 | 1 | vehicle roadblock | 40 | 120 |
+| osm_downtown_fire_surveillance_medium | 500 | 0.16 | 3 | 2 | 2 | 2 | fire corridor | 40 | 120 |
 
-**Easy:** Static (no dynamics), 50×50 map, fixed start=(5,5) goal=(45,45).
-**Medium:** All dynamics enabled, 500×500, fire_buffer_radius=2, moderate obstacle counts.
-**Hard:** Higher density, more obstacles, tighter event windows, fire_buffer_radius=3.
+**All scenarios:** Dynamic track, OSM-based maps, 500x500, fire_buffer_radius=2, moderate obstacle counts, event window t1=40 t2=120.
 
 ---
 
@@ -500,7 +479,6 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 | 4 | Fire overlay | Red-orange (213,94,0) |
 | 5 | Dynamic NFZ | Purple (204,121,167) with diagonal hatching |
 | 6 | Traffic closures/occupancy | Orange (230,159,0) |
-| 8 | Forced block markers | Red (180,20,20) |
 | 9 | Trajectory trail | Blue (0,114,178) |
 | 9.5 | Planned path | Cyan (86,180,233) |
 | 9.6 | Start marker (green) / Goal marker (gold) | |
@@ -515,15 +493,11 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 - `"STALE PLAN (reason)"` — plan_age > 2 × replan_every
 - `"PLAN: Nwp"` — active plan with N waypoints
 
-**Block Badge (VC-3):**
-- `"FORCED BLOCK: ACTIVE"` — interdiction active
-- `"FORCED BLOCK: CLEARED"` — interdiction cleared
-
 **HUD Lines (ops_full):**
 ```
 Row 1 (yellow):  MISSION: {objective_label} [{PRIORITY}]
 Row 2 (light):   {origin_name} > {destination_name}  |  PLN: {planner}
-Row 3 (white):   T: {step_idx}  |  REP: {replans}  |  {plan_badge}  |  {block_badge}
+Row 3 (white):   T: {step_idx}  |  REP: {replans}  |  {plan_badge}
 Row 4 (blue):    DIST: {distance}  |  TASKS: {progress}  |  {deliverable}
 ```
 
@@ -541,7 +515,7 @@ Shown before GIF animation (3 seconds default). Displays: MISSION BRIEFING, obje
 | Depth | Action | Effect |
 |-------|--------|--------|
 | D0 | None | Already reachable |
-| D1 | Clear forced blocks | Remove interdiction mask |
+| D1 | Clear roadblock vehicles | Remove corridor vehicle roadblocks |
 | D2 | Shrink NFZ | Erode zones by 2px |
 | D3 | Remove traffic | Clear traffic occupancy + closure |
 
@@ -561,7 +535,7 @@ Returns `GuardrailResult(feasible, depth, relaxations)`.
 | Medium | >= 50% |
 | Hard | >= 15% |
 
-### Medium Calibration Results (10 seeds, fire_delivery_medium)
+### Medium Calibration Results (10 seeds, osm_penteli_fire_delivery_medium)
 | Planner | Success Rate | Avg Replans |
 |---------|-------------|-------------|
 | A* (static) | 0% | 0 |
@@ -569,7 +543,7 @@ Returns `GuardrailResult(feasible, depth, relaxations)`.
 | Periodic Replan | ~67% | ~36 |
 | D* Lite | ~67% | ~4 |
 
-A* blocked by forced interdiction at step ~81. Adaptive planners detect and route around.
+A* blocked by corridor interdiction (fire/vehicle roadblock). Adaptive planners detect and route around.
 
 ---
 
@@ -597,11 +571,11 @@ assert report.passed  # No ERROR-level violations
 | Family | IDs | Module | Tests |
 |--------|-----|--------|-------|
 | DC Determinism | DC-1, DC-2 | runner, env | contract_test_determinism.py |
-| FC Fairness | FC-1..FC-4 | blocking, forced_block | contract_test_fairness.py |
+| FC Fairness | FC-1..FC-4 | blocking, fire_ca, traffic | contract_test_fairness.py |
 | EC Events | EC-1, EC-2 | env (reject/accept) | contract_test_event_semantics.py |
 | GC Guardrail | GC-1..GC-4 | feasibility.py | contract_test_guardrail.py |
 | EV Events | EV-1 | runner (step_idx) | contract_test_event_semantics.py |
-| VC Visual | VC-1..VC-3 | renderer, hud | contract_test_visual_truth.py |
+| VC Visual | VC-1, VC-2 | renderer, hud | contract_test_visual_truth.py |
 | MC Mission | MC-1..MC-4 | engine, schema | contract_test_mission_story.py |
 | PC Planner | PC-1..PC-4 | planners | contract_test_replan_storm.py |
 | FD Fire | FD-1..FD-5 | fire_ca, env | unit_test_fire_ca.py |
@@ -615,7 +589,7 @@ assert report.passed  # No ERROR-level violations
 
 ### Commands
 ```bash
-# Run all 6 planners × 6 scenarios × 30 seeds
+# Run all 5 planners × 3 scenarios × 30 seeds
 python scripts/run_paper_experiments.py --trials 30
 
 # Analyze results → LaTeX tables + figures
@@ -628,7 +602,7 @@ python scripts/gen_demo_gifs.py [--easy] [--fps 10]
 python scripts/export_artifacts.py
 
 # Single episode rendering for debugging
-python scripts/render_episode.py gov_fire_delivery_medium aggressive_replan 42
+python scripts/render_episode.py osm_penteli_fire_delivery_medium aggressive_replan 42
 ```
 
 ### Expected Output Files
@@ -680,7 +654,7 @@ outputs/
 ```python
 # Check a specific episode
 from uavbench.benchmark.runner import run_episode
-result = run_episode("gov_fire_delivery_medium", "aggressive_replan", seed=42)
+result = run_episode("osm_penteli_fire_delivery_medium", "aggressive_replan", seed=42)
 print(f"Success: {result.metrics['success']}")
 print(f"Steps: {result.metrics['executed_steps_len']}")
 print(f"Replans: {result.metrics['replans']}")
@@ -689,7 +663,7 @@ print(f"Reason: {result.metrics['termination_reason']}")
 # Check feasibility
 from uavbench.scenarios.calibration import feasibility_pre_check
 from uavbench.scenarios.loader import load_scenario
-config = load_scenario("gov_fire_delivery_hard")
+config = load_scenario("osm_penteli_fire_delivery_medium")
 result = feasibility_pre_check(config, seed=42)
 print(f"Feasible: {result.feasible}, infeasible at step: {result.first_infeasible_step}")
 

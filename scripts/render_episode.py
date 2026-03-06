@@ -87,8 +87,6 @@ def render_episode(
                 "plan_len": len(remaining_path),
                 "plan_age_steps": 0,
                 "plan_reason": "",
-                "forced_block_active": info.get("forced_block_active", False),
-                "forced_block_lifecycle": info.get("forced_block_lifecycle", "none"),
                 "scenario_id": scenario_id,
                 "planner_name": planner_id,
                 "mission_domain": info.get("mission_domain", ""),
@@ -131,7 +129,7 @@ def render_episode(
 
 
 if __name__ == "__main__":
-    scenario = sys.argv[1] if len(sys.argv) > 1 else "gov_fire_delivery_medium"
+    scenario = sys.argv[1] if len(sys.argv) > 1 else "osm_penteli_fire_delivery_medium"
     planner = sys.argv[2] if len(sys.argv) > 2 else "aggressive_replan"
     seed = int(sys.argv[3]) if len(sys.argv) > 3 else 42
     out = f"outputs/episode_{scenario}_{planner}_s{seed}.gif"

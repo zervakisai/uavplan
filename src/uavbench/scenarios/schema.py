@@ -95,8 +95,12 @@ class ScenarioConfig:
     # NFZ
     num_nfz_zones: int = 0
 
-    # Forced replans
+    # Forced replans (deprecated — kept for backward compat, unused)
     force_replan_count: int = 0
+
+    # Physical interdictions (replace abstract forced_block)
+    num_fire_corridor_closures: int = 0  # fire seeds guaranteed to reach corridor
+    num_roadblock_vehicles: int = 0  # stationary vehicles at corridor chokepoints
 
     # Planning budgets
     plan_budget_static_ms: float = 500.0

@@ -24,7 +24,6 @@ COLOR_GOAL = np.array([240, 228, 66], dtype=np.uint8)      # #F0E442 — goal (y
 COLOR_AGENT = np.array([0, 114, 178], dtype=np.uint8)      # #0072B2 — UAV (blue)
 COLOR_FIRE = np.array([255, 80, 20], dtype=np.uint8)        # vivid red-orange — fire
 COLOR_SMOKE = np.array([160, 160, 160], dtype=np.uint8)     # #A0A0A0 — smoke (grey)
-COLOR_FORCED_BLOCK = np.array([213, 94, 0], dtype=np.uint8) # #D55E00 — forced block (vermillion)
 COLOR_NFZ = np.array([204, 121, 167], dtype=np.uint8)       # #CC79A7 — NFZ (reddish purple)
 COLOR_TRAFFIC = np.array([230, 159, 0], dtype=np.uint8)     # #E69F00 — traffic closure (orange)
 COLOR_FIRE_BUFFER = np.array([255, 180, 100], dtype=np.uint8)  # light orange — fire buffer
@@ -94,23 +93,6 @@ def _draw_circle(
                 else:
                     if abs(dist_sq - radius * radius) <= radius:
                         frame[py, px] = color
-
-
-def _draw_x(
-    frame: np.ndarray,
-    cx: int, cy: int,
-    size: int,
-    color: np.ndarray,
-) -> None:
-    """Draw an X marker at (cx, cy)."""
-    for i in range(-size, size + 1):
-        px1, py1 = cx + i, cy + i
-        px2, py2 = cx + i, cy - i
-        H, W = frame.shape[:2]
-        if 0 <= py1 < H and 0 <= px1 < W:
-            frame[py1, px1] = color
-        if 0 <= py2 < H and 0 <= px2 < W:
-            frame[py2, px2] = color
 
 
 # ---------------------------------------------------------------------------
@@ -277,24 +259,6 @@ def draw_smoke(
     fg = COLOR_SMOKE.astype(np.uint16)
     blended = ((frame.astype(np.uint16) * 154 + fg * 102) >> 8).astype(np.uint8)
     frame[:] = np.where(mask_3d, blended, frame)
-
-
-# ---------------------------------------------------------------------------
-# Forced block markers (z=8) — VC-3
-# ---------------------------------------------------------------------------
-
-
-def draw_forced_blocks(
-    frame: np.ndarray,
-    forced_block_mask: np.ndarray,
-    cell: int,
-) -> None:
-    """Draw forced block X-markers (VC-3)."""
-    ys, xs = np.where(forced_block_mask)
-    size = max(2, cell // 3)
-    for y, x in zip(ys, xs):
-        cx, cy = _cell_center(x, y, cell)
-        _draw_x(frame, cx, cy, size, COLOR_FORCED_BLOCK)
 
 
 # ---------------------------------------------------------------------------

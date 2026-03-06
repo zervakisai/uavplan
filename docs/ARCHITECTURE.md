@@ -17,16 +17,10 @@ src/uavbench/
 │   ├── loader.py                        # load_scenario(path) → ScenarioConfig (SC-3)
 │   ├── registry.py                      # SCENARIO_IDS list (SC-4)
 │   ├── calibration.py                   # Feasibility pre-check (CC-1..4)
-│   └── configs/                         # 9 YAML files (SC-1)
-│       ├── gov_fire_delivery_easy.yaml
-│       ├── gov_fire_delivery_medium.yaml
-│       ├── gov_fire_delivery_hard.yaml
-│       ├── gov_fire_surveillance_easy.yaml
-│       ├── gov_fire_surveillance_medium.yaml
-│       ├── gov_fire_surveillance_hard.yaml
-│       ├── gov_flood_rescue_easy.yaml
-│       ├── gov_flood_rescue_medium.yaml
-│       └── gov_flood_rescue_hard.yaml
+│   └── configs/                         # 3 YAML files (SC-1)
+│       ├── osm_penteli_fire_delivery_medium.yaml
+│       ├── osm_piraeus_flood_rescue_medium.yaml
+│       └── osm_downtown_fire_surveillance_medium.yaml
 │
 ├── missions/
 │   ├── __init__.py
@@ -35,7 +29,7 @@ src/uavbench/
 │
 ├── envs/
 │   ├── __init__.py
-│   ├── base.py                          # Enums: TerminationReason, RejectReason, BlockLifecycle, TaskStatus
+│   ├── base.py                          # Enums: TerminationReason, RejectReason, TaskStatus
 │   └── urban.py                         # UrbanEnvV2(gymnasium.Env) (EN-2..EN-9)
 │
 ├── dynamics/
@@ -43,14 +37,12 @@ src/uavbench/
 │   ├── fire_ca.py                       # FireSpreadModel (cellular automaton, FD-1..5)
 │   ├── traffic.py                       # TrafficModel (road-following vehicles)
 │   ├── restriction_zones.py             # RestrictionZoneModel (dynamic NFZ)
-│   ├── interaction_engine.py            # InteractionEngine (fire↔traffic coupling)
-│   └── forced_block.py                  # ForcedBlockManager (A* corridor interdictions, FC-1)
+│   └── interaction_engine.py            # InteractionEngine (fire↔traffic coupling)
 │
 ├── planners/
-│   ├── __init__.py                      # PLANNERS registry: 6 planners (PL-3)
+│   ├── __init__.py                      # PLANNERS registry: 5 planners (PL-3)
 │   ├── base.py                          # PlannerBase ABC + PlanResult (PL-1, PL-2)
 │   ├── astar.py                         # AStarPlanner (static baseline)
-│   ├── theta_star.py                    # ThetaStarPlanner (any-angle static)
 │   ├── periodic_replan.py               # PeriodicReplanPlanner (time-triggered)
 │   ├── aggressive_replan.py             # AggressiveReplanPlanner (event-driven)
 │   ├── dstar_lite.py                    # DStarLitePlanner (incremental)
@@ -143,7 +135,7 @@ class ScenarioConfig:
     paper_track: Literal["static", "dynamic"]
 
     # Map
-    map_size: int                            # Grid dimension (500 for all gov scenarios)
+    map_size: int                            # Grid dimension (500 for all OSM scenarios)
     map_source: Literal["osm", "synthetic"]
     osm_tile_id: str | None
     building_density: float                  # [0, 1]
@@ -229,7 +221,6 @@ info: dict containing:
     distance_to_task: float
     task_progress: str
     deliverable_name: str
-    forced_block_active: bool
     guardrail_depth: int
     feasible_after_guardrail: bool
     termination_reason: TerminationReason
@@ -249,7 +240,7 @@ cli/benchmark.py
         │     ├── dynamics/*               ← all dynamic layers
         │     ├── guardrail/feasibility.py ← uses blocking.py
         │     └── missions/engine.py
-        ├── planners/__init__.py → planners/base.py + all 6 planners
+        ├── planners/__init__.py → planners/base.py + all 5 planners
         ├── metrics/compute.py → metrics/schema.py
         └── visualization/renderer.py → visualization/overlays.py, hud.py
 ```
@@ -285,7 +276,6 @@ class Regime(str, Enum):
 class RejectReason(str, Enum):
     BUILDING = "building"
     NO_FLY = "no_fly"
-    FORCED_BLOCK = "forced_block"
     TRAFFIC_CLOSURE = "traffic_closure"
     FIRE = "fire"
     FIRE_BUFFER = "fire_buffer"
@@ -309,11 +299,6 @@ class TaskStatus(str, Enum):
     EXPIRED = "expired"
     SKIPPED = "skipped"
 
-class BlockLifecycle(str, Enum):
-    PENDING = "pending"
-    TRIGGERED = "triggered"
-    ACTIVE = "active"
-    CLEARED = "cleared"
 ```
 
 ---
@@ -328,7 +313,7 @@ reset(seed=S)
               ├── fire_rng       → FireSpreadModel (ignition, spread)
               ├── traffic_rng    → TrafficModel (positions, targets)
               ├── nfz_rng        → RestrictionZoneModel (zone centers, radii)
-              └── reserved_rng   → ForcedBlockManager (cell selection)
+              └── reserved_rng   → (reserved for future use)
 ```
 
 Each component receives its own child generator. No component creates its own RNG.
@@ -356,8 +341,6 @@ def compute_blocking_mask(
     if dynamic_state is None:
         return mask
 
-    if dynamic_state.get("forced_block_mask") is not None:
-        mask |= dynamic_state["forced_block_mask"]
     if dynamic_state.get("traffic_closure_mask") is not None:
         mask |= dynamic_state["traffic_closure_mask"]
     if config.fire_blocks_movement and dynamic_state.get("fire_mask") is not None:

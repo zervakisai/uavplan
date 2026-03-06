@@ -172,9 +172,9 @@ class MissionEngine:
 
         Places the active task at the midpoint of the given path so that
         the POI naturally lies on the reference corridor.  This ensures
-        forced blocks on the corridor intersect the agent's executed path,
-        preventing static planners from bypassing interdictions via
-        two-leg geometric detours.
+        corridor interdictions (fire closures, vehicle roadblocks) intersect
+        the agent's executed path, preventing static planners from bypassing
+        them via two-leg geometric detours.
         """
         if not path or not self._tasks:
             return

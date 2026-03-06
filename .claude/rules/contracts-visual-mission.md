@@ -2,7 +2,7 @@
 
 ## VC-1: Planned path visible when plan_len > 1
 ## VC-2: "NO PLAN" / "STALE" badge when plan missing/stale
-## VC-3: Interdiction lifecycle: PENDING → ACTIVE → CLEARED
+## VC-3: (Removed — interdictions are now physical fire/traffic events visible in existing overlays)
 
 ## MC-1: Every episode has objective POI + human-readable reason string
 ## MC-2: Completion = reach POI + service_time_s → completion event

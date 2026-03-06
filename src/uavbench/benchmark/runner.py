@@ -85,9 +85,9 @@ def run_episode(
     # Initial plan: ALWAYS start→goal (FC-1 corridor alignment).
     # POI is snapped to the corridor midpoint by the env, so the agent
     # naturally visits it while following the start→goal route.
-    # Static planners get exactly ONE plan() call — their path goes
-    # through the forced block zone, ensuring they fail when blocks
-    # activate.  Adaptive planners replan via should_replan().
+    # Static planners get exactly ONE plan() call — fire/roadblock
+    # interdictions on the corridor force them to fail. Adaptive
+    # planners replan via should_replan().
     plan_result = planner.plan(start_xy, goal_xy)
 
     # For adaptive planner replans: target POI first, then goal
@@ -113,6 +113,12 @@ def run_episode(
     terminated = False
     truncated = False
     final_info = info
+
+    # POI unreachability detection: if the agent makes no progress toward
+    # the POI for _POI_STUCK_LIMIT steps, abandon POI and target goal directly.
+    _poi_stuck_counter = 0
+    _poi_best_dist = float("inf")
+    _POI_STUCK_LIMIT = 30
 
     # Wall-clock timeout safety net
     _wall_start = _time.perf_counter()
@@ -146,10 +152,11 @@ def run_episode(
             if task_progress.startswith("1/"):
                 mission_task_done = True
                 current_target = goal_xy
+                _poi_stuck_counter = 0
                 # Only replan if current path doesn't lead to goal.
                 # Static planners on start→goal path: path[-1]==goal → no
-                # replan (they continue on original path through forced
-                # block zone → stuck → timeout).
+                # replan (they continue on original path through fire/
+                # roadblock interdictions → stuck → timeout).
                 # Adaptive planners that replanned to POI during leg 1:
                 # path[-1]==POI → need fresh plan to goal.
                 if not path or path[-1] != goal_xy:
@@ -160,6 +167,22 @@ def run_episode(
                         replan_count += 1
                         planned_waypoints_total += len(plan_result_new.path)
                         _last_plan_step = step_idx
+            else:
+                # POI unreachability detection: if stuck for _POI_STUCK_LIMIT
+                # steps with no progress toward POI, abandon POI and go to goal.
+                # Does NOT replan — adaptive planners replan via should_replan(),
+                # static planners (A*) continue on original start→goal path.
+                poi_dist = (abs(env.agent_xy[0] - mission_poi[0])
+                            + abs(env.agent_xy[1] - mission_poi[1]))
+                if poi_dist < _poi_best_dist:
+                    _poi_best_dist = poi_dist
+                    _poi_stuck_counter = 0
+                else:
+                    _poi_stuck_counter += 1
+                if _poi_stuck_counter >= _POI_STUCK_LIMIT:
+                    mission_task_done = True  # abandon POI
+                    current_target = goal_xy
+                    _poi_stuck_counter = 0
 
         # Advance path index if we moved to expected next waypoint
         if path_idx < len(path) - 1:
@@ -212,8 +235,6 @@ def run_episode(
                 "planner_name": planner_id,
                 "scenario_id": scenario_id,
                 "replan_every_steps": getattr(config, "replan_every_steps", 6),
-                "forced_block_active": info.get("forced_block_active", False),
-                "forced_block_lifecycle": info.get("forced_block_lifecycle", "none"),
                 "dynamic_block_hits": 0,
                 "landuse_map": _landuse_map,
                 "roads_mask": _roads_mask,

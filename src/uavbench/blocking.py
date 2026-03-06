@@ -41,10 +41,6 @@ def compute_blocking_mask(
     if dynamic_state is None:
         return mask
 
-    fb = dynamic_state.get("forced_block_mask")
-    if fb is not None:
-        np.bitwise_or(mask, fb, out=mask)
-
     tc = dynamic_state.get("traffic_closure_mask")
     if tc is not None:
         np.bitwise_or(mask, tc, out=mask)

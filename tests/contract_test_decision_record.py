@@ -181,7 +181,7 @@ class TestEC1_RejectedMoveLogging:
     def test_all_reject_reasons_exercised(self):
         """At least BUILDING and OUT_OF_BOUNDS are observed in Phase 3.
 
-        Dynamic reject reasons (FIRE, FORCED_BLOCK) require Phase 4+
+        Dynamic reject reasons (FIRE, FIRE_BUFFER) require Phase 4+
         and are NOT tested here.
         """
         config = _make_config(

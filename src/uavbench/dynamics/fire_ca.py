@@ -49,6 +49,8 @@ class FireSpreadModel:
         landuse_map: np.ndarray | None = None,
         roads_mask: np.ndarray | None = None,
         corridor_cells: list[tuple[int, int]] | None = None,
+        guarantee_targets: list[tuple[int, int]] | None = None,
+        guarantee_step: int | None = None,
     ) -> None:
         self._rng = rng
         self._H, self._W = map_shape
@@ -62,6 +64,12 @@ class FireSpreadModel:
         self._smoke = np.zeros((self._H, self._W), dtype=np.float32)
 
         self._step_count = 0
+
+        # Fire corridor guarantee: corridor cells that must be burning
+        # by guarantee_step. Approach ignitions try natural spread;
+        # safety net force-ignites any missed targets.
+        self._guarantee_targets = guarantee_targets or []
+        self._guarantee_step = guarantee_step
 
         # Landuse (default: urban=2 for realistic spread in urban grids)
         if landuse_map is not None:
@@ -83,9 +91,14 @@ class FireSpreadModel:
         # Apply road firebreak to pre-computed prob map
         self._prob_map[self._roads] *= 0.5
 
-        # Initial ignition — corridor-aware placement
+        # Initial ignition — random placement for environmental hazards
         if n_ignition > 0:
             self._ignite(n_ignition, corridor_cells)
+
+        # Approach ignitions: place fire seeds near each guarantee target
+        # so natural spread reaches the corridor by guarantee_step.
+        if self._guarantee_targets and corridor_cells:
+            self._ignite_approach_fires(corridor_cells)
 
     # -- Public properties --
 
@@ -116,7 +129,9 @@ class FireSpreadModel:
 
         1. Spread: burning cells attempt to ignite neighbors (isotropic).
         2. Burnout: cells that have burned long enough become BURNED_OUT.
-        3. Smoke: update smoke field (no wind advection).
+        3. Guarantee check: force-ignite corridor targets at guarantee_step.
+           (AFTER burnout so re-ignition is immediate — no 1-step gap.)
+        4. Smoke: update smoke field (no wind advection).
         """
         burning = self._state == BURNING
 
@@ -147,6 +162,19 @@ class FireSpreadModel:
         burnout_mask = burning & (self._burn_timer >= self._burnout_time)
         self._state[burnout_mask] = BURNED_OUT
 
+        # --- Guarantee safety net: force-ignite corridor targets ---
+        # Re-ignite BURNED_OUT targets — ensures persistent corridor blockage.
+        # Placed AFTER burnout: if a target just burned out in this step,
+        # it is immediately re-ignited with no gap between states.
+        if (self._guarantee_targets
+                and self._guarantee_step is not None
+                and self._step_count >= self._guarantee_step):
+            for gx, gy in self._guarantee_targets:
+                if (0 <= gy < self._H and 0 <= gx < self._W
+                        and self._state[gy, gx] != BURNING):
+                    self._state[gy, gx] = BURNING
+                    self._burn_timer[gy, gx] = 0.0
+
         # --- Smoke (update every 2 steps — smoke changes slowly) ---
         if self._step_count % 2 == 0:
             self._update_smoke()
@@ -168,46 +196,81 @@ class FireSpreadModel:
         n: int,
         corridor_cells: list[tuple[int, int]] | None = None,
     ) -> None:
-        """Ignite n cells near the reference corridor when available.
+        """Ignite n cells at random locations.
 
-        Corridor-aware placement offsets ignitions 8-15 cells from corridor
-        points so fire grows INTO the path, creating visible blockages that
-        force adaptive planners to reroute. Falls back to random placement
-        when no corridor is available.
+        Random placement creates distributed environmental hazards without
+        overwhelming chokepoints on dense OSM maps. Corridor interdiction
+        is handled by fire corridor guarantee (approach ignitions +
+        force-ignite safety net).
         """
-        if corridor_cells and len(corridor_cells) > 2:
-            self._ignite_near_corridor(n, corridor_cells)
-        else:
-            self._ignite_random(n)
+        self._ignite_random(n)
+
+    def _ignite_approach_fires(
+        self,
+        corridor_cells: list[tuple[int, int]],
+    ) -> None:
+        """Place approach ignitions near each guarantee target.
+
+        For each guarantee target on the corridor, ignite one cell at
+        offset [8, 15] Manhattan distance. Natural spread from these
+        seeds should reach the corridor by guarantee_step; the safety
+        net in step() handles failures.
+        """
+        for gx, gy in self._guarantee_targets:
+            candidates_y = []
+            candidates_x = []
+            r_min, r_max = 8, 15
+            for dy in range(-r_max, r_max + 1):
+                for dx in range(-r_max, r_max + 1):
+                    dist = abs(dy) + abs(dx)
+                    if dist < r_min or dist > r_max:
+                        continue
+                    cy, cx = gy + dy, gx + dx
+                    if not (0 <= cy < self._H and 0 <= cx < self._W):
+                        continue
+                    if self._state[cy, cx] != UNBURNED:
+                        continue
+                    if self._landuse[cy, cx] == 4:  # water — never burns
+                        continue
+                    candidates_y.append(cy)
+                    candidates_x.append(cx)
+
+            if candidates_y:
+                idx = self._rng.integers(len(candidates_y))
+                self._state[candidates_y[idx], candidates_x[idx]] = BURNING
 
     def _ignite_near_corridor(
         self,
         n: int,
         corridor_cells: list[tuple[int, int]],
     ) -> None:
-        """Ignite n cells offset 8-15 cells from evenly-spaced corridor points.
+        """Ignite some cells near corridor, rest randomly (CC-2 calibrated).
 
-        Ignitions are placed on burnable cells (landuse != water) in a ring
-        [8, 15] cells from corridor anchor points. The offset gives fire time
-        to expand into the corridor as the drone approaches.
-        Falls back to random ignition for any point where no candidates exist.
+        Only half the ignitions (at least 1) are placed near the corridor at
+        offset [15, 25] Manhattan cells. The rest are placed randomly to avoid
+        overwhelming chokepoints. The larger offset (vs original [8,15]) gives
+        fire time to expand visibly while preserving alternative paths.
         """
         interior = corridor_cells[1:-1]  # skip start/goal
         if len(interior) == 0:
             self._ignite_random(n)
             return
 
-        step = max(1, len(interior) // n)
+        # CC-2 calibration: only half near corridor, rest random
+        n_corridor = max(1, n // 2)
+        n_random = n - n_corridor
+
+        step = max(1, len(interior) // n_corridor)
         placed = 0
 
-        for i in range(n):
+        for i in range(n_corridor):
             anchor_idx = min(i * step, len(interior) - 1)
             ax, ay = interior[anchor_idx]
 
-            # Find burnable cells in ring [8, 15] from anchor
+            # Find burnable cells in ring [15, 25] from anchor
             candidates_y = []
             candidates_x = []
-            r_min, r_max = 8, 15
+            r_min, r_max = 15, 25
             for dy in range(-r_max, r_max + 1):
                 for dx in range(-r_max, r_max + 1):
                     dist = abs(dy) + abs(dx)
@@ -228,7 +291,7 @@ class FireSpreadModel:
                 self._state[candidates_y[idx], candidates_x[idx]] = BURNING
                 placed += 1
 
-        # Fill remaining with random if some corridor placements failed
+        # Fill remaining corridor slots + random slots
         remaining = n - placed
         if remaining > 0:
             self._ignite_random(remaining)

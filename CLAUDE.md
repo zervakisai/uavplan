@@ -21,7 +21,7 @@ src/uavbench/
   missions/                     # schema, engine (mission objective + task queue)
   envs/                         # base, urban (UrbanEnvV2)
   dynamics/                     # fire_ca, traffic, restriction_zones,
-                                # interaction_engine, forced_block
+                                # interaction_engine
   planners/                     # base, astar, periodic_replan,
                                 # aggressive_replan, dstar_lite, apf
   blocking.py                   # ONE compute_blocking_mask() (MP-1)

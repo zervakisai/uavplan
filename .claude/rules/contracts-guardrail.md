@@ -1,7 +1,7 @@
 # Feasibility Guardrail (GC)
 
 ## GC-1: Multi-depth relaxations
-D1: Remove forced interdiction blocks
+D1: Clear roadblock vehicles from corridor
 D2: Shrink NFZ zones by 2 cells
 D3: Remove traffic closures (occupancy + closure masks)
 

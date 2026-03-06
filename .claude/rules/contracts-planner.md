@@ -8,7 +8,7 @@
 5. APF — Artificial Potential Field, reactive (replans every step)
 
 Theta* REMOVED: any-angle paths diverge from A* corridor on large grids,
-making forced-block interdiction unreliable. Single static baseline (A*)
+making corridor interdiction unreliable. Single static baseline (A*)
 is sufficient for the paper's adaptive-vs-static comparison.
 
 ## PC-1: Legal Motion

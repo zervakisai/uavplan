@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paper experiment runner — 6 planners x 9 scenarios x 30 seeds = 1,620 episodes.
+"""Paper experiment runner — 5 planners x 3 OSM scenarios x 30 seeds = 450 episodes.
 
 Saves per-episode results to outputs/paper_results/all_episodes.csv.
 Episodes that crash are logged and skipped (never stops the whole run).
@@ -169,11 +169,11 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run UAVBench v2 paper experiments.")
     p.add_argument(
         "--scenarios", type=str, default=None,
-        help="Comma-separated scenario IDs (default: all 9)",
+        help="Comma-separated scenario IDs (default: all 3 OSM)",
     )
     p.add_argument(
         "--planners", type=str, default=None,
-        help="Comma-separated planner IDs (default: all 6)",
+        help="Comma-separated planner IDs (default: all 5)",
     )
     p.add_argument(
         "--seeds", type=int, default=30,
@@ -284,7 +284,7 @@ def main() -> None:
                     f"\r[{attempted}/{total}] ({100*pct:.0f}%) "
                     f"| Elapsed: {wall_elapsed/60:.1f}m "
                     f"| ETA: {eta_m:.0f}m "
-                    f"| Last: {planner_id}/{scenario_id.replace('gov_', '')}",
+                    f"| Last: {planner_id}/{scenario_id.replace('osm_', '')}",
                     end="", flush=True,
                 )
 
