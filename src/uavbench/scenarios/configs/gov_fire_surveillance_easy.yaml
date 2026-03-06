@@ -13,6 +13,10 @@ fixed_start_xy: [5, 5]
 fixed_goal_xy: [45, 45]
 min_start_goal_l1: 20
 
+# Budget: 6 * map_size = 300.  Two-leg missions (POI + goal) with
+# suboptimal planners (APF ~1.5x inflation) need k=6 headroom.
+max_episode_steps: 300
+
 enable_fire: false
 enable_traffic: false
 enable_dynamic_nfz: false

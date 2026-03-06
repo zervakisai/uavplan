@@ -25,7 +25,7 @@ class AStarPlanner(PlannerBase):
         config: Any = None,
     ) -> None:
         super().__init__(heightmap, no_fly, config)
-        self._max_expansions = 200_000
+        self._max_expansions = 80_000
 
     def plan(
         self,

@@ -9,12 +9,40 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from scipy.ndimage import binary_dilation, generate_binary_structure
+from scipy.ndimage import binary_dilation
 
 from uavbench.scenarios.schema import ScenarioConfig
 
 # Smoke blocking threshold — single source of truth
 SMOKE_BLOCKING_THRESHOLD = 0.5
+
+# Pre-computed dilation structures — avoids repeated allocation.
+_CROSS_STRUCT = np.array(
+    [[0, 1, 0],
+     [1, 1, 1],
+     [0, 1, 0]], dtype=bool,
+)
+
+
+def _diamond_kernel(radius: int) -> np.ndarray:
+    """Build a diamond (Manhattan-distance) structuring element.
+
+    Using a single-pass dilation with this kernel is equivalent to
+    ``iterations=radius`` with a cross kernel, but faster (one pass).
+    """
+    size = 2 * radius + 1
+    k = np.zeros((size, size), dtype=bool)
+    for r in range(size):
+        for c in range(size):
+            if abs(r - radius) + abs(c - radius) <= radius:
+                k[r, c] = True
+    return k
+
+
+# Cache common radii at import time
+_DIAMOND_CACHE: dict[int, np.ndarray] = {
+    r: _diamond_kernel(r) for r in range(1, 6)
+}
 
 
 def compute_blocking_mask(
@@ -28,32 +56,43 @@ def compute_blocking_mask(
     Returns bool[H, W] where True = blocked cell.
     Used by BOTH env.step() legality AND guardrail BFS (MP-1).
     """
-    mask = (heightmap > 0) | no_fly
+    # Start with static obstacles — in-place OR to avoid allocations
+    mask = np.bitwise_or(heightmap > 0, no_fly)
 
     if dynamic_state is None:
         return mask
 
-    if dynamic_state.get("forced_block_mask") is not None:
-        mask = mask | dynamic_state["forced_block_mask"]
-    if dynamic_state.get("traffic_closure_mask") is not None:
-        mask = mask | dynamic_state["traffic_closure_mask"]
+    fb = dynamic_state.get("forced_block_mask")
+    if fb is not None:
+        np.bitwise_or(mask, fb, out=mask)
 
-    if config.fire_blocks_movement and dynamic_state.get("fire_mask") is not None:
-        fire = dynamic_state["fire_mask"]
-        mask = mask | fire
-        # FD-2: dilate fire mask by fire_buffer_radius for safety buffer
-        if config.fire_buffer_radius > 0 and fire.any():
-            struct = generate_binary_structure(2, 1)  # 4-connected cross
-            fire_buffer = binary_dilation(
-                fire, structure=struct, iterations=config.fire_buffer_radius,
-            )
-            mask = mask | fire_buffer
+    tc = dynamic_state.get("traffic_closure_mask")
+    if tc is not None:
+        np.bitwise_or(mask, tc, out=mask)
 
-    if config.fire_blocks_movement and dynamic_state.get("smoke_mask") is not None:
-        mask = mask | (dynamic_state["smoke_mask"] >= SMOKE_BLOCKING_THRESHOLD)
-    if config.traffic_blocks_movement and dynamic_state.get("traffic_occupancy_mask") is not None:
-        mask = mask | dynamic_state["traffic_occupancy_mask"]
-    if dynamic_state.get("dynamic_nfz_mask") is not None:
-        mask = mask | dynamic_state["dynamic_nfz_mask"]
+    if config.fire_blocks_movement:
+        fire = dynamic_state.get("fire_mask")
+        if fire is not None:
+            np.bitwise_or(mask, fire, out=mask)
+            # FD-2: dilate fire mask by fire_buffer_radius for safety buffer
+            if config.fire_buffer_radius > 0 and fire.any():
+                fire_buffer = binary_dilation(
+                    fire, structure=_CROSS_STRUCT,
+                    iterations=config.fire_buffer_radius,
+                )
+                np.bitwise_or(mask, fire_buffer, out=mask)
+
+        smoke = dynamic_state.get("smoke_mask")
+        if smoke is not None:
+            np.bitwise_or(mask, smoke >= SMOKE_BLOCKING_THRESHOLD, out=mask)
+
+    if config.traffic_blocks_movement:
+        to = dynamic_state.get("traffic_occupancy_mask")
+        if to is not None:
+            np.bitwise_or(mask, to, out=mask)
+
+    dnfz = dynamic_state.get("dynamic_nfz_mask")
+    if dnfz is not None:
+        np.bitwise_or(mask, dnfz, out=mask)
 
     return mask

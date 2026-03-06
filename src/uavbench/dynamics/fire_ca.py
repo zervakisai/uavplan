@@ -7,6 +7,7 @@ State per cell: UNBURNED(0) → BURNING(1) → BURNED_OUT(2).
 from __future__ import annotations
 
 import numpy as np
+from scipy.ndimage import binary_dilation, uniform_filter
 
 # Cell states (FD-1)
 UNBURNED = 0
@@ -28,6 +29,9 @@ _NEIGHBORS = [
     (0, -1),           (0, 1),
     (1, -1),  (1, 0),  (1, 1),
 ]
+
+# Pre-computed Moore dilation structure
+_MOORE_STRUCT = np.ones((3, 3), dtype=bool)
 
 
 class FireSpreadModel:
@@ -57,17 +61,27 @@ class FireSpreadModel:
         ).astype(np.float32)
         self._smoke = np.zeros((self._H, self._W), dtype=np.float32)
 
+        self._step_count = 0
+
         # Landuse (default: urban=2 for realistic spread in urban grids)
         if landuse_map is not None:
             self._landuse = landuse_map.astype(np.int8)
         else:
             self._landuse = np.full((self._H, self._W), 2, dtype=np.int8)
 
+        # Pre-compute probability map (avoid rebuilding each step)
+        self._prob_map = np.zeros((self._H, self._W), dtype=np.float32)
+        for lu_val, prob in _LANDUSE_PROB.items():
+            self._prob_map[self._landuse == lu_val] = prob
+
         # Roads act as 50% firebreak
         self._roads = (
             roads_mask.astype(bool) if roads_mask is not None
             else np.zeros((self._H, self._W), dtype=bool)
         )
+
+        # Apply road firebreak to pre-computed prob map
+        self._prob_map[self._roads] *= 0.5
 
         # Initial ignition — corridor-aware placement
         if n_ignition > 0:
@@ -109,48 +123,34 @@ class FireSpreadModel:
         # Increment burn timers for burning cells
         self._burn_timer[burning] += dt
 
-        # --- Spread (FD-2: isotropic, equal probability all 8 neighbors) ---
-        # Deduplicate: when multiple burning neighbors nominate the same
-        # unburned cell, keep only the max probability. This avoids wasting
-        # RNG draws on duplicates (FD-4 determinism stability).
-        candidate_map: dict[tuple[int, int], float] = {}
+        # --- Spread (FD-2: vectorized isotropic 8-neighbor Moore) ---
+        if burning.any():
+            # Moore neighborhood structure (8-connected, FD-2)
+            spread_candidates = (
+                binary_dilation(burning, structure=_MOORE_STRUCT)
+                & (self._state == UNBURNED)
+            )
 
-        burning_ys, burning_xs = np.where(burning)
-        for by, bx in zip(burning_ys, burning_xs):
-            for dy, dx in _NEIGHBORS:
-                ny, nx = by + dy, bx + dx
-                if not (0 <= ny < self._H and 0 <= nx < self._W):
-                    continue
-                if self._state[ny, nx] != UNBURNED:
-                    continue
+            if spread_candidates.any():
+                # Stochastic ignition — vectorized random rolls
+                candidate_ys, candidate_xs = np.where(spread_candidates)
+                rolls = self._rng.random(len(candidate_ys))
+                probs = self._prob_map[candidate_ys, candidate_xs]
+                ignite = rolls < probs
 
-                # Base probability from landuse (same for all 8 directions)
-                lu = int(self._landuse[ny, nx])
-                prob = _LANDUSE_PROB.get(lu, 0.02)
-
-                # Road firebreak: halve probability
-                if self._roads[ny, nx]:
-                    prob *= 0.5
-
-                key = (int(ny), int(nx))
-                if key not in candidate_map or prob > candidate_map[key]:
-                    candidate_map[key] = prob
-
-        # Stochastic ignition of unique candidates
-        if candidate_map:
-            cells = list(candidate_map.keys())
-            probs = np.array([candidate_map[c] for c in cells])
-            rolls = self._rng.random(len(cells))
-            for i, (cy, cx) in enumerate(cells):
-                if rolls[i] < probs[i]:
-                    self._state[cy, cx] = BURNING
+                ignite_ys = candidate_ys[ignite]
+                ignite_xs = candidate_xs[ignite]
+                if len(ignite_ys) > 0:
+                    self._state[ignite_ys, ignite_xs] = BURNING
 
         # --- Burnout ---
         burnout_mask = burning & (self._burn_timer >= self._burnout_time)
         self._state[burnout_mask] = BURNED_OUT
 
-        # --- Smoke ---
-        self._update_smoke()
+        # --- Smoke (update every 2 steps — smoke changes slowly) ---
+        if self._step_count % 2 == 0:
+            self._update_smoke()
+        self._step_count += 1
 
     # -- Test hook --
 
@@ -203,15 +203,9 @@ class FireSpreadModel:
         source[self._state == BURNING] = 1.0
         source[self._state == BURNED_OUT] = 0.3
 
-        # Diffuse with 3x3 box blur (2 passes)
-        blurred = source.copy()
-        for _ in range(2):
-            padded = np.pad(blurred, 1, mode="constant", constant_values=0)
-            blurred = (
-                padded[:-2, :-2] + padded[:-2, 1:-1] + padded[:-2, 2:]
-                + padded[1:-1, :-2] + padded[1:-1, 1:-1] + padded[1:-1, 2:]
-                + padded[2:, :-2] + padded[2:, 1:-1] + padded[2:, 2:]
-            ) / 9.0
+        # Diffuse with 3x3 box blur (2 passes) — uniform_filter is faster
+        blurred = uniform_filter(source, size=3, mode="constant", cval=0.0)
+        blurred = uniform_filter(blurred, size=3, mode="constant", cval=0.0)
 
         # Persistence (tuned for thinner smoke halos with navigable gaps)
         self._smoke = np.clip(
