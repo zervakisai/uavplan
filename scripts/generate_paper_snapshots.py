@@ -38,21 +38,20 @@ SEED = 42
 
 # One representative scenario per family (hard = most visual dynamics)
 FAMILY_SCENARIOS = {
-    "fire_delivery": "gov_fire_delivery_hard",
-    "flood_rescue": "gov_flood_rescue_hard",
-    "fire_surveillance": "gov_fire_surveillance_hard",
+    "fire_delivery": "osm_penteli_fire_delivery_medium",
+    "flood_rescue": "osm_piraeus_flood_rescue_medium",
+    "fire_surveillance": "osm_downtown_fire_surveillance_medium",
 }
 
-# For the 6-panel planner comparison
-COMPARISON_SCENARIO = "gov_fire_delivery_hard"
+# For the 5-panel planner comparison
+COMPARISON_SCENARIO = "osm_penteli_fire_delivery_medium"
 
 PLANNER_ORDER = [
-    "astar", "theta_star", "periodic_replan",
+    "astar", "periodic_replan",
     "aggressive_replan", "dstar_lite", "apf",
 ]
 PLANNER_LABELS = {
     "astar": "A*",
-    "theta_star": r"$\theta$*",
     "periodic_replan": "Periodic Replan",
     "aggressive_replan": "Aggressive Replan",
     "dstar_lite": "D* Lite",
@@ -181,8 +180,6 @@ def _build_render_state(
         "plan_age_steps": 0,
         "plan_reason": "",
         "replan_every_steps": 6,
-        "forced_block_active": info.get("forced_block_active", False),
-        "forced_block_lifecycle": info.get("forced_block_lifecycle", "none"),
         "scenario_id": "",
         "mission_domain": info.get("mission_domain", ""),
         "planner_name": planner_id,
@@ -308,7 +305,7 @@ def generate_planner_comparison() -> None:
         ax.axis("off")
 
     fig.suptitle(
-        f"Planner Comparison — {COMPARISON_SCENARIO.replace('gov_', '').replace('_', ' ').title()}",
+        f"Planner Comparison — {COMPARISON_SCENARIO.replace('osm_', '').replace('_', ' ').title()}",
         fontsize=14, fontweight="bold",
     )
     fig.tight_layout(rect=[0, 0, 1, 0.95])

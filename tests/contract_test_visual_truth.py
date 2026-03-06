@@ -1,8 +1,7 @@
-"""Contract tests for Visual Truth (VC-1, VC-2, VC-3).
+"""Contract tests for Visual Truth (VC-1, VC-2).
 
 VC-1: Planned path visible when plan_len > 1.
 VC-2: NO PLAN / STALE badge when plan is missing or stale.
-VC-3: Forced block lifecycle rendered on HUD.
 """
 
 from __future__ import annotations
@@ -43,8 +42,6 @@ def _make_frame_state(
     plan_path: list[tuple[int, int]] | None = None,
     plan_age_steps: int = 0,
     plan_reason: str = "",
-    forced_block_active: bool = False,
-    forced_block_lifecycle: str = "none",
     step_idx: int = 0,
     agent_xy: tuple[int, int] = (5, 5),
     goal_xy: tuple[int, int] = (15, 15),
@@ -69,8 +66,6 @@ def _make_frame_state(
         "plan_path": plan_path,
         "plan_age_steps": plan_age_steps,
         "plan_reason": plan_reason,
-        "forced_block_active": forced_block_active,
-        "forced_block_lifecycle": forced_block_lifecycle,
         "step_idx": step_idx,
         "agent_xy": agent_xy,
         "goal_xy": goal_xy,
@@ -191,63 +186,6 @@ class TestVC2_PlanStatusBadges:
 
 
 # ===========================================================================
-# VC-3: Forced Block Lifecycle Rendering
-# ===========================================================================
-
-
-class TestVC3_ForcedBlockLifecycle:
-    """VC-3: Forced block lifecycle rendered on HUD."""
-
-    def test_forced_block_active(self):
-        """When forced_block_lifecycle == 'active', meta has ACTIVE badge."""
-        from uavbench.visualization.renderer import Renderer
-
-        config = _make_config()
-        renderer = Renderer(config, mode="ops_full")
-
-        heightmap = np.zeros((20, 20), dtype=np.float32)
-        state = _make_frame_state(
-            forced_block_active=True,
-            forced_block_lifecycle="active",
-        )
-        _, meta = renderer.render_frame(heightmap, state)
-
-        assert meta["block_badge"] == "FORCED BLOCK: ACTIVE"
-
-    def test_forced_block_cleared(self):
-        """When forced_block_lifecycle == 'cleared', meta has CLEARED badge."""
-        from uavbench.visualization.renderer import Renderer
-
-        config = _make_config()
-        renderer = Renderer(config, mode="ops_full")
-
-        heightmap = np.zeros((20, 20), dtype=np.float32)
-        state = _make_frame_state(
-            forced_block_active=False,
-            forced_block_lifecycle="cleared",
-        )
-        _, meta = renderer.render_frame(heightmap, state)
-
-        assert meta["block_badge"] == "FORCED BLOCK: CLEARED"
-
-    def test_no_block_no_badge(self):
-        """When no forced block, block_badge is empty."""
-        from uavbench.visualization.renderer import Renderer
-
-        config = _make_config()
-        renderer = Renderer(config, mode="ops_full")
-
-        heightmap = np.zeros((20, 20), dtype=np.float32)
-        state = _make_frame_state(
-            forced_block_active=False,
-            forced_block_lifecycle="none",
-        )
-        _, meta = renderer.render_frame(heightmap, state)
-
-        assert meta["block_badge"] == ""
-
-
-# ===========================================================================
 # Evidence artifact generation
 # ===========================================================================
 
@@ -271,8 +209,6 @@ class TestVizArtifacts:
                 step_idx=step,
                 plan_len=10 if step > 0 else 0,
                 plan_path=[(5 + i, 5 + i) for i in range(10)] if step > 0 else [],
-                forced_block_active=(step == 3),
-                forced_block_lifecycle="active" if step == 3 else "none",
             )
             frame, meta = renderer.render_frame(heightmap, state)
 

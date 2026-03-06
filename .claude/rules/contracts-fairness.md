@@ -2,10 +2,12 @@
 
 ## FC-1: Corridor-Aligned Interdictions
 Interdictions placed on A* reference corridor, planner-agnostic.
-Implementation: AREA INTERDICTIONS
+Implementation: PHYSICAL INTERDICTIONS
 - Compute A* shortest path (reference corridor)
-- For each interdiction, block a RECTANGULAR ZONE width=3 cells
-  centered on the corridor, perpendicular to corridor direction
+- Fire corridor closures (penteli, downtown): fire ignited on corridor cells
+  via fire_ca.py, creating a physical barrier
+- Vehicle roadblocks (piraeus): traffic vehicles positioned on corridor cells
+  via traffic.py, blocking with physical vehicle occupancy
 
 ## FC-2: Observation Equality
 All planners receive identical observation at each step_idx.

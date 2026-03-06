@@ -1,8 +1,7 @@
 # UAVBench — Mission Story Cards
 
-Each mission family has 3 difficulty variants (easy/medium/hard).
-All missions share the same tile and objective structure; difficulty modifies
-dynamic intensity, task count, time budget, and event timing.
+Each mission family has a single OSM-based scenario (medium difficulty).
+All missions use real Greek urban map tiles with dynamic obstacles.
 
 ---
 
@@ -13,10 +12,11 @@ dynamic intensity, task count, time budget, and event timing.
 | Field | Value |
 |-------|-------|
 | Mission Type | `FIRE_DELIVERY` |
-| Registry Prefix | `gov_fire_delivery_{easy,medium,hard}` |
+| Scenario ID | `osm_penteli_fire_delivery_medium` |
 | Domain | `fire_delivery` |
+| OSM Tile | Penteli, Attica |
 | Inspired by | Evia/Εύβοια wildfires 2021 |
-| Building Density | 0.18 (easy/medium), 0.22 (hard) |
+| Building Density | 0.18 |
 
 ### Incident Provenance
 
@@ -48,13 +48,15 @@ obstacles. Dynamic NFZs represent manned aircraft firefighting corridors.
 |----------|--------|-----------|--------------|-------------|
 | `delivery_point` | 1.0 | 0.02 | 0 (fly-through) | Delivery waypoint at isolated settlement |
 
-### Difficulty Matrix
+### Scenario Parameters
 
-| Difficulty | Dynamics | Fire Ignitions | Wind | NFZ Zones | Forced Replans | Event Timing |
-|------------|----------|---------------|------|-----------|---------------|-------------|
-| Easy | Static | 0 | 0.2 | 0 | 0 | — |
-| Medium | Moderate | 2 | 0.3 | 1 | 1 | t1=40, t2=120 |
-| Hard | Severe | 4 | 0.5 | 2 | 2 | t1=30, t2=90 |
+| Field | Value |
+|-------|-------|
+| Dynamics | Moderate (dynamic track) |
+| Fire Ignitions | 3 |
+| NFZ Zones | 1 |
+| Forced Replans | 1 |
+| Event Timing | t1=40, t2=120 |
 
 ### Visual Profile
 
@@ -74,10 +76,11 @@ obstacles. Dynamic NFZs represent manned aircraft firefighting corridors.
 | Field | Value |
 |-------|-------|
 | Mission Type | `FLOOD_RESCUE` |
-| Registry Prefix | `gov_flood_rescue_{easy,medium,hard}` |
+| Scenario ID | `osm_piraeus_flood_rescue_medium` |
 | Domain | `flood_rescue` |
+| OSM Tile | Piraeus port |
 | Inspired by | Thessaly/Θεσσαλία floods 2023 |
-| Building Density | 0.15 (easy/medium), 0.20 (hard) |
+| Building Density | 0.15 |
 
 ### Incident Provenance
 
@@ -109,13 +112,16 @@ obstacles. The agent must perform on-site assessment (service_time hover).
 |----------|--------|-----------|--------------|-------------|
 | `rescue_site` | 1.0 | 0.02 | 2 steps | Rescue assessment — hover + confirm |
 
-### Difficulty Matrix
+### Scenario Parameters
 
-| Difficulty | Dynamics | Fire Ignitions | Vehicles | Wind | NFZ Zones | Forced Replans | Event Timing |
-|------------|----------|---------------|----------|------|-----------|---------------|-------------|
-| Easy | Static | 0 | 0 | 0.1 | 0 | 0 | — |
-| Medium | Moderate | 2 | 3 | 0.2 | 1 | 1 | t1=40, t2=120 |
-| Hard | Severe | 3 | 5 | 0.4 | 2 | 2 | t1=30, t2=90 |
+| Field | Value |
+|-------|-------|
+| Dynamics | Moderate (dynamic track) |
+| Fire Ignitions | 2 |
+| Vehicles | 3 |
+| NFZ Zones | 1 |
+| Forced Replans | 1 |
+| Event Timing | t1=40, t2=120 |
 
 ### Visual Profile
 
@@ -135,10 +141,11 @@ obstacles. The agent must perform on-site assessment (service_time hover).
 | Field | Value |
 |-------|-------|
 | Mission Type | `FIRE_SURVEILLANCE` |
-| Registry Prefix | `gov_fire_surveillance_{easy,medium,hard}` |
+| Scenario ID | `osm_downtown_fire_surveillance_medium` |
 | Domain | `fire_surveillance` |
+| OSM Tile | Athens center |
 | Inspired by | Evros/Έβρος megafire 2023 |
-| Building Density | 0.16 (easy/medium), 0.22 (hard) |
+| Building Density | 0.16 |
 
 ### Incident Provenance
 
@@ -171,13 +178,15 @@ a challenging environment requiring service_time hover at survey points.
 |----------|--------|-----------|--------------|-------------|
 | `survey_point` | 1.0 | 0.02 | 3 steps | Perimeter survey — hover + sensor sweep |
 
-### Difficulty Matrix
+### Scenario Parameters
 
-| Difficulty | Dynamics | Fire Ignitions | Wind | NFZ Zones | Forced Replans | Event Timing |
-|------------|----------|---------------|------|-----------|---------------|-------------|
-| Easy | Static | 0 | 0.2 | 0 | 0 | — |
-| Medium | Moderate | 3 | 0.4 | 2 | 1 | t1=40, t2=120 |
-| Hard | Severe | 5 | 0.6 | 3 | 2 | t1=25, t2=80 |
+| Field | Value |
+|-------|-------|
+| Dynamics | Moderate (dynamic track) |
+| Fire Ignitions | 3 |
+| NFZ Zones | 2 |
+| Forced Replans | 1 |
+| Event Timing | t1=40, t2=120 |
 
 ### Visual Profile
 
@@ -200,19 +209,19 @@ a challenging environment requiring service_time hover at survey points.
 
 ---
 
-## Difficulty Knobs (All Missions)
+## Dynamics Configuration (All Missions — Medium Difficulty)
 
-These knobs scale identically across mission families:
+All scenarios use the same dynamics knobs:
 
-| Knob | Easy | Medium | Hard |
-|------|------|--------|------|
-| `enable_fire` | false | true | true |
-| `enable_traffic` | false | true | true |
-| `enable_dynamic_nfz` | false | true | true |
-| `fire_blocks_movement` | false | true | true |
-| `traffic_blocks_movement` | false | true | true |
-| `force_replan_count` | 0 | 1 | 2 |
-| `replan_every_steps` | 6 | 6 | 6 |
+| Knob | Value |
+|------|-------|
+| `enable_fire` | true |
+| `enable_traffic` | true |
+| `enable_dynamic_nfz` | true |
+| `fire_blocks_movement` | true |
+| `traffic_blocks_movement` | true |
+| `force_replan_count` | 1 |
+| `replan_every_steps` | 6 |
 
 ---
 

@@ -4,7 +4,7 @@ Multi-depth relaxation to restore reachability when dynamic obstacles
 sever the path from agent to goal.
 
 Depth order:
-  D1: Clear forced blocks
+  D1: Clear roadblock vehicles
   D2: Shrink NFZ zones
   D3: Remove traffic blocking
   D4: (reserved) Emergency corridor
@@ -87,7 +87,7 @@ class FeasibilityGuardrail:
         agent_xy: tuple[int, int],
         goal_xy: tuple[int, int],
         dynamic_state: dict[str, Any],
-        forced_block: Any | None = None,
+        traffic_model: Any | None = None,
         nfz_model: Any | None = None,
         step_idx: int = 0,
     ) -> GuardrailResult:
@@ -104,23 +104,18 @@ class FeasibilityGuardrail:
         if _bfs_reachable(mask, agent_xy, goal_xy):
             return GuardrailResult(feasible=True, depth=0, relaxations=[])
 
-        # --- D1: Clear forced blocks ---
+        # --- D1: Clear roadblock vehicles ---
         ds_d1 = dict(dynamic_state)
         cells_freed = 0
-        if forced_block is not None and forced_block.active:
-            forced_block.clear("guardrail_d1", step_idx)
-            ds_d1["forced_block_mask"] = None
-            cells_freed = int(
-                dynamic_state.get("forced_block_mask", np.zeros(1)).sum()
-                if dynamic_state.get("forced_block_mask") is not None
-                else 0
-            )
-        else:
-            ds_d1["forced_block_mask"] = None
+        if traffic_model is not None and traffic_model.has_active_roadblocks:
+            traffic_model.clear_roadblocks()
+            # Recompute traffic occupancy after clearing roadblocks
+            ds_d1["traffic_occupancy_mask"] = traffic_model.get_occupancy_mask()
+            cells_freed = 1  # qualitative marker
 
         relaxations.append({
             "depth": 1,
-            "action": "clear_forced_blocks",
+            "action": "clear_roadblocks",
             "cells_freed": cells_freed,
         })
 

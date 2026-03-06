@@ -11,5 +11,5 @@ Every rejection logs: reject_reason(enum), reject_layer, reject_cell, step_idx.
 Every acceptance logs: move_accepted=True, dynamics_step.
 
 ## RejectReason Enum
-BUILDING, NO_FLY, FORCED_BLOCK, TRAFFIC_CLOSURE, FIRE, FIRE_BUFFER,
+BUILDING, NO_FLY, TRAFFIC_CLOSURE, FIRE, FIRE_BUFFER,
 SMOKE, TRAFFIC_BUFFER, DYNAMIC_NFZ, OUT_OF_BOUNDS

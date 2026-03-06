@@ -26,7 +26,6 @@ class RejectReason(str, Enum):
 
     BUILDING = "building"
     NO_FLY = "no_fly"
-    FORCED_BLOCK = "forced_block"
     TRAFFIC_CLOSURE = "traffic_closure"
     FIRE = "fire"
     FIRE_BUFFER = "fire_buffer"
@@ -34,13 +33,6 @@ class RejectReason(str, Enum):
     TRAFFIC_BUFFER = "traffic_buffer"
     DYNAMIC_NFZ = "dynamic_nfz"
     OUT_OF_BOUNDS = "out_of_bounds"
-
-
-class BlockLifecycle(str, Enum):
-    PENDING = "pending"
-    TRIGGERED = "triggered"
-    ACTIVE = "active"
-    CLEARED = "cleared"
 
 
 class TaskStatus(str, Enum):

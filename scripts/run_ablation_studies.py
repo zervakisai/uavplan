@@ -60,13 +60,13 @@ OUTPUT_DIR = "outputs/ablation_results"
 
 # The 3 medium scenarios used as base configs for ablations.
 MEDIUM_SCENARIO_IDS = [
-    "gov_fire_delivery_medium",
-    "gov_fire_surveillance_medium",
-    "gov_flood_rescue_medium",
+    "osm_penteli_fire_delivery_medium",
+    "osm_downtown_fire_surveillance_medium",
+    "osm_piraeus_flood_rescue_medium",
 ]
 
 # All 6 paper planners.
-ALL_PLANNERS = ["astar", "theta_star", "periodic_replan", "aggressive_replan", "dstar_lite", "apf"]
+ALL_PLANNERS = ["astar", "periodic_replan", "aggressive_replan", "dstar_lite", "apf"]
 
 # Shared CSV columns across all ablation outputs.
 BASE_COLUMNS = [
@@ -313,7 +313,7 @@ def _build_fire_intensity_configs() -> list[tuple[str, str, ScenarioConfig]]:
     Returns list of (variant_label, scenario_id, modified_config).
     """
     ignition_counts = [1, 2, 4, 6, 8]
-    sid = "gov_fire_delivery_medium"
+    sid = "osm_penteli_fire_delivery_medium"
     base = load_scenario(sid)
     variants: list[tuple[str, str, ScenarioConfig]] = []
 
@@ -707,7 +707,7 @@ def print_replan_frequency_summary(csv_path: str) -> None:
         aggfunc="mean",
     )
     scns = sorted(pivot.columns)
-    short = [s.replace("gov_", "").replace("_medium", "") for s in scns]
+    short = [s.replace("osm_", "").replace("_medium", "") for s in scns]
     print(f"  {'Cadence':>7s} | " + " | ".join(f"{s:>16s}" for s in short))
     print(f"  {'-'*7} | " + " | ".join(f"{'-'*16}" for _ in short))
     for cadence in sorted(pivot.index):

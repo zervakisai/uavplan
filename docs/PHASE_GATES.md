@@ -44,16 +44,15 @@ When a gate passes, announce: "Gate N PASSED" and commit.
 - ONE `compute_blocking_mask(state)` used by BOTH step legality AND guardrail BFS
 **Gate 4**: `contract_test_mask_parity.py` passes (no missing blockers between step and guardrail).
 
-## Phase 5 — Forced Interdictions + Fairness
+## Phase 5 — Corridor Interdictions + Fairness
 **Build**:
-- BFS reference corridor (planner-agnostic)
-- t1/t2 forced interdictions with lifecycle: TRIGGERED → ACTIVE → CLEARED
-- HUD tokens for interdiction state
+- A* reference corridor (planner-agnostic)
+- Physical corridor interdictions: fire corridor closures (penteli, downtown) and vehicle roadblocks (piraeus)
 **Gate 5**: `contract_test_fairness.py` passes. Interdiction timelines identical across planners for same seed.
 
 ## Phase 6 — Feasibility Guardrail
 **Build**:
-- Multi-depth relaxation: D1 forced blocks → D2 NFZ erosion → D3 traffic removal → D4 corridor (optional)
+- Multi-depth relaxation: D1 clear roadblock vehicles → D2 NFZ erosion → D3 traffic removal → D4 corridor (optional)
 - Log: `guardrail_depth`, `relaxations[]`, `feasible_after_guardrail`
 - Infeasible episodes flagged; exclusion rate reported
 **Gate 6**: `contract_test_guardrail.py` passes.

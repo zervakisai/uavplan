@@ -22,10 +22,12 @@ terminate_on_collision: true
 event_t1: 40
 event_t2: 120
 
-fire_ignition_points: 3
-fire_buffer_radius: 2
+fire_ignition_points: 2
+fire_buffer_radius: 1
 num_emergency_vehicles: 8
 num_corridor_vehicles: 2
 num_nfz_zones: 1
-force_replan_count: 1
+force_replan_count: 0
+num_fire_corridor_closures: 1
+num_roadblock_vehicles: 1
 replan_every_steps: 6

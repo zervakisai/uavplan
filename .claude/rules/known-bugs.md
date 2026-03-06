@@ -3,7 +3,7 @@
 ## BUG-1: Theta* Paradox (RESOLVED — Theta* removed)
 Static any-angle planner beating adaptive in dynamic scenarios.
 Root cause: any-angle paths diverge from A* corridor on large grids,
-bypassing forced-block interdictions entirely (deviations up to 41 cells).
+bypassing corridor interdictions entirely (deviations up to 41 cells).
 Resolution: Theta* removed from planner set. Single static baseline (A*)
 is sufficient for adaptive-vs-static comparison.
 
@@ -25,7 +25,7 @@ Runner owns step_idx, passes to all components (EV-1).
 
 ## BUG-7: Two-Leg POI Routing Bypass (FIXED)
 Static planners succeeded on dynamic scenarios because two-leg mission
-routing (start→POI→goal) bypassed forced blocks on start→goal corridor.
+routing (start→POI→goal) bypassed corridor interdictions on start→goal corridor.
 Fix: (a) POI snapped to corridor midpoint so agent visits POI on the
 start→goal path, (b) initial plan always start→goal, (c) second plan()
 call at POI completion removed for static planners (only triggers if

@@ -1,10 +1,10 @@
 """Contract tests for Planner-Dynamics Interaction.
 
 Covers:
-- End-to-end planner+env integration (all 6 planners)
+- End-to-end planner+env integration (all 5 planners)
 - Path invalidation triggers replan (aggressive/dstar)
 - RS-1 storm prevention for all adaptive planners
-- Dynamic rejection reasons (FIRE, FIRE_BUFFER, FORCED_BLOCK)
+- Dynamic rejection reasons (FIRE, FIRE_BUFFER)
 - FD-3 fire timing freeze (fire state frozen during step validation)
 """
 
@@ -380,74 +380,6 @@ class TestDynamicRejectionReasons:
 
         assert fire_rejection_seen, (
             "EC-1: FIRE rejection should be observed when stepping into fire"
-        )
-
-    def test_forced_block_rejection(self):
-        """Moving into an active forced block returns FORCED_BLOCK."""
-        config = _make_config(
-            force_replan_count=3,
-            event_t1=3,
-            event_t2=100,
-            building_density=0.0,
-            map_size=15,
-            max_episode_steps=150,
-            enable_fire=False,
-            fire_blocks_movement=False,
-            enable_traffic=False,
-            traffic_blocks_movement=False,
-        )
-        env = UrbanEnvV2(config)
-        env.reset(seed=42)
-
-        # Step past event_t1
-        for _ in range(5):
-            env.step(ACTION_STAY)
-
-        forced_cells = env.forced_block_cells
-        assert len(forced_cells) > 0, "Should have forced block cells"
-
-        dyn_state = env.get_dynamic_state()
-        fb_mask = dyn_state.get("forced_block_mask")
-        assert fb_mask is not None and fb_mask.any(), (
-            "Forced block mask should be active after event_t1"
-        )
-
-        # Navigate toward a forced block cell
-        target = forced_cells[0]
-        forced_rejection_seen = False
-        for _ in range(80):
-            ax, ay = env.agent_xy
-            # Check adjacent cells for forced block
-            for action, (dx, dy) in [
-                (ACTION_UP, (0, -1)), (ACTION_DOWN, (0, 1)),
-                (ACTION_LEFT, (-1, 0)), (ACTION_RIGHT, (1, 0)),
-            ]:
-                nx, ny = ax + dx, ay + dy
-                if 0 <= nx < 15 and 0 <= ny < 15:
-                    dyn = env.get_dynamic_state()
-                    fb = dyn.get("forced_block_mask")
-                    if fb is not None and fb[ny, nx]:
-                        _, _, term, trunc, info = env.step(action)
-                        if info.get("reject_reason") == RejectReason.FORCED_BLOCK:
-                            forced_rejection_seen = True
-                        break
-
-            if forced_rejection_seen:
-                break
-
-            # Move toward target
-            tx, ty = target
-            ddx, ddy = tx - ax, ty - ay
-            if abs(ddx) >= abs(ddy):
-                act = ACTION_RIGHT if ddx > 0 else ACTION_LEFT
-            else:
-                act = ACTION_DOWN if ddy > 0 else ACTION_UP
-            _, _, term, trunc, _ = env.step(act)
-            if term or trunc:
-                break
-
-        assert forced_rejection_seen, (
-            "EC-1: FORCED_BLOCK rejection not observed"
         )
 
     def test_fire_buffer_rejection(self):

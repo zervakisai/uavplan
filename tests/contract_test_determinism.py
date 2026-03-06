@@ -57,7 +57,7 @@ from uavbench.benchmark.determinism import hash_episode  # noqa: E402
 # Constants
 # ---------------------------------------------------------------------------
 
-SCENARIO_ID = "gov_fire_delivery_easy"
+SCENARIO_ID = "osm_penteli_fire_delivery_medium"
 PLANNER_ID = "astar"
 SEED_A = 42
 SEED_B = 43
@@ -240,7 +240,7 @@ class TestIdenticalSeedIdenticalOutput:
     def test_identical_seed_identical_output(self) -> None:
         """Verifies DC-2: two runs with identical inputs produce SHA-256 identical outputs.
 
-        Runs (gov_fire_delivery_easy, astar, seed=42) twice independently.
+        Runs (osm_penteli_fire_delivery_medium, astar, seed=42) twice independently.
         Checks that the event log, trajectory, and metrics dict each hash identically.
         If any differ, the failing component is reported individually.
         """

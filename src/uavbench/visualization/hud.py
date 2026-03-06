@@ -1,7 +1,6 @@
-"""HUD badge computation and text rendering (VC-2, VC-3).
+"""HUD badge computation and text rendering (VC-2).
 
-Computes plan status badges (NO PLAN, STALE, PLAN: Nwp) and
-forced block lifecycle badges (ACTIVE, CLEARED).
+Computes plan status badges (NO PLAN, STALE, PLAN: Nwp).
 Renders HUD text onto frame using pixel font.
 """
 
@@ -22,7 +21,7 @@ def compute_badges(state: dict[str, Any]) -> dict[str, str]:
 
     Returns dict with:
         plan_badge: str  — "NO PLAN", "STALE PLAN (reason)", or "PLAN: Nwp"
-        block_badge: str — "FORCED BLOCK: ACTIVE", "FORCED BLOCK: CLEARED", or ""
+        block_badge: str — always "" (forced blocks removed)
     """
     # VC-2: Plan status badge
     plan_len = state.get("plan_len", 0)
@@ -38,18 +37,9 @@ def compute_badges(state: dict[str, Any]) -> dict[str, str]:
     else:
         plan_badge = f"PLAN: {plan_len}wp"
 
-    # VC-3: Forced block lifecycle badge
-    lifecycle = state.get("forced_block_lifecycle", "none")
-    if lifecycle == "active":
-        block_badge = "FORCED BLOCK: ACTIVE"
-    elif lifecycle == "cleared":
-        block_badge = "FORCED BLOCK: CLEARED"
-    else:
-        block_badge = ""
-
     return {
         "plan_badge": plan_badge,
-        "block_badge": block_badge,
+        "block_badge": "",
     }
 
 

@@ -169,7 +169,7 @@ def gen_table_per_scenario(df: pd.DataFrame) -> str:
             ps = sub[sub["planner_id"] == pid]
             if ps.empty:
                 continue
-            scn_label = scn.replace("gov_", "").replace("_", r"\_") if j == 0 else ""
+            scn_label = scn.replace("osm_", "").replace("_", r"\_") if j == 0 else ""
             sr = f"{100 * ps['success'].mean():.0f}"
             pl = _mean_std_str(ps["path_length"])
             es = _mean_std_str(ps["executed_steps"])
@@ -232,7 +232,7 @@ def gen_table_exclusion(df: pd.DataFrame) -> str:
     scenarios = sorted(df["scenario_id"].unique())
     for scn in scenarios:
         sub = df[df["scenario_id"] == scn]
-        scn_label = scn.replace("gov_", "").replace("_", r"\_")
+        scn_label = scn.replace("osm_", "").replace("_", r"\_")
         vals = []
         for pid in PLANNER_ORDER:
             ps = sub[sub["planner_id"] == pid]
@@ -367,7 +367,7 @@ def fig_bar_success_rate(df: pd.DataFrame) -> None:
         )
 
     ax.set_xticks(x)
-    short_labels = [s.replace("gov_", "").replace("_", "\n") for s in scenarios]
+    short_labels = [s.replace("osm_", "").replace("_", "\n") for s in scenarios]
     ax.set_xticklabels(short_labels, fontsize=8)
     ax.set_ylabel("Success Rate (%)")
     ax.set_ylim(0, 105)
@@ -392,7 +392,7 @@ def fig_heatmap_success(df: pd.DataFrame) -> None:
     im = ax.imshow(matrix, cmap="RdYlGn", vmin=0, vmax=100, aspect="auto")
 
     ax.set_xticks(range(len(scenarios)))
-    short_labels = [s.replace("gov_", "").replace("_", "\n") for s in scenarios]
+    short_labels = [s.replace("osm_", "").replace("_", "\n") for s in scenarios]
     ax.set_xticklabels(short_labels, fontsize=7)
     ax.set_yticks(range(len(PLANNER_ORDER)))
     ax.set_yticklabels([_label(p) for p in PLANNER_ORDER], fontsize=9)
