@@ -1,7 +1,7 @@
 """Contract tests for Fairness (FC-1, FC-2).
 
-FC-1: Forced interdictions placed on BFS reference corridor, NOT on any
-      planner's actual path. Planner-agnostic.
+FC-1: Physical interdictions (fire corridor closure + vehicle roadblocks)
+      placed on A* reference corridor, planner-agnostic.
 FC-2: If latency/dropout enabled, all planners receive equivalent degraded
       observation snapshots. (For same (scenario, seed), get_dynamic_state()
       returns byte-identical arrays regardless of planner identity.)
@@ -14,7 +14,6 @@ from collections import deque
 import numpy as np
 import pytest
 
-from uavbench.envs.base import BlockLifecycle
 from uavbench.envs.urban import ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_UP, UrbanEnvV2
 from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
@@ -25,7 +24,7 @@ from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 def _make_dynamic_config(**overrides) -> ScenarioConfig:
-    """Config with forced interdictions enabled."""
+    """Config with physical interdictions enabled."""
     defaults = dict(
         name="test_fairness",
         mission_type=MissionType.FIRE_DELIVERY,
@@ -37,9 +36,11 @@ def _make_dynamic_config(**overrides) -> ScenarioConfig:
         enable_fire=True,
         fire_blocks_movement=True,
         fire_ignition_points=1,
-        enable_traffic=False,
-        traffic_blocks_movement=False,
-        force_replan_count=2,
+        enable_traffic=True,
+        traffic_blocks_movement=True,
+        num_emergency_vehicles=2,
+        num_fire_corridor_closures=1,
+        num_roadblock_vehicles=0,
         event_t1=10,
         event_t2=80,
     )
@@ -106,40 +107,12 @@ def _run_env_steps(
 
 
 # ===========================================================================
-# FC-1: Interdictions on BFS corridor, planner-agnostic
+# FC-1: Corridor alignment (A* reference)
 # ===========================================================================
 
 
 class TestFC1_BFSCorridor:
-    """FC-1: Forced interdictions are on BFS reference corridor."""
-
-    def test_interdiction_on_bfs_corridor(self):
-        """All interdiction cells are on the BFS shortest path computed
-        on the static grid before any planner runs."""
-        config = _make_dynamic_config(force_replan_count=3)
-        env = UrbanEnvV2(config)
-        env.reset(seed=42)
-
-        # Get BFS corridor from env
-        bfs_corridor = env.bfs_corridor
-        assert len(bfs_corridor) > 0, "BFS corridor should be non-empty"
-
-        # Get forced block cells from env
-        forced_cells = env.forced_block_cells
-        assert len(forced_cells) > 0, (
-            "With force_replan_count=3, there should be forced block cells"
-        )
-
-        # FC-1: Area interdictions — each forced cell must be within 1 cell
-        # of the BFS corridor (perpendicular zone extends 1 cell each side)
-        corridor_set = set(bfs_corridor)
-        for cell in forced_cells:
-            cx, cy = cell
-            neighbors = {(cx + dx, cy + dy)
-                         for dx in range(-1, 2) for dy in range(-1, 2)}
-            assert neighbors & corridor_set, (
-                f"FC-1: forced cell {cell} not adjacent to BFS corridor"
-            )
+    """FC-1: Reference corridor matches A* and is planner-agnostic."""
 
     def test_corridor_matches_astar_reference(self):
         """The env's reference corridor matches A* path (same algorithm planners use)."""
@@ -155,127 +128,103 @@ class TestFC1_BFSCorridor:
         assert ref_result.success, "Reference A* should find a path"
         assert env.bfs_corridor == ref_result.path, (
             "FC-1: env corridor must match A* reference computation "
-            "(ensures fire/forced blocks intersect actual planner paths)"
+            "(ensures fire/roadblock interdictions intersect actual planner paths)"
         )
 
-    def test_interdiction_planner_agnostic(self):
+    def test_corridor_planner_agnostic(self):
         """Same (scenario, seed) with different action sequences produces
-        identical interdiction cell coordinates.
-
-        Since forced block cells are computed at reset() from the BFS
-        corridor (which depends only on seed, not on planner), they
-        must be identical across runs.
+        identical corridor. Corridor is computed at reset(), not planner-dependent.
         """
-        config = _make_dynamic_config(force_replan_count=2)
+        config = _make_dynamic_config()
 
-        # Run A: all RIGHT actions
         env_a = UrbanEnvV2(config)
         env_a.reset(seed=42)
-        cells_a = env_a.forced_block_cells
+        corridor_a = env_a.bfs_corridor
 
-        # Run B: all DOWN actions (different "planner")
         env_b = UrbanEnvV2(config)
         env_b.reset(seed=42)
-        cells_b = env_b.forced_block_cells
+        corridor_b = env_b.bfs_corridor
 
-        assert cells_a == cells_b, (
-            f"FC-1: forced block cells must be planner-agnostic. "
-            f"Run A: {cells_a}, Run B: {cells_b}"
+        assert corridor_a == corridor_b, (
+            "FC-1: corridor must be planner-agnostic (identical across resets with same seed)"
         )
-
-    def test_interdiction_not_at_start_or_goal(self):
-        """Forced block cells should not include start or goal."""
-        config = _make_dynamic_config(force_replan_count=3)
-        env = UrbanEnvV2(config)
-        env.reset(seed=42)
-
-        start = env.agent_xy
-        goal = env.goal_xy
-        for cell in env.forced_block_cells:
-            assert cell != start, "FC-1: forced block must not be at start"
-            assert cell != goal, "FC-1: forced block must not be at goal"
 
 
 # ===========================================================================
-# FC-1: Interdiction lifecycle
+# FC-1: Fire corridor guarantee
 # ===========================================================================
 
 
-class TestFC1_Lifecycle:
-    """FC-1: Forced block lifecycle: TRIGGERED → ACTIVE → CLEARED."""
+class TestFC1_FireCorridorGuarantee:
+    """FC-1: Fire guarantee targets are on the corridor and fire reaches them."""
 
-    def test_forced_block_triggers_at_t1(self):
-        """Forced block becomes active at event_t1."""
+    def test_fire_reaches_corridor_by_t1(self):
+        """With num_fire_corridor_closures=1, fire must cover at least one
+        corridor cell by event_t1 (guarantee step)."""
         config = _make_dynamic_config(
-            event_t1=5,
-            event_t2=50,
-            force_replan_count=1,
+            num_fire_corridor_closures=1,
+            event_t1=10,
+            event_t2=80,
+            max_episode_steps=60,
         )
         env = UrbanEnvV2(config)
         env.reset(seed=42)
 
-        # Before t1: no forced block
-        for _ in range(4):
-            _, _, _, _, info = env.step(ACTION_RIGHT)
-            dyn = env.get_dynamic_state()
-            fb = dyn.get("forced_block_mask")
-            if fb is not None:
-                assert not fb.any(), "Forced block should not be active before t1"
+        corridor_set = set(env.bfs_corridor)
 
-        # At t1 (step 5): forced block activates
-        _, _, _, _, info = env.step(ACTION_RIGHT)
-        dyn = env.get_dynamic_state()
-        fb = dyn.get("forced_block_mask")
-        assert fb is not None and fb.any(), (
-            "Forced block should be active at event_t1"
-        )
-        assert info.get("forced_block_active") is True
-
-    def test_forced_block_clears_at_t2(self):
-        """Forced block clears at event_t2."""
-        config = _make_dynamic_config(
-            event_t1=3,
-            event_t2=10,
-            force_replan_count=1,
-            max_episode_steps=200,
-        )
-        env = UrbanEnvV2(config)
-        env.reset(seed=42)
-
-        # Step past t2
-        for step_i in range(15):
-            _, _, term, trunc, info = env.step(ACTION_RIGHT)
-            if term or trunc:
-                break
-
-        # After t2: forced block should PERSIST (permanent interdiction)
-        dyn = env.get_dynamic_state()
-        fb = dyn.get("forced_block_mask")
-        if fb is not None:
-            assert fb.any(), "Forced block should persist after t2 (permanent)"
-
-    def test_forced_block_event_logged(self):
-        """Forced block trigger and clear are logged as events."""
-        config = _make_dynamic_config(
-            event_t1=3,
-            event_t2=10,
-            force_replan_count=1,
-            max_episode_steps=200,
-        )
-        env = UrbanEnvV2(config)
-        env.reset(seed=42)
-
+        # Step past event_t1
         for _ in range(15):
             _, _, term, trunc, _ = env.step(ACTION_RIGHT)
             if term or trunc:
                 break
 
-        event_types = [e["type"] for e in env.events]
-        assert "forced_block_triggered" in event_types, (
-            "FC-1: forced_block_triggered event must be logged"
+        # Check fire covers at least one corridor cell
+        dyn = env.get_dynamic_state()
+        fire = dyn.get("fire_mask")
+        if fire is not None and fire.any():
+            fire_on_corridor = False
+            for cx, cy in corridor_set:
+                if 0 <= cy < fire.shape[0] and 0 <= cx < fire.shape[1]:
+                    if fire[cy, cx]:
+                        fire_on_corridor = True
+                        break
+            assert fire_on_corridor, (
+                "FC-1: with num_fire_corridor_closures=1, fire must reach "
+                "corridor by event_t1 (guarantee step)"
+            )
+
+
+# ===========================================================================
+# FC-1: Vehicle roadblock
+# ===========================================================================
+
+
+class TestFC1_VehicleRoadblock:
+    """FC-1: Roadblock vehicles freeze at corridor road cells at event_t1."""
+
+    def test_roadblock_activates_at_t1(self):
+        """With num_roadblock_vehicles=1, a vehicle freezes near corridor at event_t1."""
+        config = _make_dynamic_config(
+            num_fire_corridor_closures=0,
+            num_roadblock_vehicles=1,
+            event_t1=5,
+            event_t2=50,
+            max_episode_steps=60,
         )
-        # Forced blocks are permanent — no auto-clear event expected.
-        # Blocks can only be cleared explicitly by guardrail via clear().
+        env = UrbanEnvV2(config)
+        env.reset(seed=42)
+
+        # Step past event_t1
+        for _ in range(8):
+            _, _, term, trunc, _ = env.step(ACTION_RIGHT)
+            if term or trunc:
+                break
+
+        # Traffic model should have an active roadblock
+        if env._traffic is not None:
+            assert env._traffic.has_active_roadblocks, (
+                "FC-1: roadblock vehicle should be frozen after event_t1"
+            )
 
 
 # ===========================================================================

@@ -40,7 +40,7 @@ def compute_episode_metrics(
         reason = ev.get("reject_reason", "")
         reason_str = reason.value if hasattr(reason, "value") else str(reason)
         if reason_str in ("building", "fire", "fire_buffer", "smoke",
-                          "forced_block", "traffic_closure", "traffic_buffer"):
+                          "traffic_closure", "traffic_buffer"):
             collision_count += 1
         elif reason_str in ("no_fly", "dynamic_nfz"):
             nfz_violations += 1

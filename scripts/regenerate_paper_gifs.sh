@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Regenerate paper GIF animations for UAVBench.
 #
-# Generates one GIF per (scenario, planner) combination for the 6
-# scenarios (medium + hard) × 6 planners = 36 GIFs total.
+# Generates one GIF per (scenario, planner) combination for the 3
+# OSM scenarios × 5 planners = 15 GIFs total.
 #
 # Usage:
 #     bash scripts/regenerate_paper_gifs.sh
@@ -18,21 +18,17 @@ GIF_DIR="$PROJECT_ROOT/outputs/gifs"
 
 mkdir -p "$GIF_DIR"
 
-# Dynamic scenarios (medium + hard per family)
+# OSM scenarios (Greece)
 DYNAMIC_SCENARIOS=(
-    gov_fire_delivery_medium
-    gov_fire_delivery_hard
-    gov_flood_rescue_medium
-    gov_flood_rescue_hard
-    gov_fire_surveillance_medium
-    gov_fire_surveillance_hard
+    osm_penteli_fire_delivery_medium
+    osm_piraeus_flood_rescue_medium
+    osm_downtown_fire_surveillance_medium
 )
 
 
-# All 6 planners
+# All 5 planners
 PLANNERS=(
     astar
-    theta_star
     periodic_replan
     aggressive_replan
     dstar_lite
