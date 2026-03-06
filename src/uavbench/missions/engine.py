@@ -167,6 +167,23 @@ class MissionEngine:
     def all_tasks_completed(self) -> bool:
         return all(t.status == TaskStatus.COMPLETED for t in self._tasks)
 
+    def snap_poi_to_path(self, path: list[tuple[int, int]]) -> None:
+        """Snap task POI to path midpoint for corridor alignment (FC-1).
+
+        Places the active task at the midpoint of the given path so that
+        the POI naturally lies on the reference corridor.  This ensures
+        forced blocks on the corridor intersect the agent's executed path,
+        preventing static planners from bypassing interdictions via
+        two-leg geometric detours.
+        """
+        if not path or not self._tasks:
+            return
+        mid_idx = len(path) // 2
+        new_poi = path[mid_idx]
+        for task in self._tasks:
+            if task.status in (TaskStatus.PENDING, TaskStatus.ACTIVE) and task.service_time > 0:
+                task.xy = new_poi
+
     def distance_to_task(self, agent_xy: tuple[int, int]) -> float:
         """Manhattan distance to current objective POI."""
         poi = self.objective_poi

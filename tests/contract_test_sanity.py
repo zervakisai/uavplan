@@ -2,7 +2,7 @@
 
 Uses synthetic results to verify that the sanity checker correctly
 detects violations and passes clean results.
-6 planners: astar, theta_star (static), periodic_replan, aggressive_replan, dstar_lite, apf.
+5 planners: astar (static), periodic_replan, aggressive_replan, dstar_lite, apf.
 """
 
 from __future__ import annotations

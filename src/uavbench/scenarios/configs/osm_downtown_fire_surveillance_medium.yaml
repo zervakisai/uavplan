@@ -1,13 +1,14 @@
-name: gov_flood_rescue_medium
-mission_type: flood_rescue
+name: osm_downtown_fire_surveillance_medium
+mission_type: fire_surveillance
 difficulty: medium
 domain: urban
 regime: stress_test
 paper_track: dynamic
 
 map_size: 500
-map_source: synthetic
-building_density: 0.15
+map_source: osm
+osm_tile_id: downtown
+building_density: 0.50
 
 min_start_goal_l1: 100
 
@@ -21,11 +22,9 @@ terminate_on_collision: true
 event_t1: 40
 event_t2: 120
 
-# Reduced from 2→1: building_density=0.15 (vs hard's 0.20) means more
-# burnable area, so fewer ignition points are needed for equivalent fire load.
-fire_ignition_points: 1
-fire_buffer_radius: 2
-num_emergency_vehicles: 3
+fire_ignition_points: 2
+fire_buffer_radius: 1
+num_emergency_vehicles: 2
 num_nfz_zones: 1
 force_replan_count: 1
 replan_every_steps: 6

@@ -28,12 +28,15 @@ class AggressiveReplanPlanner(PlannerBase):
         super().__init__(heightmap, no_fly, config)
         self._inner = AStarPlanner(heightmap, no_fly, config)
         self._cooldown = 3
+        # Pre-compute static mask once (avoids recomputing heightmap > 0 every call)
+        self._static_mask = (heightmap > 0) | no_fly
 
         # Tracking
         self._last_mask_hash: str = ""
         self._last_replan_step = -self._cooldown
         self._last_replan_pos: tuple[int, int] | None = None
         self._dyn_state: dict[str, Any] | None = None
+        self._cached_mask: np.ndarray | None = None
 
     def plan(
         self,
@@ -43,25 +46,20 @@ class AggressiveReplanPlanner(PlannerBase):
     ) -> PlanResult:
         """Plan using A* with dynamic obstacle awareness.
 
-        When dynamic state is available (after update()), builds a
-        blocking mask that includes fire, smoke, traffic, etc. and
-        routes around them.
+        Uses cached blocking mask from update() to avoid recomputation.
         """
-        if self._dyn_state is not None and self._config is not None:
-            mask = compute_blocking_mask(
-                self._heightmap, self._no_fly,
-                self._config, self._dyn_state,
-            )
+        if self._cached_mask is not None:
             effective_height = self._heightmap.copy()
-            dynamic_blocked = mask & ~((self._heightmap > 0) | self._no_fly)
+            dynamic_blocked = self._cached_mask & ~self._static_mask
             effective_height[dynamic_blocked] = 999.0
             inner = AStarPlanner(effective_height, self._no_fly, self._config)
             return inner.plan(start, goal, cost_map)
         return self._inner.plan(start, goal, cost_map)
 
     def update(self, dyn_state: dict[str, Any]) -> None:
-        """Accept dynamic state for obstacle-aware replanning."""
+        """Store dynamic state; mask computed in should_replan() and cached for plan()."""
         self._dyn_state = dyn_state
+        self._cached_mask = None  # invalidate; recompute in should_replan()
 
     def should_replan(
         self,
@@ -74,12 +72,12 @@ class AggressiveReplanPlanner(PlannerBase):
         if step - self._last_replan_step < self._cooldown:
             return (False, "cooldown")
 
-        # Check if mask changed
-        mask = compute_blocking_mask(
+        # Compute and cache mask (reused by plan() if replan triggers)
+        self._cached_mask = compute_blocking_mask(
             self._heightmap, self._no_fly,
             self._config, dyn_state,
         )
-        mask_hash = hashlib.sha256(mask.tobytes()).hexdigest()
+        mask_hash = hashlib.sha256(self._cached_mask.tobytes()).hexdigest()
 
         # Calibration: first call records baseline (no replan)
         if self._last_mask_hash == "":
@@ -93,8 +91,8 @@ class AggressiveReplanPlanner(PlannerBase):
         # Mask changed — check if path is actually affected
         path_blocked = False
         for px, py in current_path:
-            if 0 <= py < mask.shape[0] and 0 <= px < mask.shape[1]:
-                if mask[py, px]:
+            if 0 <= py < self._cached_mask.shape[0] and 0 <= px < self._cached_mask.shape[1]:
+                if self._cached_mask[py, px]:
                     path_blocked = True
                     break
 

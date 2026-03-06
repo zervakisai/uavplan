@@ -1,8 +1,7 @@
 """Forced block (interdiction) system (FC-1).
 
-Computes BFS reference corridor on static grid (planner-agnostic),
-then places forced blocks on corridor cells at event_t1.
-Lifecycle: TRIGGERED → ACTIVE → CLEARED at event_t2.
+Places forced blocks on A* reference corridor cells at event_t1.
+Lifecycle: PENDING → ACTIVE (permanent).
 """
 
 from __future__ import annotations
@@ -59,14 +58,13 @@ def bfs_shortest_path(
 
 
 class ForcedBlockManager:
-    """Manages forced interdictions on BFS reference corridor.
+    """Manages forced interdictions on A* reference corridor.
 
     Placed at reset() time. Lifecycle:
     - Before event_t1: PENDING (no blocking)
-    - At event_t1: TRIGGERED → ACTIVE (cells blocked)
-    - At event_t2: CLEARED (cells unblocked)
+    - At event_t1: ACTIVE (cells blocked, permanent)
 
-    Forced block cells are selected from the BFS corridor's interior
+    Forced block cells are selected from the corridor's interior
     (excluding start and goal), ensuring planner-agnostic fairness (FC-1).
     """
 
@@ -92,8 +90,7 @@ class ForcedBlockManager:
 
         # FC-1: Build 3-wide perpendicular area interdictions.
         # Each interdiction is a rectangular zone perpendicular to the
-        # corridor direction, 3 cells wide. This prevents any-angle
-        # planners (Theta*) from threading between single blocked cells.
+        # corridor direction, 3 cells wide.
         #
         # PLACEMENT: Position blocks where the agent will be DURING the
         # active window [event_t1, event_t2]. The agent reaches corridor
@@ -161,9 +158,16 @@ class ForcedBlockManager:
         return self._mask.copy()
 
     def step(self, step_idx: int) -> None:
-        """Update lifecycle based on current step."""
+        """Update lifecycle based on current step.
+
+        Forced blocks are PERMANENT once activated (FC-1). They activate
+        at event_t1 and persist for the episode duration. Static planners
+        cannot wait them out — they must replan (which only adaptive
+        planners can do). Blocks can still be explicitly cleared by the
+        guardrail via clear().
+        """
         if self._lifecycle == BlockLifecycle.PENDING and step_idx >= self._event_t1:
-            # TRIGGERED → ACTIVE
+            # TRIGGERED → ACTIVE (permanent until episode end or guardrail)
             self._lifecycle = BlockLifecycle.ACTIVE
             self._mask = np.zeros(self._map_shape, dtype=bool)
             for x, y in self._forced_cells:
@@ -173,16 +177,6 @@ class ForcedBlockManager:
                 "type": "forced_block_triggered",
                 "step_idx": step_idx,
                 "cells": list(self._forced_cells),
-            })
-
-        elif self._lifecycle == BlockLifecycle.ACTIVE and step_idx >= self._event_t2:
-            # ACTIVE → CLEARED
-            self._lifecycle = BlockLifecycle.CLEARED
-            self._mask = np.zeros(self._map_shape, dtype=bool)
-            self._events.append({
-                "type": "forced_block_cleared",
-                "step_idx": step_idx,
-                "reason": "event_t2_expired",
             })
 
     def clear(self, reason: str, step_idx: int) -> None:

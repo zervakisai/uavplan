@@ -10,6 +10,11 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from scipy.ndimage import binary_dilation, generate_binary_structure
+
+
+# Pre-computed cross struct for Manhattan dilation
+_CROSS_STRUCT = generate_binary_structure(2, 1)
 
 
 class InteractionEngine:
@@ -55,23 +60,12 @@ class InteractionEngine:
         if fire_mask is None or not self._roads.any():
             return
 
+        if not fire_mask.any():
+            return
+
         # Fire-to-roads: dilate fire mask and intersect with roads
         dilation = max(1, int(self._coupling * 2))
-        dilated = self._dilate(fire_mask, dilation)
+        dilated = binary_dilation(
+            fire_mask, structure=_CROSS_STRUCT, iterations=dilation,
+        )
         self._traffic_closure_mask = dilated & self._roads
-
-    def _dilate(self, mask: np.ndarray, radius: int) -> np.ndarray:
-        """Manhattan-distance dilation of a boolean mask."""
-        if not mask.any():
-            return np.zeros_like(mask)
-
-        result = mask.copy()
-        ys, xs = np.where(mask)
-        for y, x in zip(ys, xs):
-            for dy in range(-radius, radius + 1):
-                for dx in range(-radius, radius + 1):
-                    if abs(dy) + abs(dx) <= radius:
-                        ny, nx = y + dy, x + dx
-                        if 0 <= ny < self._H and 0 <= nx < self._W:
-                            result[ny, nx] = True
-        return result

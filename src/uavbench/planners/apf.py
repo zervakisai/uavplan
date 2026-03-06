@@ -54,6 +54,7 @@ class APFPlanner(PlannerBase):
         self._k_rep = 50.0      # Repulsive gain
         self._d0 = 8            # Repulsive influence radius (cells)
         self._dyn_state: dict[str, Any] | None = None
+        self._cached_mask: np.ndarray | None = None
         # Replan tracking (same pattern as aggressive_replan)
         self._last_mask_hash: str = ""
         self._last_replan_step = -3
@@ -157,8 +158,9 @@ class APFPlanner(PlannerBase):
         )
 
     def update(self, dyn_state: dict[str, Any]) -> None:
-        """Accept dynamic state for obstacle-aware potential field."""
+        """Store dynamic state; mask cached lazily for plan()."""
         self._dyn_state = dyn_state
+        self._cached_mask = None  # invalidate; recompute in should_replan()
 
     def should_replan(
         self,
@@ -171,8 +173,9 @@ class APFPlanner(PlannerBase):
         if step - self._last_replan_step < self._cooldown:
             return (False, "cooldown")
 
-        mask = self._get_blocked_from(dyn_state)
-        mask_hash = hashlib.sha256(mask.tobytes()).hexdigest()
+        # Compute and cache mask (reused by plan() if replan triggers)
+        self._cached_mask = self._get_blocked_from(dyn_state)
+        mask_hash = hashlib.sha256(self._cached_mask.tobytes()).hexdigest()
 
         if self._last_mask_hash == "":
             self._last_mask_hash = mask_hash
@@ -185,8 +188,8 @@ class APFPlanner(PlannerBase):
         # Check if path is actually blocked
         path_blocked = False
         for px, py in current_path:
-            if 0 <= py < mask.shape[0] and 0 <= px < mask.shape[1]:
-                if mask[py, px]:
+            if 0 <= py < self._cached_mask.shape[0] and 0 <= px < self._cached_mask.shape[1]:
+                if self._cached_mask[py, px]:
                     path_blocked = True
                     break
 
@@ -202,7 +205,9 @@ class APFPlanner(PlannerBase):
     # -- Internal --
 
     def _get_blocked(self) -> np.ndarray:
-        """Build current blocking mask."""
+        """Build current blocking mask (uses cache from update())."""
+        if self._cached_mask is not None:
+            return self._cached_mask
         if self._dyn_state is not None and self._config is not None:
             return compute_blocking_mask(
                 self._heightmap, self._no_fly,
