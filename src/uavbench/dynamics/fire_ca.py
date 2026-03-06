@@ -168,14 +168,70 @@ class FireSpreadModel:
         n: int,
         corridor_cells: list[tuple[int, int]] | None = None,
     ) -> None:
-        """Ignite n cells. Random placement on burnable cells.
+        """Ignite n cells near the reference corridor when available.
 
-        Fire acts as a background environmental hazard that adaptive
-        planners must detect and route around. Random placement ensures
-        fire creates distributed obstacles rather than directly blocking
-        the shortest path.
+        Corridor-aware placement offsets ignitions 8-15 cells from corridor
+        points so fire grows INTO the path, creating visible blockages that
+        force adaptive planners to reroute. Falls back to random placement
+        when no corridor is available.
         """
-        self._ignite_random(n)
+        if corridor_cells and len(corridor_cells) > 2:
+            self._ignite_near_corridor(n, corridor_cells)
+        else:
+            self._ignite_random(n)
+
+    def _ignite_near_corridor(
+        self,
+        n: int,
+        corridor_cells: list[tuple[int, int]],
+    ) -> None:
+        """Ignite n cells offset 8-15 cells from evenly-spaced corridor points.
+
+        Ignitions are placed on burnable cells (landuse != water) in a ring
+        [8, 15] cells from corridor anchor points. The offset gives fire time
+        to expand into the corridor as the drone approaches.
+        Falls back to random ignition for any point where no candidates exist.
+        """
+        interior = corridor_cells[1:-1]  # skip start/goal
+        if len(interior) == 0:
+            self._ignite_random(n)
+            return
+
+        step = max(1, len(interior) // n)
+        placed = 0
+
+        for i in range(n):
+            anchor_idx = min(i * step, len(interior) - 1)
+            ax, ay = interior[anchor_idx]
+
+            # Find burnable cells in ring [8, 15] from anchor
+            candidates_y = []
+            candidates_x = []
+            r_min, r_max = 8, 15
+            for dy in range(-r_max, r_max + 1):
+                for dx in range(-r_max, r_max + 1):
+                    dist = abs(dy) + abs(dx)
+                    if dist < r_min or dist > r_max:
+                        continue
+                    cy, cx = ay + dy, ax + dx
+                    if not (0 <= cy < self._H and 0 <= cx < self._W):
+                        continue
+                    if self._state[cy, cx] != UNBURNED:
+                        continue
+                    if self._landuse[cy, cx] == 4:  # water — never burns
+                        continue
+                    candidates_y.append(cy)
+                    candidates_x.append(cx)
+
+            if candidates_y:
+                idx = self._rng.integers(len(candidates_y))
+                self._state[candidates_y[idx], candidates_x[idx]] = BURNING
+                placed += 1
+
+        # Fill remaining with random if some corridor placements failed
+        remaining = n - placed
+        if remaining > 0:
+            self._ignite_random(remaining)
 
     def _ignite_random(self, n: int) -> None:
         """Ignite n cells at random, preferring forest (landuse=1)."""

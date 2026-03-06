@@ -13,7 +13,9 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from uavbench.blocking import SMOKE_BLOCKING_THRESHOLD, compute_blocking_mask
+from scipy.ndimage import binary_dilation
+
+from uavbench.blocking import SMOKE_BLOCKING_THRESHOLD, _CROSS_STRUCT, compute_blocking_mask
 from uavbench.dynamics.fire_ca import FireSpreadModel
 from uavbench.dynamics.forced_block import ForcedBlockManager, bfs_shortest_path
 from uavbench.planners.astar import AStarPlanner
@@ -74,6 +76,7 @@ class UrbanEnvV2(gym.Env):
         self._heightmap: np.ndarray = np.zeros((0, 0))
         self._no_fly: np.ndarray = np.zeros((0, 0), dtype=bool)
         self._roads: np.ndarray = np.zeros((0, 0), dtype=bool)
+        self._landuse_map: np.ndarray | None = None
         self._agent_xy: tuple[int, int] = (0, 0)
         self._goal_xy: tuple[int, int] = (0, 0)
         self._step_idx: int = 0
@@ -155,6 +158,7 @@ class UrbanEnvV2(gym.Env):
             )
             self._roads = self._generate_roads(env_rng)
             landuse_map = None
+        self._landuse_map = landuse_map
 
         # Place agent and goal with min_start_goal_l1 enforcement
         if self.config.fixed_start_xy is not None:
@@ -252,6 +256,8 @@ class UrbanEnvV2(gym.Env):
                 roads_mask=self._roads,
                 num_vehicles=self.config.num_emergency_vehicles,
                 rng=traffic_rng,
+                corridor_cells=self._bfs_corridor,
+                num_corridor_vehicles=self.config.num_corridor_vehicles,
             )
 
         if self.config.enable_dynamic_nfz and self.config.num_nfz_zones > 0:
@@ -518,12 +524,11 @@ class UrbanEnvV2(gym.Env):
         if dyn_state.get("fire_mask") is not None and dyn_state["fire_mask"][ny, nx]:
             return RejectReason.FIRE
         # Fire buffer: cell not burning but within fire_buffer_radius (FD-2)
+        # Reuses _CROSS_STRUCT from blocking module for consistency (MP-1)
         if self.config.fire_buffer_radius > 0 and dyn_state.get("fire_mask") is not None:
-            from scipy.ndimage import binary_dilation, generate_binary_structure
             fire = dyn_state["fire_mask"]
             if fire.any():
-                struct = generate_binary_structure(2, 1)
-                buf = binary_dilation(fire, structure=struct, iterations=self.config.fire_buffer_radius)
+                buf = binary_dilation(fire, structure=_CROSS_STRUCT, iterations=self.config.fire_buffer_radius)
                 if buf[ny, nx]:
                     return RejectReason.FIRE_BUFFER
         if dyn_state.get("smoke_mask") is not None and dyn_state["smoke_mask"][ny, nx] >= SMOKE_BLOCKING_THRESHOLD:

@@ -90,6 +90,7 @@ class ScenarioConfig:
 
     # Traffic
     num_emergency_vehicles: int = 0
+    num_corridor_vehicles: int = 0  # vehicles placed on corridor-adjacent roads
 
     # NFZ
     num_nfz_zones: int = 0

@@ -206,7 +206,7 @@ def render_hud_text(
     Draws semi-transparent background with badge text.
     """
     H, W = frame.shape[:2]
-    scale = max(1, min(W // 200, 3))
+    scale = max(2, W // 200)
 
     # HUD background area
     hud_h = (_CHAR_H * scale + 2) * (2 if minimal else 4) + 4
@@ -226,13 +226,12 @@ def render_hud_text(
     tx = hud_x + 4
     ty = hud_y + 2
 
-    # Row 1: Mission objective (human-readable, most prominent)
-    obj_label = state.get("objective_label", "")
+    # Row 1: Mission type + priority (short for screen fit)
+    mission_domain = state.get("mission_domain", "")
     priority = state.get("priority", "")
-    # Abbreviate long priority for screen fit
     _prio_abbr = {"critical": "CRIT", "high": "HIGH", "normal": "NORM", "low": "LOW"}
     priority_tag = f" [{_prio_abbr.get(priority, priority.upper()[:4])}]" if priority else ""
-    row1 = f"MISSION: {obj_label}{priority_tag}"
+    row1 = f"{mission_domain.upper().replace('_', ' ')}{priority_tag}"
     _render_text(frame, row1, tx, ty, (255, 220, 100), scale)
     ty += line_h
 
