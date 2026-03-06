@@ -6,6 +6,7 @@ Action space: Discrete(5) — UP(0), DOWN(1), LEFT(2), RIGHT(3), STAY(4).
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
@@ -141,14 +142,21 @@ class UrbanEnvV2(gym.Env):
         children = root_rng.spawn(5)
         env_rng, fire_rng, traffic_rng, nfz_rng, _reserved_rng = children
 
-        # Generate heightmap (synthetic)
-        self._heightmap = self._generate_heightmap(env_rng)
-        self._no_fly = np.zeros(
-            (self._map_size, self._map_size), dtype=bool
-        )
-        self._roads = self._generate_roads(env_rng)
+        # Generate or load map
+        if self.config.map_source == "osm" and self.config.osm_tile_id:
+            self._heightmap, self._roads, landuse_map, nfz_mask = (
+                self._load_osm_tile(self.config.osm_tile_id)
+            )
+            self._no_fly = nfz_mask
+        else:
+            self._heightmap = self._generate_heightmap(env_rng)
+            self._no_fly = np.zeros(
+                (self._map_size, self._map_size), dtype=bool
+            )
+            self._roads = self._generate_roads(env_rng)
+            landuse_map = None
 
-        # Place agent and goal
+        # Place agent and goal with min_start_goal_l1 enforcement
         if self.config.fixed_start_xy is not None:
             self._agent_xy = self.config.fixed_start_xy
         else:
@@ -157,7 +165,12 @@ class UrbanEnvV2(gym.Env):
         if self.config.fixed_goal_xy is not None:
             self._goal_xy = self.config.fixed_goal_xy
         else:
-            self._goal_xy = self._random_free_cell(env_rng, exclude=self._agent_xy)
+            self._goal_xy = self._random_free_cell(
+                env_rng,
+                exclude=self._agent_xy,
+                min_l1_from=self._agent_xy,
+                min_l1_dist=self.config.min_start_goal_l1,
+            )
 
         # Ensure start and goal are free (EN-7)
         sx, sy = self._agent_xy
@@ -201,6 +214,22 @@ class UrbanEnvV2(gym.Env):
                 self._heightmap, self._agent_xy, self._goal_xy
             )
 
+        # Snap mission POI to corridor midpoint for path alignment (FC-1).
+        # This ensures the agent visits the POI while following the
+        # start→goal path, and the forced block on the corridor
+        # intersects the executed path.  Without this, two-leg routing
+        # (start→POI→goal) takes a different geometry that bypasses
+        # forced blocks placed on the start→goal corridor.
+        if (self._mission is not None
+                and self._mission.service_time_s > 0
+                and len(self._bfs_corridor) > 2):
+            self._mission.snap_poi_to_path(self._bfs_corridor)
+            # Ensure snapped POI cell is free
+            new_poi = self._mission.objective_poi
+            px, py = new_poi
+            if 0 <= px < self._map_size and 0 <= py < self._map_size:
+                self._heightmap[py, px] = 0.0
+
         # Initialize dynamics (Phase 4)
         map_shape = (self._map_size, self._map_size)
         self._fire = None
@@ -213,6 +242,7 @@ class UrbanEnvV2(gym.Env):
                 map_shape=map_shape,
                 rng=fire_rng,
                 n_ignition=self.config.fire_ignition_points,
+                landuse_map=landuse_map,
                 roads_mask=self._roads,
                 corridor_cells=self._bfs_corridor,
             )
@@ -356,6 +386,16 @@ class UrbanEnvV2(gym.Env):
         if not self._terminated and self._step_idx >= self._max_steps:
             self._truncated = True
             self._termination_reason = TerminationReason.TIMEOUT
+
+        # Log move events (EC-1, EC-2)
+        if reject_reason is not None:
+            self._events.append({
+                "type": "move_rejected",
+                "step_idx": self._step_idx,
+                "reject_reason": reject_reason,
+                "reject_layer": reject_reason.value,
+                "reject_cell": reject_cell,
+            })
 
         # Build info
         info = self._get_info()
@@ -519,16 +559,58 @@ class UrbanEnvV2(gym.Env):
             h[mask] = rng.uniform(1.0, 5.0, size=mask.sum()).astype(np.float32)
         return h
 
+    def _load_osm_tile(
+        self, tile_id: str
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Load pre-rasterized OSM tile from data/maps/{tile_id}.npz.
+
+        Returns (heightmap, roads_mask, landuse_map, nfz_mask).
+        Heightmap values are real meters; blocking logic uses >0 so this
+        works without conversion.  Static on disk — no RNG involved (DC-1).
+        """
+        tile_path = (
+            Path(__file__).resolve().parents[3]  # src/uavbench/envs → repo root
+            / "data" / "maps" / f"{tile_id}.npz"
+        )
+        if not tile_path.exists():
+            raise FileNotFoundError(
+                f"OSM tile not found: {tile_path}. "
+                f"Available tiles: penteli, piraeus, downtown"
+            )
+        data = np.load(tile_path)
+        heightmap = data["heightmap"].astype(np.float32)
+        roads_mask = data["roads_mask"].astype(bool)
+        landuse_map = data["landuse_map"]
+        nfz_mask = data["nfz_mask"].astype(bool)
+        return heightmap, roads_mask, landuse_map, nfz_mask
+
     def _random_free_cell(
         self,
         rng: np.random.Generator,
         exclude: tuple[int, int] | None = None,
+        min_l1_from: tuple[int, int] | None = None,
+        min_l1_dist: int = 0,
     ) -> tuple[int, int]:
-        """Pick a random free cell on the heightmap."""
+        """Pick a random free cell on the heightmap.
+
+        If min_l1_from and min_l1_dist are set, only cells with
+        Manhattan distance >= min_l1_dist from min_l1_from are eligible.
+        """
         free_mask = self._heightmap == 0.0
         if exclude is not None:
             free_mask[exclude[1], exclude[0]] = False
+        if min_l1_from is not None and min_l1_dist > 0:
+            fx, fy = min_l1_from
+            ys, xs = np.mgrid[0:self._map_size, 0:self._map_size]
+            l1 = np.abs(xs - fx) + np.abs(ys - fy)
+            free_mask = free_mask & (l1 >= min_l1_dist)
         free_yx = np.argwhere(free_mask)
+        if len(free_yx) == 0:
+            # Fallback: relax distance constraint
+            free_mask = self._heightmap == 0.0
+            if exclude is not None:
+                free_mask[exclude[1], exclude[0]] = False
+            free_yx = np.argwhere(free_mask)
         idx = rng.integers(len(free_yx))
         y, x = free_yx[idx]
         return (int(x), int(y))

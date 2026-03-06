@@ -248,11 +248,11 @@ class TestFC1_Lifecycle:
             if term or trunc:
                 break
 
-        # After t2: forced block should be cleared
+        # After t2: forced block should PERSIST (permanent interdiction)
         dyn = env.get_dynamic_state()
         fb = dyn.get("forced_block_mask")
         if fb is not None:
-            assert not fb.any(), "Forced block should be cleared after t2"
+            assert fb.any(), "Forced block should persist after t2 (permanent)"
 
     def test_forced_block_event_logged(self):
         """Forced block trigger and clear are logged as events."""
@@ -274,9 +274,8 @@ class TestFC1_Lifecycle:
         assert "forced_block_triggered" in event_types, (
             "FC-1: forced_block_triggered event must be logged"
         )
-        assert "forced_block_cleared" in event_types, (
-            "FC-1: forced_block_cleared event must be logged"
-        )
+        # Forced blocks are permanent — no auto-clear event expected.
+        # Blocks can only be cleared explicitly by guardrail via clear().
 
 
 # ===========================================================================

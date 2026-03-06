@@ -6,6 +6,7 @@ step loop -> metrics. Owns the authoritative step_idx (EV-1).
 
 from __future__ import annotations
 
+import time as _time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -67,36 +68,89 @@ def run_episode(
     # Mission metadata for rendering
     _mission_meta = _extract_mission_meta(config, info)
 
+    # Mission-aware routing (MC-2): POI snapped to corridor midpoint
+    mission_poi = info.get("objective_poi", goal_xy)
+    mission_task_done = (mission_poi == goal_xy)  # fly-through: no POI phase
+
     # Create planner
     planner_cls = PLANNERS[planner_id]
     planner = planner_cls(heightmap, no_fly, config)
     planner.set_seed(seed)
 
-    # Initial plan
+    # Initial plan: ALWAYS start→goal (FC-1 corridor alignment).
+    # POI is snapped to the corridor midpoint by the env, so the agent
+    # naturally visits it while following the start→goal route.
+    # Static planners get exactly ONE plan() call — their path goes
+    # through the forced block zone, ensuring they fail when blocks
+    # activate.  Adaptive planners replan via should_replan().
     plan_result = planner.plan(start_xy, goal_xy)
+
+    # For adaptive planner replans: target POI first, then goal
+    current_target = goal_xy if mission_task_done else mission_poi
 
     # Track path execution
     path = plan_result.path if plan_result.success else []
     path_idx = 0
     trajectory: list[tuple[int, int]] = [start_xy]
 
+    # Accumulated plan length across all plan() calls
+    planned_waypoints_total = len(path)
+
     # Step loop (RU-4: runner owns step_idx)
     step_idx = 0
     replan_count = 0
+    replan_attempts = 0  # includes suppressed replans
+    naive_replan_count = 0  # replans suppressed by RS-1
+    _failed_plan_cooldown = 0  # steps to skip replanning after a failed plan
     terminated = False
     truncated = False
     final_info = info
 
+    # Wall-clock timeout safety net
+    _wall_start = _time.perf_counter()
+    _WALL_TIMEOUT_S = 300.0
+
     while not terminated and not truncated:
         step_idx += 1
 
-        # Determine action from path
-        action = _path_to_action(env.agent_xy, path, path_idx)
+        # Mission POI: STAY at POI until task completed, then switch to goal
+        if not mission_task_done and env.agent_xy == current_target:
+            action = 4  # STAY at POI for service_time
+        else:
+            # Determine action from path
+            action = _path_to_action(env.agent_xy, path, path_idx)
 
         # Step environment
         obs, reward, terminated, truncated, info = env.step(action)
         final_info = info
+
+        # Wall-clock timeout check
+        if _time.perf_counter() - _wall_start > _WALL_TIMEOUT_S:
+            final_info = dict(final_info)
+            final_info["termination_reason"] = "wall_timeout"
+            final_info["objective_completed"] = False
+            truncated = True
         trajectory.append(env.agent_xy)
+
+        # Check if mission task completed → switch replan target to goal
+        if not mission_task_done:
+            task_progress = info.get("task_progress", "0/0")
+            if task_progress.startswith("1/"):
+                mission_task_done = True
+                current_target = goal_xy
+                # Only replan if current path doesn't lead to goal.
+                # Static planners on start→goal path: path[-1]==goal → no
+                # replan (they continue on original path through forced
+                # block zone → stuck → timeout).
+                # Adaptive planners that replanned to POI during leg 1:
+                # path[-1]==POI → need fresh plan to goal.
+                if not path or path[-1] != goal_xy:
+                    plan_result_new = planner.plan(env.agent_xy, goal_xy)
+                    if plan_result_new.success:
+                        path = plan_result_new.path
+                        path_idx = 0
+                        replan_count += 1
+                        planned_waypoints_total += len(plan_result_new.path)
 
         # Advance path index if we moved to expected next waypoint
         if path_idx < len(path) - 1:
@@ -109,15 +163,26 @@ def run_episode(
         planner.update(dyn_state)
 
         # Check if replan needed
-        should, reason = planner.should_replan(
-            env.agent_xy, path, dyn_state, step_idx
-        )
-        if should:
-            plan_result_new = planner.plan(env.agent_xy, goal_xy)
-            if plan_result_new.success:
-                path = plan_result_new.path
-                path_idx = 0
-                replan_count += 1
+        if _failed_plan_cooldown > 0:
+            _failed_plan_cooldown -= 1
+        else:
+            should, reason = planner.should_replan(
+                env.agent_xy, path, dyn_state, step_idx
+            )
+            if reason == "naive_skip":
+                naive_replan_count += 1
+            if should:
+                replan_attempts += 1
+                plan_result_new = planner.plan(env.agent_xy, current_target)
+                if plan_result_new.success:
+                    path = plan_result_new.path
+                    path_idx = 0
+                    replan_count += 1
+                    planned_waypoints_total += len(plan_result_new.path)
+                    _failed_plan_cooldown = 0
+                else:
+                    # Back off after failed plan to avoid futile retries
+                    _failed_plan_cooldown = 15
 
         # Frame callback for visualization (read-only, no sim effect)
         if frame_callback is not None:
@@ -160,6 +225,28 @@ def run_episode(
         replan_count=replan_count,
         goal_xy=goal_xy,
     )
+    # Augment with runner-tracked fields
+    metrics["planned_waypoints_len"] = planned_waypoints_total
+    metrics["naive_replan_count"] = naive_replan_count
+    metrics["replan_attempts"] = replan_attempts
+    total_replan_decisions = replan_count + naive_replan_count
+    metrics["replan_storm_ratio"] = (
+        naive_replan_count / total_replan_decisions
+        if total_replan_decisions > 0 else 0.0
+    )
+    metrics["feasible_after_guardrail"] = final_info.get(
+        "feasible_after_guardrail", True
+    )
+
+    # Reject reason counts from env events (EC-1)
+    reject_counts: dict[str, int] = {}
+    for ev in env.events:
+        if ev.get("type") == "move_rejected":
+            reason = ev.get("reject_reason", "")
+            reason_str = reason.value if hasattr(reason, "value") else str(reason)
+            if reason_str:
+                reject_counts[reason_str] = reject_counts.get(reason_str, 0) + 1
+    metrics["reject_reason_counts"] = reject_counts
 
     return EpisodeResult(
         events=env.events,

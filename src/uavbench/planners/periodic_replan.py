@@ -33,12 +33,15 @@ class PeriodicReplanPlanner(PlannerBase):
         self._inner = AStarPlanner(heightmap, no_fly, config)
         self._replan_every = getattr(config, "replan_every_steps", 6)
         self._cooldown = 3
+        # Pre-compute static mask once
+        self._static_mask = (heightmap > 0) | no_fly
 
         # Path-progress tracking (RS-1)
         self._last_replan_step = -self._cooldown  # allow first replan
         self._last_replan_pos: tuple[int, int] | None = None
         self._last_mask_hash: str = ""
         self._dyn_state: dict[str, Any] | None = None
+        self._cached_mask: np.ndarray | None = None
 
     def plan(
         self,
@@ -48,24 +51,20 @@ class PeriodicReplanPlanner(PlannerBase):
     ) -> PlanResult:
         """Plan using A* with dynamic obstacle awareness.
 
-        When dynamic state is available (after update()), builds a
-        blocking mask that includes fire, smoke, traffic, etc. and
-        routes around them.
+        Uses cached blocking mask from update() to avoid recomputation.
         """
-        if self._dyn_state is not None and self._config is not None:
-            mask = compute_blocking_mask(
-                self._heightmap, self._no_fly,
-                self._config, self._dyn_state,
-            )
+        if self._cached_mask is not None:
             effective_height = self._heightmap.copy()
-            dynamic_blocked = mask & ~((self._heightmap > 0) | self._no_fly)
+            dynamic_blocked = self._cached_mask & ~self._static_mask
             effective_height[dynamic_blocked] = 999.0
             inner = AStarPlanner(effective_height, self._no_fly, self._config)
             return inner.plan(start, goal, cost_map)
         return self._inner.plan(start, goal, cost_map)
 
     def update(self, dyn_state: dict[str, Any]) -> None:
+        """Store dynamic state; mask computed lazily in should_replan()."""
         self._dyn_state = dyn_state
+        self._cached_mask = None  # invalidate; recompute only when needed
 
     def should_replan(
         self,
@@ -83,11 +82,12 @@ class PeriodicReplanPlanner(PlannerBase):
             return (False, "not_periodic")
 
         # Path-progress tracking: skip naive replans (RS-1)
-        mask = compute_blocking_mask(
+        # Compute and cache mask (reused by plan() if replan triggers)
+        self._cached_mask = compute_blocking_mask(
             self._heightmap, self._no_fly,
             self._config, dyn_state,
         )
-        mask_hash = hashlib.sha256(mask.tobytes()).hexdigest()
+        mask_hash = hashlib.sha256(self._cached_mask.tobytes()).hexdigest()
 
         if (
             current_pos == self._last_replan_pos
