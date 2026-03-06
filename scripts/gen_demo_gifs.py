@@ -26,16 +26,22 @@ OUT = Path("outputs/demo_gifs")
 
 # Default: medium scenarios, one static + one adaptive + one reactive planner
 RUNS = [
-    ("gov_fire_delivery_medium", "theta_star", 42),
+    ("gov_fire_delivery_medium", "astar", 42),
     ("gov_fire_delivery_medium", "aggressive_replan", 42),
     ("gov_fire_delivery_medium", "apf", 42),
     ("gov_flood_rescue_medium", "periodic_replan", 42),
     ("gov_fire_surveillance_medium", "dstar_lite", 42),
 ]
 
+OSM_RUNS = [
+    ("osm_penteli_fire_delivery_medium", "aggressive_replan", 42),
+    ("osm_piraeus_flood_rescue_medium", "aggressive_replan", 42),
+    ("osm_downtown_fire_surveillance_medium", "aggressive_replan", 42),
+]
+
 EASY_RUNS = [
     ("gov_fire_delivery_easy", "astar", 42),
-    ("gov_fire_delivery_easy", "theta_star", 42),
+    ("gov_fire_delivery_easy", "periodic_replan", 42),
     ("gov_fire_delivery_easy", "apf", 42),
 ]
 
@@ -43,6 +49,7 @@ EASY_RUNS = [
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate demo GIFs.")
     p.add_argument("--easy", action="store_true", help="Use easy scenarios (faster)")
+    p.add_argument("--osm", action="store_true", help="Use OSM map scenarios (Greece)")
     p.add_argument("--fps", type=int, default=10, help="GIF frame rate")
     p.add_argument("--skip-frames", type=int, default=1,
                    help="Render every Nth frame (1=all, 5=every 5th)")
@@ -118,7 +125,12 @@ def generate_gif(
 
 def main() -> None:
     args = _parse_args()
-    runs = EASY_RUNS if args.easy else RUNS
+    if args.osm:
+        runs = OSM_RUNS
+    elif args.easy:
+        runs = EASY_RUNS
+    else:
+        runs = RUNS
     OUT.mkdir(parents=True, exist_ok=True)
 
     print(f"=== UAVBench Demo GIF Generation ===")

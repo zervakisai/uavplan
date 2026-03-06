@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
-"""Paper experiment runner — 6 planners x 6 scenarios x 30 seeds = 1,080 episodes.
+"""Paper experiment runner — 6 planners x 9 scenarios x 30 seeds = 1,620 episodes.
 
 Saves per-episode results to outputs/paper_results/all_episodes.csv.
 Episodes that crash are logged and skipped (never stops the whole run).
+Uses multiprocessing (6 workers) for Apple M1.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import sys
 import time
 import traceback
-
-from uavbench.benchmark.runner import run_episode
-from uavbench.planners import PLANNERS
-from uavbench.scenarios.loader import load_scenario
-from uavbench.scenarios.registry import list_scenarios
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -33,7 +30,9 @@ COLUMNS = [
     "success",
     "path_length",
     "executed_steps",
+    "planned_waypoints_len",
     "replans",
+    "replan_storm_ratio",
     "service_time_steps",
     "termination_reason",
     "objective_completed",
@@ -41,52 +40,20 @@ COLUMNS = [
     "guardrail_activated",
     "guardrail_depth",
     "infeasible",
+    "feasible_after_guardrail",
+    "collision_count",
+    "nfz_violations",
     "mission_type",
     "domain",
     "difficulty",
+    "track",
+    "reject_reason_counts",
 ]
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (module-level for multiprocessing pickling)
 # ---------------------------------------------------------------------------
-
-
-def _fmt_duration(seconds: float) -> str:
-    """Format seconds as 'Xh Ym Zs' or 'Ym Zs' or 'Zs'."""
-    s = int(seconds)
-    if s >= 3600:
-        return f"{s // 3600}h {(s % 3600) // 60:02d}m {s % 60:02d}s"
-    if s >= 60:
-        return f"{s // 60}m {s % 60:02d}s"
-    return f"{s}s"
-
-
-def _progress_line(
-    done: int,
-    total: int,
-    elapsed: float,
-    last_label: str,
-    last_sec: float,
-) -> str:
-    """Build a single-line progress string with bar, ETA, and last episode."""
-    pct = done / total if total else 1
-    bar_len = 30
-    filled = int(bar_len * pct)
-    bar = "\u2588" * filled + "\u2591" * (bar_len - filled)
-
-    parts = [f"[{bar}] {done}/{total} ({100 * pct:.0f}%)"]
-    parts.append(f"Elapsed: {_fmt_duration(elapsed)}")
-
-    if done > 0:
-        avg = elapsed / done
-        remaining = avg * (total - done)
-        parts.append(f"ETA: {_fmt_duration(remaining)}")
-
-    if last_label:
-        parts.append(f"Last: {last_label} ({last_sec:.1f}s)")
-
-    return " | ".join(parts)
 
 
 def _extract_row(
@@ -111,12 +78,24 @@ def _extract_row(
         e for e in result.events if "guardrail" in str(e.get("type", ""))
     ]
     guardrail_depth = 0
+    feasible_after = True
     for ge in guardrail_events:
         d = ge.get("depth", 0)
         if d > guardrail_depth:
             guardrail_depth = d
+        if ge.get("feasible_after") is False:
+            feasible_after = False
 
     tr = m.get("termination_reason", "unknown")
+
+    # Reject reason counts from events (EC-1)
+    reject_counts: dict[str, int] = {}
+    for ev in result.events:
+        if ev.get("type") == "move_rejected":
+            reason = ev.get("reject_reason", "")
+            reason_str = reason.value if hasattr(reason, "value") else str(reason)
+            if reason_str:
+                reject_counts[reason_str] = reject_counts.get(reason_str, 0) + 1
 
     return {
         "scenario_id": scenario_id,
@@ -125,7 +104,9 @@ def _extract_row(
         "success": m.get("success", False),
         "path_length": m.get("path_length", 0),
         "executed_steps": m.get("executed_steps_len", 0),
+        "planned_waypoints_len": m.get("planned_waypoints_len", 0),
         "replans": m.get("replans", 0),
+        "replan_storm_ratio": round(m.get("replan_storm_ratio", 0.0), 4),
         "service_time_steps": briefing.get("service_time_steps", 0),
         "termination_reason": tr,
         "objective_completed": m.get("objective_completed", False),
@@ -133,10 +114,50 @@ def _extract_row(
         "guardrail_activated": len(guardrail_events) > 0,
         "guardrail_depth": guardrail_depth,
         "infeasible": tr == "infeasible",
+        "feasible_after_guardrail": feasible_after,
+        "collision_count": m.get("collision_count", 0),
+        "nfz_violations": m.get("nfz_violations", 0),
         "mission_type": config.mission_type.value,
         "domain": config.domain.value,
         "difficulty": config.difficulty.value,
+        "track": config.paper_track,
+        "reject_reason_counts": json.dumps(reject_counts) if reject_counts else "{}",
     }
+
+
+def _run_scenario_planner_block(args: tuple) -> list[dict]:
+    """Worker function: runs one (scenario_id, planner_id) x n_seeds block.
+
+    Must be at module level for multiprocessing pickling on macOS.
+    """
+    scenario_id, planner_id, n_seeds = args
+    # Local imports inside worker for clean subprocess initialization
+    import time
+    import traceback
+
+    from uavbench.benchmark.runner import run_episode
+    from uavbench.scenarios.loader import load_scenario
+
+    config = load_scenario(scenario_id)
+    results = []
+    for seed in range(n_seeds):
+        try:
+            t0 = time.perf_counter()
+            result = run_episode(scenario_id, planner_id, seed)
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            row = _extract_row(
+                scenario_id, planner_id, seed, result, elapsed_ms, config
+            )
+            results.append({"status": "ok", "row": row})
+        except Exception:
+            results.append({
+                "status": "error",
+                "scenario_id": scenario_id,
+                "planner_id": planner_id,
+                "seed": seed,
+                "traceback": traceback.format_exc(),
+            })
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -162,18 +183,30 @@ def _parse_args() -> argparse.Namespace:
         "--output", type=str, default=os.path.join(OUTPUT_DIR, "all_episodes.csv"),
         help="Output CSV path",
     )
+    p.add_argument(
+        "--ablation", action="store_true",
+        help="Run ablation studies after the main experiment",
+    )
     return p.parse_args()
 
 
 def main() -> None:
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    import multiprocessing
+
+    # Required for macOS/M1 — spawn instead of fork
+    multiprocessing.set_start_method("spawn", force=True)
+
+    from uavbench.planners import PLANNERS
+    from uavbench.scenarios.loader import load_scenario
+    from uavbench.scenarios.registry import list_scenarios
+
     args = _parse_args()
 
-    all_scenarios = (
+    scenarios = (
         [s.strip() for s in args.scenarios.split(",")]
         if args.scenarios else list_scenarios()
     )
-    # Paper uses only medium + hard (easy = test-only, no dynamics)
-    scenarios = [s for s in all_scenarios if "easy" not in s]
     planners = (
         [p.strip() for p in args.planners.split(",")]
         if args.planners else sorted(PLANNERS.keys())
@@ -187,63 +220,77 @@ def main() -> None:
     print(f"  Planners:   {len(planners)} — {', '.join(planners)}")
     print(f"  Seeds:      {n_seeds}")
     print(f"  Total:      {total} episodes")
+    print(f"  Workers:    6 (Apple M1)")
     print(f"  Output:     {output_file}")
     print()
 
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
 
-    # Pre-load configs for metadata
-    configs = {sid: load_scenario(sid) for sid in scenarios}
+    # Build work units: (scenario_id, planner_id, n_seeds)
+    work_units = [
+        (scenario_id, planner_id, n_seeds)
+        for scenario_id in scenarios
+        for planner_id in planners
+    ]
 
-    errors: list[dict] = []
-    completed = 0
     attempted = 0
-    last_label = ""
-    last_sec = 0.0
+    completed = 0
+    errors: list[dict] = []
     wall_start = time.perf_counter()
+
+    MAX_WORKERS = 6  # Apple M1: 4 perf + 2 efficiency, leaves 2 for OS
 
     with open(output_file, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
         writer.writeheader()
 
-        for scenario_id in scenarios:
-            config = configs[scenario_id]
-            for planner_id in planners:
-                for seed in range(n_seeds):
-                    try:
-                        t0 = time.perf_counter()
-                        result = run_episode(scenario_id, planner_id, seed)
-                        elapsed_ms = (time.perf_counter() - t0) * 1000.0
-                        last_sec = elapsed_ms / 1000.0
+        with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {
+                executor.submit(_run_scenario_planner_block, wu): wu
+                for wu in work_units
+            }
+            for future in as_completed(futures):
+                wu = futures[future]
+                try:
+                    block_results = future.result()
+                except Exception as e:
+                    # Entire block failed
+                    scenario_id, planner_id, _ = wu
+                    errors.append({
+                        "scenario_id": scenario_id,
+                        "planner_id": planner_id,
+                        "seed": "ALL",
+                        "traceback": str(e),
+                    })
+                    attempted += n_seeds
+                    continue
 
-                        row = _extract_row(
-                            scenario_id, planner_id, seed,
-                            result, elapsed_ms, config,
-                        )
-                        writer.writerow(row)
+                for item in block_results:
+                    attempted += 1
+                    if item["status"] == "ok":
+                        writer.writerow(item["row"])
                         f.flush()
                         completed += 1
+                    else:
+                        errors.append(item)
 
-                    except Exception:
-                        tb = traceback.format_exc()
-                        last_sec = time.perf_counter() - t0
-                        errors.append({
-                            "scenario_id": scenario_id,
-                            "planner_id": planner_id,
-                            "seed": seed,
-                            "traceback": tb,
-                        })
+                # Progress update
+                wall_elapsed = time.perf_counter() - wall_start
+                pct = attempted / total
+                eta_s = (wall_elapsed / attempted * (total - attempted)) if attempted > 0 else 0
+                eta_m = eta_s / 60
+                scenario_id, planner_id, _ = wu
+                print(
+                    f"\r[{attempted}/{total}] ({100*pct:.0f}%) "
+                    f"| Elapsed: {wall_elapsed/60:.1f}m "
+                    f"| ETA: {eta_m:.0f}m "
+                    f"| Last: {planner_id}/{scenario_id.replace('gov_', '')}",
+                    end="", flush=True,
+                )
 
-                    attempted += 1
-                    scn_short = scenario_id.replace("gov_", "")
-                    last_label = f"{planner_id}/{scn_short}/seed={seed}"
-                    wall_elapsed = time.perf_counter() - wall_start
-                    line = _progress_line(
-                        attempted, total, wall_elapsed, last_label, last_sec,
-                    )
-                    print(f"\r{line}", end="", flush=True)
+    print()  # newline after progress
 
-    print()  # newline after progress bar
+    wall_total = time.perf_counter() - wall_start
 
     # Error log
     if errors:
@@ -252,15 +299,56 @@ def main() -> None:
                 ef.write(
                     f"--- {err['scenario_id']} / {err['planner_id']} / seed={err['seed']} ---\n"
                 )
-                ef.write(err["traceback"])
+                ef.write(err.get("traceback", "unknown error"))
                 ef.write("\n")
 
-    print()
-    print(f"Completed: {completed}/{total}")
+    print(f"\nCompleted: {completed}/{total}")
     print(f"Errors:    {len(errors)}")
     if errors:
         print(f"Error log: {ERROR_LOG}")
     print(f"Results:   {output_file}")
+
+    # Write runtime profile
+    import datetime
+    import platform
+
+    profile = {
+        "total_wall_clock_seconds": round(wall_total, 2),
+        "total_episodes": total,
+        "completed_episodes": completed,
+        "failed_episodes": len(errors),
+        "avg_time_per_episode_ms": (
+            round(wall_total * 1000.0 / completed, 2) if completed else 0.0
+        ),
+        "seeds": n_seeds,
+        "planners": planners,
+        "scenarios": scenarios,
+        "max_workers": MAX_WORKERS,
+        "python_version": sys.version,
+        "platform": platform.platform(),
+        "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    profile_path = os.path.join(OUTPUT_DIR, "runtime_profile.json")
+    with open(profile_path, "w") as pf:
+        json.dump(profile, pf, indent=2)
+    print(f"Profile:   {profile_path}")
+
+    # Ablation studies (optional, after main run)
+    if args.ablation:
+        print(f"\n{'='*70}")
+        print("ABLATION STUDIES")
+        print(f"{'='*70}")
+        from run_ablation_studies import run_ablation_1, run_ablation_2, run_ablation_3
+        from run_ablation_studies import print_dynamics_summary, print_replan_frequency_summary, print_fire_intensity_summary
+        csv1 = run_ablation_1(n_seeds)
+        csv2 = run_ablation_2(n_seeds)
+        csv3 = run_ablation_3(n_seeds)
+        print(f"\n{'='*70}")
+        print("ABLATION SUMMARY TABLES")
+        print(f"{'='*70}")
+        print_dynamics_summary(csv1)
+        print_replan_frequency_summary(csv2)
+        print_fire_intensity_summary(csv3)
 
 
 if __name__ == "__main__":

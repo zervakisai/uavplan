@@ -7,7 +7,10 @@ paper_track: dynamic
 
 map_size: 500
 map_source: synthetic
-building_density: 0.20
+# Same density as medium (0.15) to prevent buildings from acting as
+# firebreaks that paradoxically reduce difficulty for adaptive planners.
+# Difficulty comes from more fire ignitions, vehicles, NFZs, and forced replans.
+building_density: 0.15
 
 min_start_goal_l1: 100
 
