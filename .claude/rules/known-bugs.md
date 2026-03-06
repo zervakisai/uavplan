@@ -12,7 +12,7 @@ All planners × all seeds = 0% success due to wind + excessive obstacles.
 Fix: Feasibility pre-check + calibration protocol (CC-1..4). No wind. Reduced knobs.
 
 ## BUG-3: MPPI Dead Code (FIXED)
-Registered but never executed. Removed entirely. 5 planners remain.
+Registered but never executed. Removed entirely.
 
 ## BUG-4: Wind Complexity (FIXED)
 Removed. Isotropic fire CA (FD-2). 8-neighbor Moore neighborhood.

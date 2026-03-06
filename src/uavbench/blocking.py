@@ -24,27 +24,6 @@ _CROSS_STRUCT = np.array(
 )
 
 
-def _diamond_kernel(radius: int) -> np.ndarray:
-    """Build a diamond (Manhattan-distance) structuring element.
-
-    Using a single-pass dilation with this kernel is equivalent to
-    ``iterations=radius`` with a cross kernel, but faster (one pass).
-    """
-    size = 2 * radius + 1
-    k = np.zeros((size, size), dtype=bool)
-    for r in range(size):
-        for c in range(size):
-            if abs(r - radius) + abs(c - radius) <= radius:
-                k[r, c] = True
-    return k
-
-
-# Cache common radii at import time
-_DIAMOND_CACHE: dict[int, np.ndarray] = {
-    r: _diamond_kernel(r) for r in range(1, 6)
-}
-
-
 def compute_blocking_mask(
     heightmap: np.ndarray,
     no_fly: np.ndarray,

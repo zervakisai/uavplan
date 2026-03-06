@@ -22,7 +22,7 @@ src/uavbench/
   envs/                         # base, urban (UrbanEnvV2)
   dynamics/                     # fire_ca, traffic, restriction_zones,
                                 # interaction_engine, forced_block
-  planners/                     # base, astar, theta_star, periodic_replan,
+  planners/                     # base, astar, periodic_replan,
                                 # aggressive_replan, dstar_lite, apf
   blocking.py                   # ONE compute_blocking_mask() (MP-1)
   guardrail/feasibility.py      # multi-depth relaxation
@@ -31,9 +31,8 @@ src/uavbench/
   visualization/                # renderer, overlays, hud
 ```
 
-## Planners (6)
+## Planners (5)
 - `astar` — A* static baseline, never replans
-- `theta_star` — Theta* any-angle static, never replans
 - `periodic_replan` — replans every N steps
 - `aggressive_replan` — replans when obstacle mask changes near path
 - `dstar_lite` — incremental graph repair
@@ -43,7 +42,7 @@ src/uavbench/
 ```bash
 pip install -e .
 pytest tests/ -q                             # run all tests
-python -m uavbench run --seed 42             # single run
+python -m uavbench run --seed-base 42         # single run
 python scripts/run_paper_experiments.py      # full paper suite
 python scripts/export_artifacts.py           # export evidence
 ```
@@ -60,7 +59,7 @@ python scripts/export_artifacts.py           # export evidence
 - Pure functions where possible; side effects only in runner and CLI
 - Docstrings on all public classes/methods — include contract references (e.g., "Enforces DC-1")
 
-## Contracts (11 families, 33 contracts)
+## Contracts (12 families, 33 contracts)
 DC (Determinism), FC (Fairness), EC (Events/Decisions), GC (Guardrail),
 EV (Event Semantics), VC (Visual Truth), MC (Mission Story), PC (Planner),
 FD (Fire Dynamics), CC (Calibration), SC (Sanity Check), MP (Mask Parity)

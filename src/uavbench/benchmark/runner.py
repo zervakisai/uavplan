@@ -10,6 +10,7 @@ import time as _time
 from dataclasses import dataclass, field
 from typing import Any
 
+from uavbench.envs.base import TerminationReason
 from uavbench.envs.urban import UrbanEnvV2
 from uavbench.metrics.compute import compute_episode_metrics
 from uavbench.planners import PLANNERS
@@ -65,6 +66,10 @@ def run_episode(
     # Export planner inputs
     heightmap, no_fly, start_xy, goal_xy = env.export_planner_inputs()
 
+    # Capture static map layers for visualization
+    _landuse_map = getattr(env, '_landuse_map', None)
+    _roads_mask = getattr(env, '_roads', None)
+
     # Mission metadata for rendering
     _mission_meta = _extract_mission_meta(config, info)
 
@@ -102,6 +107,9 @@ def run_episode(
     replan_attempts = 0  # includes suppressed replans
     naive_replan_count = 0  # replans suppressed by RS-1
     _failed_plan_cooldown = 0  # steps to skip replanning after a failed plan
+    _last_plan_step = 0  # step_idx of last successful plan (for VC-2 STALE badge)
+    should = False  # last replan decision (for frame_callback)
+    reason = ""  # last replan reason (for frame_callback)
     terminated = False
     truncated = False
     final_info = info
@@ -127,7 +135,7 @@ def run_episode(
         # Wall-clock timeout check
         if _time.perf_counter() - _wall_start > _WALL_TIMEOUT_S:
             final_info = dict(final_info)
-            final_info["termination_reason"] = "wall_timeout"
+            final_info["termination_reason"] = TerminationReason.WALL_TIMEOUT
             final_info["objective_completed"] = False
             truncated = True
         trajectory.append(env.agent_xy)
@@ -151,6 +159,7 @@ def run_episode(
                         path_idx = 0
                         replan_count += 1
                         planned_waypoints_total += len(plan_result_new.path)
+                        _last_plan_step = step_idx
 
         # Advance path index if we moved to expected next waypoint
         if path_idx < len(path) - 1:
@@ -165,6 +174,7 @@ def run_episode(
         # Check if replan needed
         if _failed_plan_cooldown > 0:
             _failed_plan_cooldown -= 1
+            should, reason = False, "cooldown"
         else:
             should, reason = planner.should_replan(
                 env.agent_xy, path, dyn_state, step_idx
@@ -180,6 +190,7 @@ def run_episode(
                     replan_count += 1
                     planned_waypoints_total += len(plan_result_new.path)
                     _failed_plan_cooldown = 0
+                    _last_plan_step = step_idx
                 else:
                     # Back off after failed plan to avoid futile retries
                     _failed_plan_cooldown = 15
@@ -194,7 +205,7 @@ def run_episode(
                 "goal_xy": goal_xy,
                 "plan_path": remaining_path,
                 "plan_len": len(remaining_path),
-                "plan_age_steps": 0,
+                "plan_age_steps": step_idx - _last_plan_step,
                 "plan_reason": reason if should else "",
                 "trajectory": list(trajectory),
                 "replans": replan_count,
@@ -204,6 +215,8 @@ def run_episode(
                 "forced_block_active": info.get("forced_block_active", False),
                 "forced_block_lifecycle": info.get("forced_block_lifecycle", "none"),
                 "dynamic_block_hits": 0,
+                "landuse_map": _landuse_map,
+                "roads_mask": _roads_mask,
                 **_mission_meta,
             }
             # Add mission fields from info
