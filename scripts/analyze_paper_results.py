@@ -467,8 +467,8 @@ def gen_table_iqm_bootstrap(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
-def gen_table_friedman_nemenyi(df: pd.DataFrame) -> str:
-    """LaTeX table: Friedman test + Nemenyi post-hoc p-values."""
+def gen_table_friedman_posthoc(df: pd.DataFrame) -> str:
+    """LaTeX table: Friedman test + Wilcoxon pairwise post-hoc (Bonferroni)."""
     # Pivot: one row per (scenario, seed), columns = planner success
     pivot = df.pivot_table(
         index=["scenario_id", "seed"],
@@ -493,8 +493,8 @@ def gen_table_friedman_nemenyi(df: pd.DataFrame) -> str:
         r"\centering",
         r"\caption{Friedman test ($\chi^2$="
         + f"{chi2:.1f}, p={p_friedman:.4f}"
-        + r") + Nemenyi post-hoc p-values.}",
-        r"\label{tab:friedman_nemenyi}",
+        + r") + Wilcoxon pairwise post-hoc p-values (Bonferroni corrected).}",
+        r"\label{tab:friedman_posthoc}",
         r"\footnotesize",
         r"\begin{tabular}{l" + "c" * len(present) + "}",
         r"\toprule",
@@ -502,7 +502,7 @@ def gen_table_friedman_nemenyi(df: pd.DataFrame) -> str:
         r"\midrule",
     ]
 
-    # Nemenyi post-hoc (Wilcoxon pairwise with Bonferroni correction)
+    # Wilcoxon pairwise post-hoc with Bonferroni correction
     n_comparisons = len(present) * (len(present) - 1) / 2
     for pa in present:
         vals = []
@@ -693,7 +693,7 @@ def main() -> None:
     _save_tex(gen_table_exclusion(df), "exclusion_rate")
     _save_tex(gen_table_significance(df), "significance_matrix")
     _save_tex(gen_table_iqm_bootstrap(df), "iqm_bootstrap")
-    _save_tex(gen_table_friedman_nemenyi(df), "friedman_nemenyi")
+    _save_tex(gen_table_friedman_posthoc(df), "friedman_posthoc")
     _save_tex(gen_table_effect_sizes(df), "effect_sizes")
 
     # --- Figures ---

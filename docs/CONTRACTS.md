@@ -77,7 +77,7 @@ When implementing, reference contracts by ID (e.g., "Enforces DC-1").
 |------|------------|-----------|
 | SC-1 | In fire scenarios: best_adaptive_success ≥ best_static_success. Violation → investigate. | `contract_test_sanity.py` |
 | SC-2 | For each planner: success(Medium) ≥ success(Hard). Violation → difficulty ordering bug. | `contract_test_sanity.py` |
-| SC-3 | Cross-domain: maritime adaptive MUST beat static. Fire adaptive SHOULD beat static. | `contract_test_sanity.py` |
+| SC-3 | (Deferred — no maritime scenarios in v2. Fire adaptive SHOULD beat static is covered by SC-1.) | — |
 | SC-4 | D*Lite ≥ A* in all scenarios. If violated → implementation bug (not expected behavior). | `contract_test_sanity.py` |
 
 ## Cross-cutting

@@ -154,7 +154,7 @@ Each test file maps to one or more contract IDs.
 
 | Test Name | Contract | Acceptance Criterion |
 |-----------|----------|---------------------|
-| `test_path_visible_when_plan_exists` | VC-1 | When `plan_len > 1`, rendered frame contains path-colored pixels (cyan `#4FC3F7` family) |
+| `test_path_visible_when_plan_exists` | VC-1 | When `plan_len > 1`, rendered frame contains path-colored pixels (cyan `#56B4E9` Okabe-Ito sky blue) |
 | `test_no_silent_path_absence` | VC-1 | If plan_len drops to 0 mid-episode, frame contains NO_PLAN badge text |
 | `test_no_plan_badge` | VC-2 | When `plan_len <= 1`, HUD text contains "NO PLAN" |
 | `test_stale_badge` | VC-2 | When `plan_age_steps > 2 * replan_every_steps`, HUD text contains "STALE" |
@@ -199,7 +199,7 @@ Unit tests verify pure functions and data structures. They run fast and have no 
 | `unit_test_moving_target.py` | `dynamics/moving_target.py` | BFS path following, buffer mask |
 | `unit_test_intruder.py` | `dynamics/intruder.py` | Spawn, approach, buffer mask |
 | `unit_test_population_risk.py` | `dynamics/population_risk.py` | Diffusion, hazard source, non-blocking assertion |
-| `unit_test_blocking_mask.py` | `blocking.py` | Layer merging order, config gating, smoke threshold >= 0.3 (MP-1 support) |
+| `unit_test_blocking_mask.py` | `blocking.py` | Layer merging order, config gating, smoke threshold >= 0.5 (MP-1 support) |
 | `unit_test_planner_base.py` | `planners/base.py` | ABC enforcement, PlanResult fields, should_replan default, update default (PL-1, PL-2, PL-4, PL-5) |
 | `unit_test_planner_registry.py` | `planners/__init__.py` | Exactly 5 keys in PLANNERS (PL-3) |
 | `unit_test_planner_paths.py` | `planners/*.py` | Path format: list[(x,y)], start/goal inclusive (PL-6) |

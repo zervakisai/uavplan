@@ -82,8 +82,9 @@ requires altitude metrics, revisit.
    `should_replan()` methods
 2. APF uses attractive (goal) + repulsive (obstacle) potential fields;
    gradient descent determines next action each step
-3. `dstar_lite` uses A* internally with obstacle-change detection (simplified,
-   not true incremental D* Lite — see PC-4)
+3. `dstar_lite` uses A* internally with obstacle-change detection (simplified
+   D* Lite — not the full incremental algorithm from Koenig & Likhachev 2002,
+   see PC-4)
 
 **Status**: DECIDED
 
@@ -323,7 +324,7 @@ environmental hazard that adaptive planners can detect and route around.
 
 **Additional changes**:
 - Default landuse: urban (p_spread=0.06) instead of forest (p_spread=0.15)
-- Fire buffer radius: 2 for medium scenarios
+- Fire buffer radius: 1 for medium scenarios
 - Isotropic spread (8-neighbor Moore, no wind — FD-2)
 
 **Status**: DECIDED
@@ -369,5 +370,32 @@ aggressive_replan always 80-100%. The mechanism is robust to threshold choice.
 **Fairness**: POI abandonment does NOT trigger a replan. Adaptive planners replan
 via their `should_replan()` logic; static planners (A*) continue on their original
 path. This preserves FC-1 fairness.
+
+**Status**: DECIDED
+
+---
+
+## Q22: Infeasible Episode Detection
+
+**Decision**: The runner detects structurally infeasible episodes at reset time.
+If both A* and BFS fail to find a path on the static grid (empty corridor),
+the episode is immediately terminated with `TerminationReason.INFEASIBLE`
+instead of running 2001 steps of STAY.
+
+**Rationale**: On dense OSM maps (piraeus building_density=0.29, downtown=0.50),
+some seeds produce building layouts where no path exists from start to goal.
+Without detection, these episodes run for the full timeout, wasting compute
+and adding noise to results. With detection, they are flagged instantly and
+excluded from planner comparison per CC-4.
+
+**Affected seeds** (30-seed scan):
+- penteli: 0/30 infeasible
+- piraeus: 3/30 infeasible (seeds 12, 14, 20)
+- downtown: 4/30 infeasible (seeds 1, 22, 28, 29)
+
+**Guardrail note**: The full runtime guardrail system (`guardrail/feasibility.py`)
+is implemented but NOT called from the runner. This is intentional for the paper:
+adaptive planners handle mid-episode path blockages through replanning, which is
+the paper's core claim. The guardrail exists as a post-paper extension point.
 
 **Status**: DECIDED

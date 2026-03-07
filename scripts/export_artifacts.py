@@ -190,10 +190,15 @@ def export_repro_manifest() -> None:
             "outputs/rebuild_audit.json",
         ],
         "contracts": [
-            "DC-1", "DC-2", "FC-1", "FC-2", "EC-1", "EC-2",
-            "GC-1", "GC-2", "EV-1", "VC-1", "VC-2",
-            "MC-1", "MC-2", "MC-3", "MC-4", "PC-1", "PC-2",
-            "MP-1", "RS-1",
+            "CC-1", "CC-2", "CC-3", "CC-4",
+            "DC-1", "DC-2", "EC-1", "EC-2", "EV-1",
+            "FC-1", "FC-2",
+            "FD-1", "FD-2", "FD-3", "FD-4", "FD-5",
+            "GC-1", "GC-2",
+            "MC-1", "MC-2", "MC-3", "MC-4", "MP-1",
+            "PC-1", "PC-2", "RS-1",
+            "SC-1", "SC-2", "SC-3", "SC-4",
+            "VC-1", "VC-2",
         ],
     }
 
@@ -216,7 +221,7 @@ def main() -> None:
     print("\n1. Determinism hashes (DC-2)...")
     det = export_determinism_hashes()
 
-    print("\n2. Visualization artifacts (VC-1/2/3)...")
+    print("\n2. Visualization artifacts (VC-1/VC-2)...")
     export_viz_artifacts()
 
     print("\n3. Reproducibility manifest...")
