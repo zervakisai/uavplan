@@ -191,7 +191,7 @@ def export_repro_manifest() -> None:
         ],
         "contracts": [
             "DC-1", "DC-2", "FC-1", "FC-2", "EC-1", "EC-2",
-            "GC-1", "GC-2", "EV-1", "VC-1", "VC-2", "VC-3",
+            "GC-1", "GC-2", "EV-1", "VC-1", "VC-2",
             "MC-1", "MC-2", "MC-3", "MC-4", "PC-1", "PC-2",
             "MP-1", "RS-1",
         ],

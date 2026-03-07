@@ -61,7 +61,7 @@ src/uavbench/
 └── visualization/
     ├── renderer.py               # Frame renderer (paper_min / ops_full)
     ├── overlays.py               # Path, fire, NFZ, traffic, agent, markers
-    └── hud.py                    # HUD badges + text (VC-2, VC-3, MC-3)
+    └── hud.py                    # HUD badges + text (VC-2, MC-3)
 ```
 
 ### 5 Planners (3 families)
@@ -302,6 +302,13 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 
 **Ignition:** Random placement on burnable cells. Fire acts as a distributed environmental hazard that adaptive planners must detect and route around.
 
+**Fire Corridor Guarantee (FC-1):**
+- `guarantee_targets`: corridor cells that must be BURNING by `guarantee_step` (= event_t1)
+- Approach ignitions placed 8-15 Manhattan distance from each target
+- Safety net: force-ignites any UNBURNED targets at `guarantee_step`
+- Extended burnout: guarantee targets have `_burnout_time = 999999.0`, so they
+  stay BURNING for the entire episode (no re-ignition, no burnout gap — see BUG-8)
+
 **Properties:** fire_mask, burned_mask, smoke_mask, total_affected
 
 ### Traffic (`dynamics/traffic.py`)
@@ -320,11 +327,12 @@ _NEIGHBORS = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
 ### Physical Corridor Interdictions (FC-1)
 The abstract `ForcedBlockManager` has been replaced by physical interdiction
 mechanisms using existing dynamics layers:
-- **Fire corridor closures** (penteli, downtown): Fire ignition is guaranteed on
+- **Fire corridor closures** (all scenarios): Fire ignition is guaranteed on
   corridor cells via `fire_ca.py`, creating a physical barrier that blocks the
-  reference path. Adaptive planners detect fire and reroute; static planners fail.
-- **Vehicle roadblocks** (piraeus): Traffic vehicles are positioned on corridor
-  cells via `traffic.py`, blocking the path with physical vehicle occupancy.
+  reference path. Extended burnout (999999 steps) ensures fire never burns out.
+  Adaptive planners detect fire and reroute; static planners fail.
+- **Vehicle roadblocks** (piraeus, additional): Traffic vehicles are positioned on
+  corridor cells via `traffic.py`, blocking the path with physical vehicle occupancy.
 - Fairness: same corridor for all planners (computed at reset, seed-dependent)
 - Guardrail D1 clears roadblock vehicles instead of abstract forced blocks
 
@@ -396,11 +404,11 @@ mechanisms using existing dynamics layers:
 
 | Scenario | Map | Density | Fire | Buffer | Traffic | NFZ | Interdiction | t1 | t2 |
 |----------|-----|---------|------|--------|---------|-----|-------------|----|----|
-| osm_penteli_fire_delivery_medium | 500 | 0.18 | 3 | 2 | 2 | 1 | fire corridor | 40 | 120 |
-| osm_piraeus_flood_rescue_medium | 500 | 0.15 | 2 | 2 | 3 | 1 | vehicle roadblock | 40 | 120 |
-| osm_downtown_fire_surveillance_medium | 500 | 0.16 | 3 | 2 | 2 | 2 | fire corridor | 40 | 120 |
+| osm_penteli_fire_delivery_medium | 500 | 0.18 | 2 | 1 | 8+2 | 1 | fire corridor | 40 | 120 |
+| osm_piraeus_flood_rescue_medium | 500 | 0.29 | 2 | 1 | 8+2 | 1 | fire corridor + roadblock | 40 | 120 |
+| osm_downtown_fire_surveillance_medium | 500 | 0.50 | 1 | 1 | 8+2 | 1 | fire corridor | 40 | 120 |
 
-**All scenarios:** Dynamic track, OSM-based maps, 500x500, fire_buffer_radius=2, moderate obstacle counts, event window t1=40 t2=120.
+**All scenarios:** Dynamic track, OSM-based maps, 500x500, fire_buffer_radius=1, event window t1=40 t2=120. Traffic=8 emergency + 2 corridor-aware vehicles.
 
 ---
 

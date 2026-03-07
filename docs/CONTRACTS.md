@@ -39,7 +39,7 @@ When implementing, reference contracts by ID (e.g., "Enforces DC-1").
 |------|------------|-----------|
 | VC-1 | If `plan_len > 1` → planned path overlay MUST be visible (never silently absent) | `contract_test_visual_truth.py` |
 | VC-2 | If plan missing/stale → HUD shows `NO_PLAN` or `STALE` badge + `plan_reason` | `contract_test_visual_truth.py` |
-| VC-3 | Forced block lifecycle rendered: `TRIGGERED` → `ACTIVE` → `CLEARED` (with reason) | `contract_test_visual_truth.py` |
+| VC-3 | (Removed — interdictions are now physical fire/traffic events visible in existing overlays) | — |
 
 ## MC — Mission Story Contract
 | ID   | Requirement | Test File |

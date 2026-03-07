@@ -57,8 +57,8 @@ When a gate passes, announce: "Gate N PASSED" and commit.
 - Infeasible episodes flagged; exclusion rate reported
 **Gate 6**: `contract_test_guardrail.py` passes.
 
-## Phase 7 — Planner Suite (6 only) + Replan Storm Regression
-**Build**: astar, theta_star, periodic_replan, aggressive_replan, dstar_lite, mppi_grid
+## Phase 7 — Planner Suite (5 only) + Replan Storm Regression
+**Build**: astar, periodic_replan, aggressive_replan, dstar_lite, apf
 - All implement `PlannerBase` interface
 - Path-progress tracking to prevent replan storms
 **Gate 7**: `contract_test_replan_storm_regression.py` passes (≤20% naive replans).
@@ -69,7 +69,7 @@ When a gate passes, announce: "Gate N PASSED" and commit.
 - Renderer modes: `paper_min`, `ops_full`
 - HUD always shows: mission domain, objective label, distance_to_task, task_progress
 - Planned path overlay: never silently absent. If missing → "NO PLAN" badge.
-- Forced block lifecycle shown on HUD
+- Physical interdiction events visible in fire/traffic overlays
 **Gate 8**: `contract_test_visual_truth.py` passes. `outputs/viz_manifest.csv` + `viz_frame_checks.json` written.
 
 ## Phase 9 — Export & Reproducibility

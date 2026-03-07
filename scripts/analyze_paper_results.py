@@ -36,12 +36,11 @@ DEFAULT_FIG_DIR = "outputs/paper_figures"
 
 # Planner display order
 PLANNER_ORDER = [
-    "astar", "theta_star", "periodic_replan",
+    "astar", "periodic_replan",
     "aggressive_replan", "dstar_lite", "apf",
 ]
 PLANNER_LABELS = {
     "astar": "A*",
-    "theta_star": r"$\theta$*",
     "periodic_replan": "Periodic",
     "aggressive_replan": "Aggressive",
     "dstar_lite": "D* Lite",
@@ -50,13 +49,12 @@ PLANNER_LABELS = {
 # Okabe-Ito colorblind-safe palette
 PLANNER_COLORS = {
     "astar": "#E69F00",           # orange
-    "theta_star": "#56B4E9",      # sky blue
     "periodic_replan": "#009E73", # bluish green
     "aggressive_replan": "#D55E00", # vermillion
     "dstar_lite": "#CC79A7",      # reddish purple
     "apf": "#0072B2",       # blue
 }
-DIFFICULTY_ORDER = ["medium", "hard"]  # easy excluded from paper
+DIFFICULTY_ORDER = ["medium"]  # only medium difficulty in v2
 
 
 # ---------------------------------------------------------------------------
