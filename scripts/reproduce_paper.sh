@@ -7,7 +7,7 @@
 # This script:
 #   1. Installs package in editable mode
 #   2. Runs full test suite (contract + unit + integration)
-#   3. Runs paper experiments (6 planners × 6 scenarios × 30 seeds = 1,080 episodes)
+#   3. Runs paper experiments (5 planners × 3 scenarios × 30 seeds = 450 episodes)
 #   4. Generates analysis (LaTeX tables + figures)
 #   5. Exports reproducibility artifacts
 #   6. Writes pip freeze lock file

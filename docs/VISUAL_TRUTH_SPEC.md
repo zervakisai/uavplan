@@ -24,18 +24,17 @@ No layer may overwrite a higher-priority layer.
 | Z | Layer | Style | Notes |
 |---|-------|-------|-------|
 | 1 | Base map (terrain, buildings, roads) | Buildings opaque, roads grey, ground light | Always present |
-| 1.5 | Grid lines | `#D0D0D0`, linewidth=0.3, alpha=0.5 | `ops_full` only |
-| 2 | Risk heatmap | YlOrRd colormap, alpha=0.30, bilinear | Non-blocking; informational |
-| 3 | Smoke | Grey, alpha=0.25–0.35 | Threshold >= 0.3 for blocking |
-| 4 | Fire | Red-orange, alpha=0.65 | CA states: BURNING shown |
-| 4.9 | Static no-fly zones | Crimson `#CC2222`, alpha=0.35 | Permanent; baked from config |
-| 5 | Dynamic restriction zones | Per-type colors (see zone table) | Hatch patterns per mission |
-| 6 | Traffic closures | Yellow `#FFFF00` diagonal stripes | From interaction engine |
-| 7 | Entities (vehicles, intruders) | Mission-specific icons | Traffic, intruders, moving target |
-| 9 | Trajectory + planned path | See path rendering rules below | Core visual truth layer |
-| 10 | UAV icon + safety bubble | Blue/orange/red by safety state | Always present |
-| 11 | Event annotations | Replan flash, corridor label | Transient overlays |
-| 12 | HUD | Monospace text box, timeline bar | Top layer |
+| 3.5 | Smoke | Grey `#A0A0A0` (160,160,160), ~40% opacity | Threshold >= 0.5 for blocking |
+| 3.8 | Fire buffer zone | Light orange (255,180,100), 30% opacity + dots | Safety exclusion ring |
+| 4 | Fire | Red-orange (255,80,20), 80% opacity | CA states: BURNING shown |
+| 5 | Dynamic NFZ (restriction zones) | Purple `#CC79A7` (Okabe-Ito), 50% + hatching | Hatch patterns per mission |
+| 6 | Traffic closures/occupancy | Orange `#E69F00` (Okabe-Ito), ~40% opacity | From interaction engine |
+| 9 | Trajectory trail | Blue `#0072B2` with white outline | Executed path |
+| 9.5 | Planned path | Cyan `#56B4E9` dashed with black outline | VC-1 core layer |
+| 9.6 | Start / Goal markers | Green `#009E73` / Yellow `#F0E442` | Okabe-Ito palette |
+| 10 | UAV icon | Blue `#0072B2` disc + white ring + rotor cross | Always present |
+| 12 | HUD | Monospace text box, badges | Top layer |
+| 13 | Color legend bar | 10-swatch legend at frame bottom | Both modes |
 
 ---
 
@@ -47,7 +46,7 @@ No layer may overwrite a higher-priority layer.
 
 | Condition | Rendering |
 |-----------|-----------|
-| `plan_len > 1` | Dashed cyan `#4FC3F7` line, linewidth=1.8, with black outline (linewidth=3.5, alpha=0.6) |
+| `plan_len > 1` | Dashed cyan `#56B4E9` line (Okabe-Ito sky blue), with black outline |
 | `plan_len == 1` | Single waypoint marker (no line) |
 | `plan_len == 0` | No path rendered; NO_PLAN badge shown |
 
@@ -183,23 +182,23 @@ A horizontal progress bar at the bottom of the frame (z=24).
 
 | Marker | Style | Z |
 |--------|-------|---|
-| Start | Green `#00CC44` circle, s=max(180, W*0.6) | 9.6 |
-| Goal | Gold `#FFD700` star, s=marker*1.2 | 9.6 |
+| Start | Bluish green `#009E73` circle (Okabe-Ito) | 9.6 |
+| Goal | Yellow `#F0E442` circle (Okabe-Ito) | 9.6 |
 
 ### Trajectory
 
 | Element | Style | Z |
 |---------|-------|---|
 | Trajectory outline | White, linewidth=4.5, alpha=0.7 | 9.4 |
-| Trajectory | Blue `#0066FF`, linewidth=2.5 | 9.5 |
+| Trajectory | Blue `#0072B2` (Okabe-Ito), linewidth=2.5 | 9.5 |
 
 ### UAV Icon
 
 | Safety State | Color |
 |-------------|-------|
-| Safe | Blue `#0066FF` |
-| Caution | Orange `#FF8C00` |
-| Danger | Red `#FF0000` |
+| Safe | Blue `#0072B2` (Okabe-Ito) |
+| Caution | Orange `#E69F00` (Okabe-Ito) |
+| Danger | Red `#D55E00` (Okabe-Ito vermillion) |
 
 Safety state derived from: `safe` if no nearby hazards, `caution` if within risk buffer, `danger` if adjacent to blocking cell.
 

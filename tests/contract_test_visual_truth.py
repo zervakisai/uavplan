@@ -186,6 +186,193 @@ class TestVC2_PlanStatusBadges:
 
 
 # ===========================================================================
+# V3: Smoke threshold in visualization
+# ===========================================================================
+
+
+class TestSmokeThresholdViz:
+    """Smoke overlay respects SMOKE_BLOCKING_THRESHOLD = 0.5."""
+
+    def test_smoke_below_threshold_not_rendered(self):
+        """Smoke at 0.4 (below 0.5 threshold) should NOT alter frame pixels."""
+        from uavbench.visualization.overlays import draw_smoke
+
+        cell = 2
+        frame_clean = np.full((20, 20, 3), 200, dtype=np.uint8)
+        frame_smoke = frame_clean.copy()
+
+        smoke_mask = np.full((10, 10), 0.4, dtype=np.float32)
+        draw_smoke(frame_smoke, smoke_mask, cell)
+
+        np.testing.assert_array_equal(
+            frame_clean, frame_smoke,
+            err_msg="Smoke at 0.4 should NOT be rendered (threshold=0.5)",
+        )
+
+    def test_smoke_at_threshold_is_rendered(self):
+        """Smoke at 0.5 (at threshold) SHOULD alter frame pixels."""
+        from uavbench.visualization.overlays import draw_smoke
+
+        cell = 2
+        frame_clean = np.full((20, 20, 3), 200, dtype=np.uint8)
+        frame_smoke = frame_clean.copy()
+
+        smoke_mask = np.full((10, 10), 0.5, dtype=np.float32)
+        draw_smoke(frame_smoke, smoke_mask, cell)
+
+        assert not np.array_equal(frame_clean, frame_smoke), \
+            "Smoke at 0.5 SHOULD be rendered (threshold=0.5 with >=)"
+
+
+# ===========================================================================
+# V1: Z-order consistency
+# ===========================================================================
+
+
+class TestZOrderConsistency:
+    """Verify render order matches documented z-order stack."""
+
+    def test_fire_over_smoke(self):
+        """Fire (z=4) must be rendered on top of smoke (z=3.5)."""
+        from uavbench.visualization.renderer import Renderer
+
+        config = _make_config()
+        renderer = Renderer(config, mode="ops_full")
+        heightmap = np.zeros((20, 20), dtype=np.float32)
+
+        # Create overlapping fire and smoke at the same cells
+        fire_mask = np.zeros((20, 20), dtype=bool)
+        fire_mask[5:10, 5:10] = True
+        smoke_mask = np.full((20, 20), 0.8, dtype=np.float32)
+
+        state = _make_frame_state(plan_len=0, plan_path=[])
+        dynamic_state = {
+            "fire_mask": fire_mask,
+            "smoke_mask": smoke_mask,
+        }
+        frame, _ = renderer.render_frame(heightmap, state, dynamic_state)
+
+        # In fire cells, the dominant color should be fire red-orange (255,80,20)
+        # not smoke grey (160,160,160), proving fire is on top
+        cell = renderer._cell_px
+        # Sample a fire cell center
+        fy, fx = 7 * cell + cell // 2, 7 * cell + cell // 2
+        pixel = frame[fy, fx]
+        # Fire blended at 80% should have R > 200 (red-dominant)
+        assert pixel[0] > 200, f"Fire cell should be red-dominant, got R={pixel[0]}"
+
+    def test_buffer_over_smoke(self):
+        """Fire buffer (z=3.8) must be rendered on top of smoke (z=3.5)."""
+        from uavbench.visualization.renderer import Renderer
+
+        config = _make_config()
+        renderer = Renderer(config, mode="ops_full")
+        heightmap = np.zeros((20, 20), dtype=np.float32)
+
+        # Fire at center, smoke everywhere — buffer ring around fire
+        fire_mask = np.zeros((20, 20), dtype=bool)
+        fire_mask[10, 10] = True  # single fire cell
+        smoke_mask = np.full((20, 20), 0.8, dtype=np.float32)
+
+        state = _make_frame_state(plan_len=0, plan_path=[])
+        dynamic_state = {
+            "fire_mask": fire_mask,
+            "smoke_mask": smoke_mask,
+        }
+        frame, _ = renderer.render_frame(heightmap, state, dynamic_state)
+
+        # Buffer ring cell (adjacent to fire, not fire itself) should show
+        # buffer orange tint, not pure smoke grey. At z=3.8, buffer is on top
+        # of smoke (z=3.5). The buffer dot pattern color is (220,140,60).
+        cell = renderer._cell_px
+        # Check a buffer cell (one cell away from fire)
+        by, bx = 11 * cell + cell // 2, 10 * cell + cell // 2
+        pixel = frame[by, bx]
+        # Buffer blended over smoke should shift toward orange (R > G)
+        # Pure smoke would be roughly (168,168,168) blended with basemap
+        # Buffer adds orange tint making R distinctly higher
+        assert pixel[0] > pixel[2], (
+            f"Buffer cell should have R > B (orange tint), got {pixel}"
+        )
+
+
+# ===========================================================================
+# VZ-1: Renderer modes
+# ===========================================================================
+
+
+class TestVZ1_RendererModes:
+    """VZ-1: paper_min and ops_full modes produce valid frames."""
+
+    def test_paper_min_produces_frame(self):
+        from uavbench.visualization.renderer import Renderer
+
+        config = _make_config()
+        renderer = Renderer(config, mode="paper_min")
+        assert renderer._cell_px == 15  # paper_min fixed at 15px/cell
+
+        heightmap = np.zeros((20, 20), dtype=np.float32)
+        state = _make_frame_state(plan_len=5)
+        frame, meta = renderer.render_frame(heightmap, state)
+
+        assert frame.dtype == np.uint8
+        assert frame.ndim == 3
+        assert meta["mode"] == "paper_min"
+
+    def test_ops_full_produces_frame(self):
+        from uavbench.visualization.renderer import Renderer
+
+        config = _make_config()
+        renderer = Renderer(config, mode="ops_full")
+        # ops_full auto-scales: max(2, 1200 // map_size)
+        assert renderer._cell_px == max(2, 1200 // 20)
+
+        heightmap = np.zeros((20, 20), dtype=np.float32)
+        state = _make_frame_state(plan_len=5)
+        frame, meta = renderer.render_frame(heightmap, state)
+
+        assert frame.dtype == np.uint8
+        assert meta["mode"] == "ops_full"
+
+
+# ===========================================================================
+# VZ-3: Deterministic rendering
+# ===========================================================================
+
+
+class TestVZ3_DeterministicRendering:
+    """VZ-3: Same episode data → identical frame bytes."""
+
+    def test_identical_inputs_identical_frames(self):
+        """Two render passes with identical inputs must produce identical frames."""
+        from uavbench.visualization.renderer import Renderer
+
+        config = _make_config()
+
+        heightmap = np.zeros((20, 20), dtype=np.float32)
+        fire_mask = np.zeros((20, 20), dtype=bool)
+        fire_mask[8:12, 8:12] = True
+        smoke_mask = np.full((20, 20), 0.6, dtype=np.float32)
+
+        state = _make_frame_state(plan_len=8, step_idx=10)
+        dynamic_state = {"fire_mask": fire_mask, "smoke_mask": smoke_mask}
+
+        # Render A
+        renderer_a = Renderer(config, mode="ops_full")
+        frame_a, meta_a = renderer_a.render_frame(heightmap, state, dynamic_state)
+
+        # Render B (fresh renderer, same inputs)
+        renderer_b = Renderer(config, mode="ops_full")
+        frame_b, meta_b = renderer_b.render_frame(heightmap, state, dynamic_state)
+
+        np.testing.assert_array_equal(
+            frame_a, frame_b,
+            err_msg="VZ-3: Identical inputs must produce bit-identical frames",
+        )
+        assert meta_a == meta_b
+
+
+# ===========================================================================
 # Evidence artifact generation
 # ===========================================================================
 

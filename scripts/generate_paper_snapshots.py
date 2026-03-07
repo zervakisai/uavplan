@@ -3,8 +3,10 @@
 
 For each of the 3 scenario families:
   - Representative episode snapshots at t=0, t=mid, t=end
-For one hard scenario:
-  - 6-panel figure showing all planner trajectories on the same map
+For one scenario:
+  - 5-panel figure showing all planner trajectories on the same map
+
+Uses run_episode() + frame_callback for consistency with the benchmark runner.
 
 Outputs 300dpi PNG + vector PDF to outputs/paper_figures/.
 """
@@ -22,11 +24,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from uavbench.envs.urban import UrbanEnvV2
+from uavbench.benchmark.runner import run_episode
 from uavbench.planners import PLANNERS
-from uavbench.planners.base import PlanResult
 from uavbench.scenarios.loader import load_scenario
-from uavbench.scenarios.schema import ScenarioConfig
 from uavbench.visualization.renderer import Renderer
 
 # ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ from uavbench.visualization.renderer import Renderer
 FIG_DIR = "outputs/paper_figures"
 SEED = 42
 
-# One representative scenario per family (hard = most visual dynamics)
+# One representative scenario per family
 FAMILY_SCENARIOS = {
     "fire_delivery": "osm_penteli_fire_delivery_medium",
     "flood_rescue": "osm_piraeus_flood_rescue_medium",
@@ -60,167 +60,47 @@ PLANNER_LABELS = {
 
 
 # ---------------------------------------------------------------------------
-# Episode runner with frame capture
+# Frame capture via run_episode callback
 # ---------------------------------------------------------------------------
 
 
-def _run_episode_with_frames(
-    config: ScenarioConfig,
+def _run_with_snapshots(
+    scenario_id: str,
     planner_id: str,
     seed: int,
     capture_steps: set[int] | None = None,
-    capture_all: bool = False,
 ) -> dict[str, Any]:
-    """Run a full episode and capture frames at specified timesteps.
+    """Run episode via run_episode() and capture frames at specified steps.
 
-    Returns:
-        Dict with keys:
-            frames: dict mapping step_idx -> (frame, meta)
-            trajectory: full trajectory
-            events: all events
-            final_info: last info dict
-            total_steps: number of steps taken
-            plan_path: final plan path (for overlay)
+    If capture_steps is None, captures t=0 and final frame only.
     """
-    env = UrbanEnvV2(config)
-    obs, info = env.reset(seed=seed)
-
-    heightmap, no_fly, start_xy, goal_xy = env.export_planner_inputs()
+    config = load_scenario(scenario_id)
     renderer = Renderer(config, mode="paper_min")
 
-    planner_cls = PLANNERS[planner_id]
-    planner = planner_cls(heightmap, no_fly, config)
-    plan_result = planner.plan(start_xy, goal_xy)
-
-    path = plan_result.path if plan_result.success else []
-    path_idx = 0
-    trajectory = [start_xy]
     frames: dict[int, tuple[np.ndarray, dict]] = {}
+    total_steps_box: list[int] = [0]
 
-    # Capture t=0
-    if capture_all or (capture_steps is not None and 0 in capture_steps):
-        state_0 = _build_render_state(
-            info, trajectory, path, planner_id, step_idx=0,
-        )
-        dyn_state_0 = env.get_dynamic_state()
-        frame_0, meta_0 = renderer.render_frame(heightmap, state_0, dyn_state_0)
-        frames[0] = (frame_0, meta_0)
+    def frame_callback(
+        heightmap: np.ndarray,
+        state: dict,
+        dyn_state: dict,
+        cfg: object,
+    ) -> None:
+        step = state.get("step_idx", 0)
+        total_steps_box[0] = step
 
-    step_idx = 0
-    terminated = False
-    truncated = False
-    final_info = info
-
-    while not terminated and not truncated:
-        step_idx += 1
-        action = _path_to_action(env.agent_xy, path, path_idx)
-        obs, reward, terminated, truncated, info = env.step(action)
-        final_info = info
-        trajectory.append(env.agent_xy)
-
-        if path_idx < len(path) - 1:
-            next_wp = path[path_idx + 1]
-            if env.agent_xy == next_wp:
-                path_idx += 1
-
-        dyn_state = env.get_dynamic_state()
-        planner.update(dyn_state)
-
-        should, reason = planner.should_replan(
-            env.agent_xy, path, dyn_state, step_idx,
-        )
-        if should:
-            new_result = planner.plan(env.agent_xy, goal_xy)
-            if new_result.success:
-                path = new_result.path
-                path_idx = 0
-
-        # Capture frame if requested
-        if capture_all or (capture_steps is not None and step_idx in capture_steps):
-            state = _build_render_state(
-                info, trajectory, path, planner_id, step_idx,
-            )
+        if capture_steps is None or step in capture_steps:
             frame, meta = renderer.render_frame(heightmap, state, dyn_state)
-            frames[step_idx] = (frame, meta)
+            frames[step] = (frame, meta)
 
-    # Always capture final frame
-    if step_idx not in frames:
-        dyn_state = env.get_dynamic_state()
-        state = _build_render_state(
-            final_info, trajectory, path, planner_id, step_idx,
-        )
-        frame, meta = renderer.render_frame(heightmap, state, dyn_state)
-        frames[step_idx] = (frame, meta)
+    result = run_episode(scenario_id, planner_id, seed, frame_callback=frame_callback)
 
+    # Always capture info about total steps
     return {
         "frames": frames,
-        "trajectory": trajectory,
-        "events": env.events,
-        "final_info": final_info,
-        "total_steps": step_idx,
-        "plan_path": path,
-        "heightmap": heightmap,
+        "metrics": result.metrics,
+        "total_steps": total_steps_box[0],
     }
-
-
-def _build_render_state(
-    info: dict,
-    trajectory: list[tuple[int, int]],
-    plan_path: list[tuple[int, int]],
-    planner_id: str,
-    step_idx: int,
-) -> dict[str, Any]:
-    """Build the state dict expected by Renderer.render_frame."""
-    return {
-        "agent_xy": info.get("agent_xy", (0, 0)),
-        "goal_xy": info.get("goal_xy", (0, 0)),
-        "trajectory": list(trajectory),
-        "plan_path": list(plan_path),
-        "plan_len": len(plan_path),
-        "plan_age_steps": 0,
-        "plan_reason": "",
-        "replan_every_steps": 6,
-        "scenario_id": "",
-        "mission_domain": info.get("mission_domain", ""),
-        "planner_name": planner_id,
-        "mode": "snapshot",
-        "step_idx": step_idx,
-        "replans": 0,
-        "objective_label": info.get("objective_label", ""),
-        "distance_to_task": info.get("distance_to_task", 0),
-        "task_progress": info.get("task_progress", ""),
-        "deliverable_name": info.get("deliverable_name", ""),
-    }
-
-
-def _path_to_action(
-    agent_xy: tuple[int, int],
-    path: list[tuple[int, int]],
-    path_idx: int,
-) -> int:
-    """Convert path waypoint to action integer (mirrors runner logic)."""
-    ACTION_UP, ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_STAY = 0, 1, 2, 3, 4
-
-    if not path:
-        return ACTION_STAY
-
-    target_idx = path_idx + 1 if path_idx + 1 < len(path) else len(path) - 1
-    target = path[target_idx]
-    ax, ay = agent_xy
-    tx, ty = target
-
-    if (ax, ay) == (tx, ty):
-        if target_idx + 1 < len(path):
-            tx, ty = path[target_idx + 1]
-        else:
-            return ACTION_STAY
-
-    dx, dy = tx - ax, ty - ay
-    if dx == 0 and dy == 0:
-        return ACTION_STAY
-    if abs(dx) >= abs(dy):
-        return ACTION_RIGHT if dx > 0 else ACTION_LEFT
-    return ACTION_DOWN if dy > 0 else ACTION_UP
 
 
 # ---------------------------------------------------------------------------
@@ -234,25 +114,18 @@ def generate_family_snapshots() -> None:
 
     for family, scenario_id in FAMILY_SCENARIOS.items():
         print(f"\n  Family: {family} ({scenario_id})")
-        config = load_scenario(scenario_id)
 
-        # First pass: run to find total steps
-        result = _run_episode_with_frames(
-            config, "astar", SEED, capture_steps={0},
-        )
-        total = result["total_steps"]
+        # First pass: find total steps
+        first = _run_with_snapshots(scenario_id, "astar", SEED, capture_steps=set())
+        total = first["total_steps"]
         mid = max(1, total // 2)
-
         print(f"    Total steps: {total}, mid: {mid}")
 
         # Second pass: capture t=0, t=mid, t=end
         capture = {0, mid, total}
-        result = _run_episode_with_frames(
-            config, "astar", SEED, capture_steps=capture,
-        )
+        result = _run_with_snapshots(scenario_id, "astar", SEED, capture_steps=capture)
 
         for label, step in [("t0", 0), ("mid", mid), ("end", total)]:
-            # Find closest captured frame
             if step in result["frames"]:
                 frame, meta = result["frames"][step]
             else:
@@ -274,32 +147,41 @@ def generate_family_snapshots() -> None:
 
 
 def generate_planner_comparison() -> None:
-    """6-panel figure: all planner trajectories on same map for one scenario."""
-    print(f"\nGenerating 6-panel planner comparison ({COMPARISON_SCENARIO})...")
-    config = load_scenario(COMPARISON_SCENARIO)
+    """5-panel figure: all planner trajectories on same map for one scenario."""
+    print(f"\nGenerating 5-panel planner comparison ({COMPARISON_SCENARIO})...")
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    fig, axes = plt.subplots(1, 5, figsize=(30, 6))
     axes_flat = axes.flatten()
 
     for ax, pid in zip(axes_flat, PLANNER_ORDER):
         print(f"  Running {pid}...")
-        result = _run_episode_with_frames(
-            config, pid, SEED, capture_steps=set(),
+
+        # Capture only final frame
+        result = _run_with_snapshots(
+            COMPARISON_SCENARIO, pid, SEED, capture_steps=None,
         )
 
-        # Get the final frame (always captured)
-        final_step = result["total_steps"]
-        if final_step in result["frames"]:
+        # Get the last captured frame
+        if result["frames"]:
+            final_step = max(result["frames"].keys())
             frame, meta = result["frames"][final_step]
         else:
-            frame, meta = list(result["frames"].values())[-1]
+            # Fallback: run again capturing everything
+            result = _run_with_snapshots(
+                COMPARISON_SCENARIO, pid, SEED,
+                capture_steps={result["total_steps"]},
+            )
+            final_step = max(result["frames"].keys())
+            frame, meta = result["frames"][final_step]
 
         ax.imshow(frame)
-        tr = result["final_info"].get("termination_reason", "?")
-        tr_str = tr.value if hasattr(tr, "value") else str(tr)
-        steps = result["total_steps"]
+        m = result["metrics"]
+        tr = m.get("termination_reason", "?")
+        steps = m.get("executed_steps_len", 0)
+        success = m.get("success", False)
+        status = "OK" if success else tr
         ax.set_title(
-            f"{PLANNER_LABELS[pid]}  [{tr_str}, {steps} steps]",
+            f"{PLANNER_LABELS[pid]}  [{status}, {steps} steps]",
             fontsize=11, fontweight="bold",
         )
         ax.axis("off")
@@ -309,7 +191,7 @@ def generate_planner_comparison() -> None:
         fontsize=14, fontweight="bold",
     )
     fig.tight_layout(rect=[0, 0, 1, 0.95])
-    _save_fig(fig, "planner_comparison_6panel")
+    _save_fig(fig, "planner_comparison_5panel")
 
 
 def _save_fig(fig: plt.Figure, name: str) -> None:
@@ -347,7 +229,7 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--skip-comparison", action="store_true",
-        help="Skip 6-panel planner comparison generation",
+        help="Skip 5-panel planner comparison generation",
     )
     p.add_argument(
         "--output", type=str, default=None,
@@ -371,19 +253,15 @@ def main() -> None:
     print()
 
     if args.scenario:
-        # Quick single-scenario mode
         planner_id = args.planner or "astar"
         print(f"Quick snapshot: {args.scenario} / {planner_id} / seed={SEED}")
-        config = load_scenario(args.scenario)
-        result = _run_episode_with_frames(
-            config, planner_id, SEED, capture_steps={0},
-        )
-        total = result["total_steps"]
+
+        first = _run_with_snapshots(args.scenario, planner_id, SEED, capture_steps=set())
+        total = first["total_steps"]
         mid = max(1, total // 2)
         capture = {0, mid, total}
-        result = _run_episode_with_frames(
-            config, planner_id, SEED, capture_steps=capture,
-        )
+        result = _run_with_snapshots(args.scenario, planner_id, SEED, capture_steps=capture)
+
         for label, step in [("t0", 0), ("mid", mid), ("end", total)]:
             if step in result["frames"]:
                 frame, meta = result["frames"][step]
