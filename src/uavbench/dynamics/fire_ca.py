@@ -71,6 +71,13 @@ class FireSpreadModel:
         self._guarantee_targets = guarantee_targets or []
         self._guarantee_step = guarantee_step
 
+        # Guarantee targets use extended burnout — effectively infinite so
+        # they never transition to BURNED_OUT within episode duration.
+        # This keeps the CA state machine consistent (no re-ignition hack).
+        for gx, gy in self._guarantee_targets:
+            if 0 <= gy < self._H and 0 <= gx < self._W:
+                self._burnout_time[gy, gx] = 999999.0
+
         # Landuse (default: urban=2 for realistic spread in urban grids)
         if landuse_map is not None:
             self._landuse = landuse_map.astype(np.int8)
@@ -128,9 +135,10 @@ class FireSpreadModel:
         """Advance fire by one timestep (FD-1, FD-4).
 
         1. Spread: burning cells attempt to ignite neighbors (isotropic).
-        2. Burnout: cells that have burned long enough become BURNED_OUT.
-        3. Guarantee check: force-ignite corridor targets at guarantee_step.
-           (AFTER burnout so re-ignition is immediate — no 1-step gap.)
+        2. Guarantee: force-ignite corridor targets at guarantee_step.
+        3. Burnout: cells that have burned long enough become BURNED_OUT.
+           Guarantee targets use extended burnout (set in __init__) so they
+           never burn out within episode duration — no re-ignition needed.
         4. Smoke: update smoke field (no wind advection).
         """
         burning = self._state == BURNING
@@ -158,22 +166,21 @@ class FireSpreadModel:
                 if len(ignite_ys) > 0:
                     self._state[ignite_ys, ignite_xs] = BURNING
 
-        # --- Burnout ---
-        burnout_mask = burning & (self._burn_timer >= self._burnout_time)
-        self._state[burnout_mask] = BURNED_OUT
-
         # --- Guarantee safety net: force-ignite corridor targets ---
-        # Re-ignite BURNED_OUT targets — ensures persistent corridor blockage.
-        # Placed AFTER burnout: if a target just burned out in this step,
-        # it is immediately re-ignited with no gap between states.
+        # Targets that haven't ignited naturally by guarantee_step are
+        # force-ignited here. Extended burnout (999999) set in __init__
+        # ensures they stay BURNING for the entire episode.
         if (self._guarantee_targets
                 and self._guarantee_step is not None
                 and self._step_count >= self._guarantee_step):
             for gx, gy in self._guarantee_targets:
                 if (0 <= gy < self._H and 0 <= gx < self._W
-                        and self._state[gy, gx] != BURNING):
+                        and self._state[gy, gx] == UNBURNED):
                     self._state[gy, gx] = BURNING
-                    self._burn_timer[gy, gx] = 0.0
+
+        # --- Burnout ---
+        burnout_mask = burning & (self._burn_timer >= self._burnout_time)
+        self._state[burnout_mask] = BURNED_OUT
 
         # --- Smoke (update every 2 steps — smoke changes slowly) ---
         if self._step_count % 2 == 0:

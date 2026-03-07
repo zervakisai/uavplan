@@ -4,10 +4,10 @@
 Interdictions placed on A* reference corridor, planner-agnostic.
 Implementation: PHYSICAL INTERDICTIONS
 - Compute A* shortest path (reference corridor)
-- Fire corridor closures (penteli, downtown): fire ignited on corridor cells
-  via fire_ca.py, creating a physical barrier
-- Vehicle roadblocks (piraeus): traffic vehicles positioned on corridor cells
-  via traffic.py, blocking with physical vehicle occupancy
+- Fire corridor closures (all scenarios): fire ignited on corridor cells
+  via fire_ca.py, creating a physical barrier (extended burnout = permanent)
+- Vehicle roadblocks (piraeus, additional): traffic vehicles positioned on
+  corridor cells via traffic.py, blocking with physical vehicle occupancy
 
 ## FC-2: Observation Equality
 All planners receive identical observation at each step_idx.

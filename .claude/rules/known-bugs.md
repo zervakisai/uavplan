@@ -30,3 +30,17 @@ Fix: (a) POI snapped to corridor midpoint so agent visits POI on the
 start→goal path, (b) initial plan always start→goal, (c) second plan()
 call at POI completion removed for static planners (only triggers if
 current path doesn't end at goal).
+
+## BUG-8: Fire Guarantee Burnout Gap (FIXED)
+Fire guarantee targets (corridor cells that must burn) used re-ignition:
+BURNED_OUT → BURNING at each step. This created a 1-step gap between
+burnout and re-ignition where fire_mask returned False, allowing A* agents
+to advance one cell per burnout cycle (~135 steps).
+Fix: Extended burnout (999999 steps) for guarantee targets. Cells never
+reach BURNED_OUT, eliminating the gap. No CA state reversal needed.
+
+## BUG-9: POI Unreachability Deadlock (FIXED)
+When fire/traffic blocked access to mission POI, agent targeted POI forever,
+never switching to goal. Agent got permanently stuck with 0 replans.
+Fix: POI stuck detection (30 steps without progress toward POI) → abandon
+POI, switch target to goal. No free replan given (fairness preserved).
