@@ -76,9 +76,9 @@ src/uavbench/
 ### 3 Scenarios (OSM-based, all medium difficulty)
 | Scenario ID | Mission Type | OSM Tile | Dynamics |
 |-------------|-------------|----------|----------|
-| `osm_penteli_fire_delivery_medium` | fire_delivery | Penteli, Attica | fire=3, traffic=2, nfz=1 |
-| `osm_piraeus_flood_rescue_medium` | flood_rescue | Piraeus port | fire=2, traffic=3, nfz=1 |
-| `osm_downtown_fire_surveillance_medium` | fire_surveillance | Athens center | fire=3, traffic=2, nfz=2 |
+| `osm_penteli_fire_delivery_medium` | fire_delivery | Penteli, Attica | fire=2, traffic=8+2, nfz=1 |
+| `osm_piraeus_flood_rescue_medium` | flood_rescue | Piraeus port | fire=2, traffic=8+2, nfz=1 |
+| `osm_downtown_fire_surveillance_medium` | fire_surveillance | Athens center | fire=1, traffic=8+2, nfz=1 |
 
 ---
 
@@ -269,8 +269,8 @@ class PlanResult:
 - First call: calibration (baseline mask hash)
 - If mask changed but path clear → skip replan
 - If mask changed AND path blocked → replan
-- **PC-4:** Expected to underperform full-replan planners in fire scenarios (mass cell changes),
-  but uses far fewer replans (incremental efficiency)
+- Expected to underperform full-replan planners in fire scenarios (mass cell changes),
+  but uses far fewer replans (incremental efficiency). See SC-4.
 
 ---
 
@@ -476,15 +476,15 @@ mechanisms using existing dynamics layers:
 
 **Two modes:**
 - `paper_min`: 15 px/cell, minimal HUD (rows 1-2 only)
-- `ops_full`: 10 px/cell, full HUD (rows 1-4)
+- `ops_full`: auto-scaled (~1200px max dimension), full HUD (rows 1-4)
 
 **Z-order (bottom to top):**
 | Z | Layer | Color |
 |---|-------|-------|
-| 1 | Basemap (terrain + buildings) | Grey gradient by height |
-| 3 | Fire buffer zone | Vermillion (204,121,0) semi-transparent |
-| 3.5 | Smoke overlay | (180,180,180) |
-| 4 | Fire overlay | Red-orange (213,94,0) |
+| 1 | Basemap (landuse + roads + buildings) | Cream ground, asphalt grey roads, dark grey buildings |
+| 3.5 | Smoke overlay | Grey (160,160,160) |
+| 3.8 | Fire buffer zone | Light orange (255,180,100) semi-transparent |
+| 4 | Fire overlay | Red-orange (255,80,20) |
 | 5 | Dynamic NFZ | Purple (204,121,167) with diagonal hatching |
 | 6 | Traffic closures/occupancy | Orange (230,159,0) |
 | 9 | Trajectory trail | Blue (0,114,178) |
@@ -574,22 +574,23 @@ assert report.passed  # No ERROR-level violations
 
 ---
 
-## 12. Contracts (33 total)
+## 12. Contracts (32 total, 13 families)
 
 | Family | IDs | Module | Tests |
 |--------|-----|--------|-------|
 | DC Determinism | DC-1, DC-2 | runner, env | contract_test_determinism.py |
-| FC Fairness | FC-1..FC-4 | blocking, fire_ca, traffic | contract_test_fairness.py |
-| EC Events | EC-1, EC-2 | env (reject/accept) | contract_test_event_semantics.py |
-| GC Guardrail | GC-1..GC-4 | feasibility.py | contract_test_guardrail.py |
+| FC Fairness | FC-1, FC-2 | blocking, fire_ca, traffic | contract_test_fairness.py |
+| EC Events | EC-1, EC-2 | env (reject/accept) | contract_test_decision_record.py |
+| GC Guardrail | GC-1, GC-2 | feasibility.py | contract_test_guardrail.py |
 | EV Events | EV-1 | runner (step_idx) | contract_test_event_semantics.py |
 | VC Visual | VC-1, VC-2 | renderer, hud | contract_test_visual_truth.py |
 | MC Mission | MC-1..MC-4 | engine, schema | contract_test_mission_story.py |
-| PC Planner | PC-1..PC-4 | planners | contract_test_replan_storm.py |
+| PC Planner | PC-1, PC-2 | planners | integration_test_runner_e2e.py |
 | FD Fire | FD-1..FD-5 | fire_ca, env | unit_test_fire_ca.py |
 | CC Calibration | CC-1..CC-4 | calibration.py | contract_test_calibration.py |
 | SC Sanity | SC-1..SC-4 | sanity_check.py | contract_test_sanity.py |
 | MP Mask | MP-1 | blocking.py | contract_test_mask_parity.py |
+| RS Replan Storm | RS-1 | planners | contract_test_replan_storm_regression.py |
 
 ---
 

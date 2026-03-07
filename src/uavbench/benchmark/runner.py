@@ -90,6 +90,36 @@ def run_episode(
     # planners replan via should_replan().
     plan_result = planner.plan(start_xy, goal_xy)
 
+    # CC-4: Detect structurally infeasible episodes (no path exists on
+    # the static grid). If both A* and BFS fail at reset, the episode
+    # is infeasible — mark it immediately rather than timing out.
+    if not plan_result.success and not env.bfs_corridor:
+        metrics = compute_episode_metrics(
+            scenario_id=scenario_id,
+            planner_id=planner_id,
+            seed=seed,
+            trajectory=[start_xy],
+            events=[],
+            final_info={
+                "termination_reason": TerminationReason.INFEASIBLE,
+                "objective_completed": False,
+            },
+            plan_result=plan_result,
+            replan_count=0,
+            goal_xy=goal_xy,
+        )
+        metrics["planned_waypoints_len"] = 0
+        metrics["naive_replan_count"] = 0
+        metrics["replan_attempts"] = 0
+        metrics["replan_storm_ratio"] = 0.0
+        metrics["feasible_after_guardrail"] = False
+        return EpisodeResult(
+            events=[],
+            trajectory=[start_xy],
+            metrics=metrics,
+            frame_hashes=[],
+        )
+
     # For adaptive planner replans: target POI first, then goal
     current_target = goal_xy if mission_task_done else mission_poi
 

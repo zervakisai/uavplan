@@ -30,7 +30,7 @@ def test_determinism_hash_equality():
 ```python
 def test_interdictions_planner_agnostic():
     """Verifies FC-1: interdictions on BFS corridor, not planner path."""
-    for planner in ["astar", "theta_star", "dstar_lite"]:
+    for planner in ["astar", "dstar_lite", "apf"]:
         result = run_episode(scenario="interdiction", planner=planner, seed=42)
         assert result.interdiction_cells == EXPECTED_BFS_CORRIDOR_CELLS
 ```

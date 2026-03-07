@@ -1,131 +1,92 @@
 """Render a single episode to GIF for visual inspection.
 
-Uses the main Renderer class for consistency with paper snapshots.
+Uses run_episode() + frame_callback for consistency with the benchmark
+runner. No divergent step loops.
+
+Usage:
+    python scripts/render_episode.py [scenario_id] [planner_id] [seed]
 """
 
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
-import imageio.v2 as imageio
+import imageio.v3 as iio
 import numpy as np
 
-from uavbench.benchmark.runner import _path_to_action
-from uavbench.envs.urban import UrbanEnvV2
-from uavbench.planners import PLANNERS
+from uavbench.benchmark.runner import run_episode
 from uavbench.scenarios.loader import load_scenario
 from uavbench.visualization.renderer import Renderer
 
 
-def render_episode(
+def render_episode_gif(
     scenario_id: str,
     planner_id: str,
     seed: int,
     out_path: str,
-    max_frames: int = 600,
+    fps: int = 8,
     frame_skip: int = 3,
+    briefing_duration_s: float = 3.0,
 ) -> dict:
+    """Run one episode and save animated GIF via frame_callback."""
     config = load_scenario(scenario_id)
-    env = UrbanEnvV2(config)
-    obs, info = env.reset(seed=seed)
-
-    heightmap, no_fly, start_xy, goal_xy = env.export_planner_inputs()
-
-    planner_cls = PLANNERS[planner_id]
-    planner = planner_cls(heightmap, no_fly, config)
-    planner.set_seed(seed)
-
-    plan_result = planner.plan(start_xy, goal_xy)
-    path = plan_result.path if plan_result.success else []
-    path_idx = 0
-    trajectory = [start_xy]
-
     renderer = Renderer(config, mode="ops_full")
 
-    frames = []
-    step_idx = 0
-    replan_count = 0
-    terminated = False
-    truncated = False
+    frames: list[np.ndarray] = []
+    frame_count = 0
+    briefing_done = False
+
+    def frame_callback(
+        heightmap: np.ndarray,
+        state: dict,
+        dyn_state: dict,
+        cfg: object,
+    ) -> None:
+        nonlocal frame_count, briefing_done
+        frame_count += 1
+
+        # Briefing title card on first frame
+        if not briefing_done:
+            briefing_done = True
+            n_briefing = max(1, int(briefing_duration_s * fps))
+            card = renderer.render_briefing_card(heightmap, state)
+            for _ in range(n_briefing):
+                frames.append(card)
+
+        if frame_count % frame_skip != 0:
+            return
+        frame, _meta = renderer.render_frame(heightmap, state, dyn_state)
+        frames.append(frame)
 
     print(f"Running {scenario_id} / {planner_id} / seed={seed} ...")
-
-    while not terminated and not truncated and step_idx < max_frames:
-        step_idx += 1
-
-        action = _path_to_action(env.agent_xy, path, path_idx)
-        obs, reward, terminated, truncated, info = env.step(action)
-        trajectory.append(env.agent_xy)
-
-        if path_idx < len(path) - 1:
-            next_wp = path[path_idx + 1]
-            if env.agent_xy == next_wp:
-                path_idx += 1
-
-        dyn_state = env.get_dynamic_state()
-        planner.update(dyn_state)
-
-        should, reason = planner.should_replan(
-            env.agent_xy, path, dyn_state, step_idx
-        )
-        if should:
-            plan_result_new = planner.plan(env.agent_xy, goal_xy)
-            if plan_result_new.success:
-                path = plan_result_new.path
-                path_idx = 0
-                replan_count += 1
-
-        # Render every N frames + first/last
-        if step_idx % frame_skip == 0 or step_idx <= 3 or terminated or truncated:
-            remaining_path = path[path_idx:] if path else []
-            state = {
-                "agent_xy": env.agent_xy,
-                "goal_xy": goal_xy,
-                "trajectory": list(trajectory),
-                "plan_path": remaining_path,
-                "plan_len": len(remaining_path),
-                "plan_age_steps": 0,
-                "plan_reason": "",
-                "scenario_id": scenario_id,
-                "planner_name": planner_id,
-                "mission_domain": info.get("mission_domain", ""),
-                "objective_label": info.get("objective_label", ""),
-                "distance_to_task": info.get("distance_to_task", 0),
-                "task_progress": info.get("task_progress", ""),
-                "deliverable_name": info.get("deliverable_name", ""),
-                "step_idx": step_idx,
-                "replans": replan_count,
-            }
-            frame, _meta = renderer.render_frame(heightmap, state, dyn_state)
-            frames.append(frame)
-
-        if step_idx % 100 == 0:
-            print(f"  step {step_idx}... (replans={replan_count})")
+    t0 = time.perf_counter()
+    result = run_episode(scenario_id, planner_id, seed, frame_callback=frame_callback)
+    elapsed = time.perf_counter() - t0
 
     # Save GIF
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    imageio.mimsave(out_path, frames, duration=0.12, loop=0)
+    if frames:
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        duration_ms = 1000 // fps
+        iio.imwrite(str(out_path), frames, extension=".gif", duration=duration_ms, loop=0)
 
-    term_reason = "unknown"
-    if hasattr(info.get("termination_reason", ""), "value"):
-        term_reason = info["termination_reason"].value
-    elif "termination_reason" in info:
-        term_reason = str(info["termination_reason"])
-
-    success = info.get("objective_completed", False)
+    m = result.metrics
+    success = m.get("success", False)
+    term = m.get("termination_reason", "?")
 
     print(f"\nResult:")
     print(f"  Scenario:  {scenario_id}")
     print(f"  Planner:   {planner_id}")
     print(f"  Seed:      {seed}")
-    print(f"  Steps:     {step_idx}")
-    print(f"  Replans:   {replan_count}")
-    print(f"  Outcome:   {term_reason}")
+    print(f"  Steps:     {m.get('executed_steps_len', 0)}")
+    print(f"  Replans:   {m.get('replans', 0)}")
+    print(f"  Outcome:   {term}")
     print(f"  Objective:  {'completed' if success else 'not completed'}")
     print(f"  Frames:    {len(frames)}")
+    print(f"  Time:      {elapsed:.1f}s")
     print(f"  GIF:       {out_path}")
-    return {"steps": step_idx, "replans": replan_count, "outcome": term_reason}
+    return {"success": success, "steps": m.get("executed_steps_len", 0), "frames": len(frames)}
 
 
 if __name__ == "__main__":
@@ -134,4 +95,4 @@ if __name__ == "__main__":
     seed = int(sys.argv[3]) if len(sys.argv) > 3 else 42
     out = f"outputs/episode_{scenario}_{planner}_s{seed}.gif"
 
-    render_episode(scenario, planner, seed, out)
+    render_episode_gif(scenario, planner, seed, out)
