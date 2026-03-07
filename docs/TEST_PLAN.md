@@ -302,7 +302,7 @@ All test files, ordered by phase introduction:
 | 7 | `unit_test_metrics_aggregate.py` | Unit | ME-2 |
 | 7 | `unit_test_metrics_safety.py` | Unit | ME-3 |
 | 7 | `integration_test_runner_e2e.py` | Integration | PC-1, PC-2 |
-| 8 | `contract_test_visual_truth.py` | Contract | VC-1, VC-2, VC-3 |
+| 8 | `contract_test_visual_truth.py` | Contract | VC-1, VC-2 |
 | 8 | `unit_test_renderer_modes.py` | Unit | VZ-1 |
 | 9 | `integration_test_cli.py` | Integration | RU-2, RU-5 |
 | 9 | `integration_test_dynamic_episode.py` | Integration | — |

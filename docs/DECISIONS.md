@@ -27,9 +27,9 @@ at runtime. ODbL compliance via attribution in paper acknowledgments.
 **Tile inventory** (3 tiles):
 | Tile ID    | Region           | Mission Type             | Building Density |
 |------------|------------------|--------------------------|------------------|
-| `penteli`  | Penteli, Attica  | fire_delivery / fire_surveillance | 0.18             |
-| `piraeus`  | Piraeus port     | flood_rescue                      | 0.29             |
-| `downtown` | Athens center    | (synthetic maps used instead)     | 0.50             |
+| `penteli`  | Penteli, Attica  | fire_delivery            | 0.18             |
+| `piraeus`  | Piraeus port     | flood_rescue             | 0.29             |
+| `downtown` | Athens center    | fire_surveillance        | 0.50             |
 
 **Design**: UAVBench supports BOTH `osm` and `synthetic` map sources, matching v1.
 The synthetic path uses deterministic heightmap generation from seed.
@@ -196,11 +196,11 @@ reproducibility.
 
 **Decision**: The abstract `ForcedBlockManager` (forced_block.py) has been replaced
 by physical interdiction mechanisms that use existing dynamics layers:
-- **Fire corridor closures** (penteli, downtown): Fire ignition is guaranteed on
+- **Fire corridor closures** (all scenarios): Fire ignition is guaranteed on
   corridor cells via `fire_ca.py`, creating a physical barrier that adaptive planners
   must route around.
-- **Vehicle roadblocks** (piraeus): Traffic vehicles are positioned on corridor cells
-  via `traffic.py`, blocking the path with physical vehicle occupancy.
+- **Vehicle roadblocks** (piraeus): Traffic vehicles are additionally positioned on
+  corridor cells via `traffic.py`, blocking the path with physical vehicle occupancy.
 
 **Rationale**: Abstract forced blocks were an invisible, artificial mechanism with
 no physical justification. By using fire and traffic — systems already present in
@@ -325,5 +325,49 @@ environmental hazard that adaptive planners can detect and route around.
 - Default landuse: urban (p_spread=0.06) instead of forest (p_spread=0.15)
 - Fire buffer radius: 2 for medium scenarios
 - Isotropic spread (8-neighbor Moore, no wind — FD-2)
+
+**Status**: DECIDED
+
+---
+
+## Q20: Fire Guarantee Persistence (Extended Burnout)
+
+**Decision**: Fire guarantee targets use extended burnout time (999999 steps) instead
+of re-ignition. Guarantee cells transition UNBURNED → BURNING but never reach
+BURNED_OUT within any feasible episode duration.
+
+**Rationale**: The original approach re-ignited guarantee targets after they burned
+out (BURNED_OUT → BURNING). This created a 1-step gap between burnout and
+re-ignition where agents could move through the fire. A* exploited this gap,
+advancing one cell per burnout cycle (~135 steps). Extended burnout eliminates the
+gap entirely — cells that are guaranteed to block the corridor stay BURNING
+permanently, with no state reversal.
+
+**Implementation** (`fire_ca.py`):
+- `__init__`: `_burnout_time[gy, gx] = 999999.0` for all guarantee targets
+- `step()`: Safety net only force-ignites UNBURNED guarantee targets (no re-ignition)
+- Order: Spread → Guarantee → Burnout → Smoke
+
+**CA consistency**: No state is ever set backward (BURNED_OUT → BURNING). The
+extended burnout prevents the problematic transition from occurring at all.
+This keeps the CA state machine monotonic: UNBURNED → BURNING is the only
+non-trivial transition for guarantee cells.
+
+**Status**: DECIDED
+
+---
+
+## Q21: POI Stuck Threshold (Sensitivity Analysis)
+
+**Decision**: `_POI_STUCK_LIMIT = 30` steps. If the agent makes no progress toward
+the mission POI for 30 consecutive steps, abandon POI and target the goal directly.
+
+**Sensitivity analysis**: Tested at thresholds 20, 30, and 50 (5 seeds × 3 scenarios
+× 2 planners). Results are identical across all three thresholds — A* always 0%,
+aggressive_replan always 80-100%. The mechanism is robust to threshold choice.
+
+**Fairness**: POI abandonment does NOT trigger a replan. Adaptive planners replan
+via their `should_replan()` logic; static planners (A*) continue on their original
+path. This preserves FC-1 fairness.
 
 **Status**: DECIDED

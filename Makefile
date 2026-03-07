@@ -33,7 +33,7 @@ lock:  ## Regenerate requirements-lock.txt from current env
 
 # ─── Quality ───────────────────────────────────────────────────
 
-test:  ## Run full test suite (365+ tests)
+test:  ## Run full test suite
 	$(PYTEST) tests/ -q --tb=short
 
 lint:  ## Type-check with mypy
@@ -44,7 +44,7 @@ lint:  ## Type-check with mypy
 run-static:  ## Run static-track benchmark (control)
 	$(VENV)/bin/python -m uavbench.cli.benchmark \
 		--track static \
-		--planners astar,theta_star,dstar_lite,ad_star,dwa,mppi \
+		--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
 		--trials 1 \
 		--paper-protocol \
 		--fail-fast
@@ -52,18 +52,18 @@ run-static:  ## Run static-track benchmark (control)
 run-dynamic:  ## Run dynamic-track benchmark (stress)
 	$(VENV)/bin/python -m uavbench.cli.benchmark \
 		--track dynamic \
-		--planners astar,theta_star,dstar_lite,ad_star,dwa,mppi \
+		--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
 		--trials 1 \
 		--paper-protocol \
 		--protocol-variant default \
 		--fail-fast
 
 run-ablation:  ## Run ablation variants
-	@for variant in no_interactions no_forced_breaks no_guardrail risk_only blocking_only; do \
+	@for variant in no_interactions no_guardrail risk_only blocking_only; do \
 		echo "=== Ablation: $$variant ==="; \
 		$(VENV)/bin/python -m uavbench.cli.benchmark \
 			--track dynamic \
-			--planners astar,dstar_lite,ad_star,mppi \
+			--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
 			--trials 1 \
 			--paper-protocol \
 			--protocol-variant $$variant; \

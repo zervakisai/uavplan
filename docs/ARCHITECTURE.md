@@ -69,7 +69,7 @@ src/uavbench/
     ├── __init__.py
     ├── renderer.py                      # Frame renderer: paper_min / ops_full (VZ-1, VZ-2)
     ├── overlays.py                      # Path, fire, agent, markers
-    └── hud.py                           # HUD badges + text (VC-2, VC-3, MC-3)
+    └── hud.py                           # HUD badges + text (VC-2, MC-3)
 ```
 
 ---
