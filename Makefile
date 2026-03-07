@@ -7,11 +7,10 @@ VENV        := .venv
 PIP         := $(VENV)/bin/pip
 PYTEST      := $(VENV)/bin/python -m pytest
 SEEDS       ?= 30
-HORIZON     ?= 320
-OUTPUT_ROOT ?= results/paper_scientific_validation_full
+OUTPUT_ROOT ?= results/paper_validation
 
 .PHONY: help venv install lock test lint reproduce clean \
-        run-static run-dynamic run-ablation run-validation artifacts
+        run-single run-all run-validation artifacts
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -41,47 +40,29 @@ lint:  ## Type-check with mypy
 
 # ─── Benchmark Runs ────────────────────────────────────────────
 
-run-static:  ## Run static-track benchmark (control)
-	$(VENV)/bin/python -m uavbench.cli.benchmark \
-		--track static \
+run-single:  ## Run single-scenario benchmark (quick check)
+	$(VENV)/bin/python -m uavbench run \
+		--scenarios osm_penteli_fire_delivery_medium \
 		--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
 		--trials 1 \
-		--paper-protocol \
-		--fail-fast
+		--seed-base 42
 
-run-dynamic:  ## Run dynamic-track benchmark (stress)
-	$(VENV)/bin/python -m uavbench.cli.benchmark \
-		--track dynamic \
+run-all:  ## Run all scenarios × all planners (1 trial)
+	$(VENV)/bin/python -m uavbench run \
+		--scenarios osm_penteli_fire_delivery_medium,osm_piraeus_flood_rescue_medium,osm_downtown_fire_surveillance_medium \
 		--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
 		--trials 1 \
-		--paper-protocol \
-		--protocol-variant default \
-		--fail-fast
-
-run-ablation:  ## Run ablation variants
-	@for variant in no_interactions no_guardrail risk_only blocking_only; do \
-		echo "=== Ablation: $$variant ==="; \
-		$(VENV)/bin/python -m uavbench.cli.benchmark \
-			--track dynamic \
-			--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
-			--trials 1 \
-			--paper-protocol \
-			--protocol-variant $$variant; \
-	done
+		--seed-base 42
 
 # ─── Paper Artifacts ───────────────────────────────────────────
 
 artifacts:  ## Export publication-ready CSV + LaTeX + manifest
-	$(VENV)/bin/python scripts/export_paper_artifacts.py \
-		--seeds $(SEEDS) \
-		--output-root results/paper
+	$(VENV)/bin/python scripts/export_artifacts.py
 
-run-validation:  ## Run full best-paper scientific validation pipeline
-	MPLCONFIGDIR=/tmp/mpl $(VENV)/bin/python scripts/paper_best_paper_validation.py \
+run-validation:  ## Run full paper validation pipeline (all scenarios x planners x seeds)
+	$(VENV)/bin/python scripts/run_paper_experiments.py \
 		--seeds $(SEEDS) \
-		--episode-horizon $(HORIZON) \
-		--output-root $(OUTPUT_ROOT) \
-		--strict-fairness
+		--output $(OUTPUT_ROOT)/all_episodes.csv
 
 # ─── One-Shot Reproduce ────────────────────────────────────────
 

@@ -152,7 +152,7 @@ class TestMP1_MaskConsistency:
         assert not mask[0, 0], "MP-1: free cell (0,0) should not be blocked"
 
     def test_smoke_threshold(self):
-        """Smoke >= 0.3 blocks when fire_blocks_movement is True."""
+        """Smoke >= 0.5 blocks when fire_blocks_movement is True."""
         config = _make_dynamic_config()
         heightmap = np.zeros((20, 20), dtype=np.float32)
         no_fly = np.zeros((20, 20), dtype=bool)
@@ -175,5 +175,5 @@ class TestMP1_MaskConsistency:
 
         mask = compute_blocking_mask(heightmap, no_fly, config, dynamic_state)
 
-        assert mask[3, 3], "MP-1: smoke >= 0.3 should block"
-        assert not mask[4, 4], "MP-1: smoke < 0.3 should not block"
+        assert mask[3, 3], "MP-1: smoke >= 0.5 should block"
+        assert not mask[4, 4], "MP-1: smoke < 0.5 should not block"

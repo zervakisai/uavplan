@@ -52,7 +52,7 @@ _LANDUSE_COLORS: dict[int, tuple[int, int, int]] = {
     3: (200, 184, 152),  # industrial — light brown
     4: (74, 144, 217),   # water — blue
 }
-_ROAD_COLOR = np.array([208, 208, 208], dtype=np.uint8)     # light grey
+_ROAD_COLOR = np.array([170, 170, 178], dtype=np.uint8)     # asphalt grey (contrast vs cream ground)
 _GROUND_COLOR = np.array([232, 224, 208], dtype=np.uint8)   # warm cream
 
 
@@ -108,16 +108,18 @@ class Renderer:
             )
         frame = self._basemap_cache.copy()
 
-        # Z=3-4: Fire/smoke (if dynamic_state provided)
+        # Z=3-4: Smoke/Fire buffer/Fire (if dynamic_state provided)
         if dynamic_state is not None:
             fire_mask = dynamic_state.get("fire_mask")
             smoke_mask = dynamic_state.get("smoke_mask")
+            # Z=3.5: Smoke overlay (drawn first — lowest z in this group)
+            if smoke_mask is not None:
+                draw_smoke(frame, smoke_mask, cell)
             # Z=3.8: Fire buffer zone (safety exclusion ring)
             if fire_mask is not None:
                 fire_buffer_r = getattr(self.config, "fire_buffer_radius", 3)
                 draw_fire_buffer(frame, fire_mask, fire_buffer_r, cell)
-            if smoke_mask is not None:
-                draw_smoke(frame, smoke_mask, cell)
+            # Z=4: Fire overlay (drawn last — highest z in this group)
             if fire_mask is not None:
                 draw_fire(frame, fire_mask, cell)
 
