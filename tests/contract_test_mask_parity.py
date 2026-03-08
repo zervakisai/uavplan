@@ -27,7 +27,7 @@ def _make_dynamic_config(**overrides) -> ScenarioConfig:
     """Create a dynamic scenario config with fire + traffic enabled."""
     defaults = dict(
         name="test_mask_parity",
-        mission_type=MissionType.FIRE_DELIVERY,
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.MEDIUM,
         map_size=20,
         building_density=0.15,
@@ -91,7 +91,7 @@ class TestMP1_MaskConsistency:
         """On a static episode, the mask from step matches direct computation."""
         config = ScenarioConfig(
             name="test_static_mask",
-            mission_type=MissionType.FIRE_DELIVERY,
+            mission_type=MissionType.PHARMA_DELIVERY,
             difficulty=Difficulty.EASY,
             map_size=10,
             building_density=0.3,

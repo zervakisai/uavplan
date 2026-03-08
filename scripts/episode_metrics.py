@@ -3,7 +3,7 @@
 from uavbench.benchmark.runner import run_episode
 
 result = run_episode(
-    "osm_penteli_fire_delivery_medium",
+    "osm_penteli_pharma_delivery_medium",
     "aggressive_replan",
     seed=1,
 )

@@ -28,14 +28,14 @@ class TestCC1_FeasibilityPreCheck:
 
     def test_returns_feasibility_result(self):
         """Pre-check returns a FeasibilityResult dataclass."""
-        config = load_scenario("osm_penteli_fire_delivery_medium")
+        config = load_scenario("osm_penteli_pharma_delivery_medium")
         result = feasibility_pre_check(config, seed=42, horizon=20)
         assert isinstance(result, FeasibilityResult)
         assert result.seed == 42
 
     def test_short_horizon_feasible(self):
         """Short horizon (10 steps) should be feasible before dynamics activate."""
-        config = load_scenario("osm_penteli_fire_delivery_medium")
+        config = load_scenario("osm_penteli_pharma_delivery_medium")
         result = feasibility_pre_check(config, seed=42, horizon=10)
         assert result.feasible, (
             "Short horizon before event_t1 should be feasible"
@@ -63,7 +63,7 @@ class TestCC1_FeasibilityPreCheck:
 
     def test_total_steps_checked_is_positive(self):
         """total_steps_checked is non-negative."""
-        config = load_scenario("osm_penteli_fire_delivery_medium")
+        config = load_scenario("osm_penteli_pharma_delivery_medium")
         result = feasibility_pre_check(config, seed=42, horizon=5)
         assert result.total_steps_checked >= 0
 
@@ -79,7 +79,7 @@ class TestCC2_DifficultyThresholds:
     def test_returns_calibration_result(self):
         """calibrate_difficulty returns CalibrationResult."""
         result = calibrate_difficulty(
-            "osm_penteli_fire_delivery_medium", n_seeds=3, horizon=10,
+            "osm_penteli_pharma_delivery_medium", n_seeds=3, horizon=10,
         )
         assert isinstance(result, CalibrationResult)
         assert result.n_seeds == 3
@@ -88,7 +88,7 @@ class TestCC2_DifficultyThresholds:
     def test_medium_passes_threshold(self):
         """Medium OSM scenario should pass its calibration threshold."""
         result = calibrate_difficulty(
-            "osm_penteli_fire_delivery_medium", n_seeds=5, horizon=10,
+            "osm_penteli_pharma_delivery_medium", n_seeds=5, horizon=10,
         )
         assert result.passes_threshold, (
             f"OSM medium scenario should pass threshold "
@@ -128,7 +128,7 @@ class TestCC4_InfeasibleFlagging:
     def test_calibration_rate_reflects_infeasible_seeds(self):
         """feasibility_rate = feasible_count / n_seeds."""
         result = calibrate_difficulty(
-            "osm_penteli_fire_delivery_medium", n_seeds=5, horizon=10,
+            "osm_penteli_pharma_delivery_medium", n_seeds=5, horizon=10,
         )
         feasible_count = sum(1 for r in result.per_seed if r.feasible)
         expected_rate = feasible_count / result.n_seeds

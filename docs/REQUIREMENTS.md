@@ -132,7 +132,7 @@ Each requirement has a unique ID, acceptance criterion, and traceability to cont
 |-------|------------|---------------------|
 | RU-1  | Exactly ONE runner at `benchmark/runner.py` | Single file; no `runner2.py` or `benchmark_runner.py` |
 | RU-2  | Exactly ONE CLI at `cli/benchmark.py` | Single entry point; `python -m uavbench` works |
-| RU-3  | Runner SHALL orchestrate: scenario load → env reset → plan → step loop → metrics | Full episode completes without error for `(osm_penteli_fire_delivery_medium, astar, seed=42)` |
+| RU-3  | Runner SHALL orchestrate: scenario load → env reset → plan → step loop → metrics | Full episode completes without error for `(osm_penteli_pharma_delivery_medium, astar, seed=42)` |
 | RU-4  | Runner SHALL own authoritative `step_idx` (EV-1) | Runner increments counter; passes to env/logger; no other counter exists |
 | RU-5  | CLI SHALL accept `--scenarios`, `--planners`, `--trials`, `--seed-base`, `--output-dir` | `python -m uavbench run --help` shows all flags |
 

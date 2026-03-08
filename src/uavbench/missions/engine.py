@@ -15,18 +15,18 @@ from uavbench.scenarios.schema import MissionType, ScenarioConfig
 # ---------------------------------------------------------------------------
 
 _MISSION_META: dict[str, dict] = {
-    "fire_delivery": {
-        "objective_label": "Emergency Medical Supply Delivery",
+    "pharma_delivery": {
+        "objective_label": "Emergency Pharmaceutical Delivery",
         "objective_reason": (
-            "Emergency medical supply delivery to fire-isolated settlement"
+            "Pharmaceutical delivery to fire-isolated settlement"
         ),
-        "deliverable_name": "medical_supplies",
+        "deliverable_name": "pharmaceuticals",
         "default_service_time": 0,
         "task_category": "delivery_point",
         "origin_name": "Hospital Depot Alpha",
         "destination_name": "Fire-Isolated Settlement",
         "briefing_objective": (
-            "Deliver emergency medical supplies to cut-off settlement"
+            "Deliver emergency pharmaceuticals to fire-isolated settlement"
         ),
         "constraints": ["Avoid active fire zones", "Respect firefighting NFZs"],
         "priority": "critical",

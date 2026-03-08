@@ -39,7 +39,7 @@ def _make_config(**overrides) -> ScenarioConfig:
     """Small 20x20 config with fire + traffic for fast tests."""
     defaults = dict(
         name="test_planner_dynamics",
-        mission_type=MissionType.FIRE_DELIVERY,
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.MEDIUM,
         map_size=20,
         building_density=0.10,

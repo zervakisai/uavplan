@@ -44,7 +44,7 @@ print('planners', sorted(PLANNERS.keys()))
 
 | Scenario ID                              | Mission Type       | OSM Tile        | Track   |
 |------------------------------------------|--------------------|-----------------|---------|
-| `osm_penteli_fire_delivery_medium`       | fire_delivery      | Penteli, Attica | dynamic |
+| `osm_penteli_pharma_delivery_medium`       | pharma_delivery      | Penteli, Attica | dynamic |
 | `osm_piraeus_flood_rescue_medium`        | flood_rescue       | Piraeus port    | dynamic |
 | `osm_downtown_fire_surveillance_medium`  | fire_surveillance  | Athens center   | dynamic |
 
@@ -60,7 +60,7 @@ All planners on one scenario:
 
 ```bash
 python -m uavbench run \
-  --scenarios osm_penteli_fire_delivery_medium \
+  --scenarios osm_penteli_pharma_delivery_medium \
   --planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
   --trials 1 \
   --seed-base 42

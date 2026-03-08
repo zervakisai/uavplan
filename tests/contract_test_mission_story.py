@@ -93,7 +93,7 @@ MC3_REQUIRED_HUD_FIELDS = (
 def _make_minimal_env() -> UrbanEnvV2:
     """Return a small 10x10 synthetic UrbanEnvV2 suitable for fast testing.
 
-    The config uses the fire_delivery mission type (fly-through tasks,
+    The config uses the pharma_delivery mission type (fly-through tasks,
     service_time_s=0 for perimeter points) so that basic reset/step
     semantics can be tested without needing to simulate many steps.
 
@@ -106,8 +106,8 @@ def _make_minimal_env() -> UrbanEnvV2:
         pytest.skip("uavbench.scenarios.schema not available")
 
     cfg = ScenarioConfig(
-        name="test_minimal_fire_delivery",
-        mission_type=MissionType.FIRE_DELIVERY,
+        name="test_minimal_pharma_delivery",
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=10,
         map_source="synthetic",
@@ -402,7 +402,7 @@ def test_hud_fields_present_every_step():
     Acceptance criterion (V2_TEST_PLAN.md §2.7):
       Info dict contains all 5 HUD fields with non-None values at every step.
 
-    Runs 20 steps on the minimal fire_delivery env.  Checks each info
+    Runs 20 steps on the minimal pharma_delivery env.  Checks each info
     dict individually so failures report the exact step number.
     """
     # Arrange
@@ -480,8 +480,8 @@ def test_termination_reason_in_final_info():
         pytest.skip("uavbench.scenarios.schema not available")
 
     cfg = ScenarioConfig(
-        name="test_timeout_fire_delivery",
-        mission_type=MissionType.FIRE_DELIVERY,
+        name="test_timeout_pharma_delivery",
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=10,
         map_source="synthetic",
@@ -539,7 +539,7 @@ def test_successful_episode_objective_completed():
     Acceptance criterion (V2_TEST_PLAN.md §2.7):
       When agent reaches goal and completes tasks, objective_completed is True.
 
-    Strategy: use a 10x10 fire_delivery env with fly-through tasks
+    Strategy: use a 10x10 pharma_delivery env with fly-through tasks
     (service_time_s=0) and no buildings.  Navigate directly from start to
     goal via Manhattan-optimal moves.  The env must set objective_completed
     True on success.
@@ -551,8 +551,8 @@ def test_successful_episode_objective_completed():
         pytest.skip("uavbench.scenarios.schema not available")
 
     cfg = ScenarioConfig(
-        name="test_success_fire_delivery",
-        mission_type=MissionType.FIRE_DELIVERY,
+        name="test_success_pharma_delivery",
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=10,
         map_source="synthetic",

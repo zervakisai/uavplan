@@ -52,7 +52,7 @@ class TestSC1_AdaptiveBeatsStatic:
     def test_static_beats_adaptive_in_fire_detected(self):
         """SC-1: A* 50% beats all adaptive in fire → violation."""
         results = _make_results(
-            "osm_penteli_fire_delivery_medium",
+            "osm_penteli_pharma_delivery_medium",
             {
                 "astar": 0.5,
                 "periodic_replan": 0.1,
@@ -69,7 +69,7 @@ class TestSC1_AdaptiveBeatsStatic:
     def test_adaptive_beats_static_in_fire_passes(self):
         """SC-1: Adaptive > static → no violation."""
         results = _make_results(
-            "osm_penteli_fire_delivery_medium",
+            "osm_penteli_pharma_delivery_medium",
             {
                 "astar": 0.0,
                 "periodic_replan": 0.5,
@@ -114,8 +114,8 @@ class TestSC2_DifficultyOrdering:
     def test_hard_better_than_medium_detected(self):
         """SC-2: Hard > medium for a planner → violation."""
         results = (
-            _make_results("synthetic_fire_delivery_medium", {"astar": 0.2})
-            + _make_results("synthetic_fire_delivery_hard", {"astar": 0.8})
+            _make_results("synthetic_pharma_delivery_medium", {"astar": 0.2})
+            + _make_results("synthetic_pharma_delivery_hard", {"astar": 0.8})
         )
         report = run_sanity_check(results)
         sc2 = [v for v in report.violations
@@ -125,8 +125,8 @@ class TestSC2_DifficultyOrdering:
     def test_medium_better_than_hard_passes(self):
         """SC-2: Medium > hard → no violation."""
         results = (
-            _make_results("synthetic_fire_delivery_medium", {"astar": 0.8})
-            + _make_results("synthetic_fire_delivery_hard", {"astar": 0.2})
+            _make_results("synthetic_pharma_delivery_medium", {"astar": 0.8})
+            + _make_results("synthetic_pharma_delivery_hard", {"astar": 0.2})
         )
         report = run_sanity_check(results)
         sc2 = [v for v in report.violations
@@ -136,8 +136,8 @@ class TestSC2_DifficultyOrdering:
     def test_similar_rates_tolerated(self):
         """SC-2: Hard slightly > medium within 5% tolerance → no violation."""
         results = (
-            _make_results("synthetic_fire_delivery_medium", {"astar": 0.5})
-            + _make_results("synthetic_fire_delivery_hard", {"astar": 0.5})
+            _make_results("synthetic_pharma_delivery_medium", {"astar": 0.5})
+            + _make_results("synthetic_pharma_delivery_hard", {"astar": 0.5})
         )
         report = run_sanity_check(results)
         sc2 = [v for v in report.violations
@@ -156,7 +156,7 @@ class TestSC4_DStarLitePosition:
     def test_dstar_behind_astar_detected(self):
         """SC-4: D*Lite < A* → violation (possible implementation bug)."""
         results = _make_results(
-            "osm_penteli_fire_delivery_medium",
+            "osm_penteli_pharma_delivery_medium",
             {"astar": 0.5, "dstar_lite": 0.1},
         )
         report = run_sanity_check(results)
@@ -167,7 +167,7 @@ class TestSC4_DStarLitePosition:
     def test_dstar_beats_astar_passes(self):
         """SC-4: D*Lite >= A* → no violation."""
         results = _make_results(
-            "osm_penteli_fire_delivery_medium",
+            "osm_penteli_pharma_delivery_medium",
             {"astar": 0.1, "dstar_lite": 0.3},
         )
         report = run_sanity_check(results)
@@ -199,7 +199,7 @@ class TestSanityReport:
         """Well-behaved results produce a passing report."""
         results = (
             _make_results(
-                "osm_penteli_fire_delivery_medium",
+                "osm_penteli_pharma_delivery_medium",
                 {
                     "astar": 0.0,
                     "periodic_replan": 0.7,
@@ -226,7 +226,7 @@ class TestSanityReport:
     def test_report_passed_false_on_error(self):
         """Report.passed is False when there are ERROR-level violations."""
         results = _make_results(
-            "osm_penteli_fire_delivery_medium",
+            "osm_penteli_pharma_delivery_medium",
             {
                 "astar": 0.5,
                 "periodic_replan": 0.0,

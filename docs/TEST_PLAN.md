@@ -30,7 +30,7 @@ Each test file maps to one or more contract IDs.
 |-----------|----------|---------------------|
 | `test_single_rng_source` | DC-1 | `grep` finds zero `np.random.default_rng` calls outside `reset()`; all components receive spawned child generators |
 | `test_no_independent_rng_constructors` | DC-1 | No `np.random.RandomState`, `random.Random`, or bare `np.random.seed` in `src/uavbench/` |
-| `test_identical_seed_identical_output` | DC-2 | Two runs with `(osm_penteli_fire_delivery_medium, astar, seed=42)` produce SHA-256 identical event logs, trajectories, and metrics dicts |
+| `test_identical_seed_identical_output` | DC-2 | Two runs with `(osm_penteli_pharma_delivery_medium, astar, seed=42)` produce SHA-256 identical event logs, trajectories, and metrics dicts |
 | `test_identical_seed_identical_frames` | DC-2 | Frame hash arrays from two identical runs are element-wise equal |
 | `test_different_seed_different_output` | DC-2 | Two runs with seeds 42 and 43 produce different trajectory hashes |
 
@@ -221,9 +221,9 @@ Integration tests verify the full pipeline from CLI to evidence artifacts.
 
 | Test File | Scope | Acceptance Criterion |
 |-----------|-------|---------------------|
-| `integration_test_runner_e2e.py` | Full episode: scenario → env → planner → metrics | Episode completes for `(osm_penteli_fire_delivery_medium, astar, seed=42)`; metrics contain all required fields; motion is legal (PC-1); planned vs executed counts differ (PC-2) |
-| `integration_test_cli.py` | CLI entry point | `python -m uavbench run --scenarios osm_penteli_fire_delivery_medium --planners astar --trials 1 --seed-base 42 --output-dir /tmp/v2_test` exits 0 and produces JSON output |
-| `integration_test_dynamic_episode.py` | Full dynamic episode | `(osm_penteli_fire_delivery_medium, periodic_replan, seed=42)` completes; dynamics active; guardrail invoked at least once; events contain step_idx |
+| `integration_test_runner_e2e.py` | Full episode: scenario → env → planner → metrics | Episode completes for `(osm_penteli_pharma_delivery_medium, astar, seed=42)`; metrics contain all required fields; motion is legal (PC-1); planned vs executed counts differ (PC-2) |
+| `integration_test_cli.py` | CLI entry point | `python -m uavbench run --scenarios osm_penteli_pharma_delivery_medium --planners astar --trials 1 --seed-base 42 --output-dir /tmp/v2_test` exits 0 and produces JSON output |
+| `integration_test_dynamic_episode.py` | Full dynamic episode | `(osm_penteli_pharma_delivery_medium, periodic_replan, seed=42)` completes; dynamics active; guardrail invoked at least once; events contain step_idx |
 | `integration_test_determinism_e2e.py` | End-to-end determinism | Two full CLI runs with identical args produce identical output files (SHA-256 match) |
 
 ---
