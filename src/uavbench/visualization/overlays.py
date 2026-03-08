@@ -341,3 +341,68 @@ def draw_fire_buffer(
     dots = (ys + xs) % 3 == 0
     dot_color = np.array([220, 140, 60], dtype=np.uint8)
     frame[ys[dots], xs[dots]] = dot_color
+
+
+# ---------------------------------------------------------------------------
+# Risk heatmap overlay (z=3.2) — continuous cost map visualization
+# ---------------------------------------------------------------------------
+
+# Risk colormap: green(0) → yellow(0.5) → red(1.0)
+_RISK_GREEN = np.array([0, 180, 0], dtype=np.uint8)
+_RISK_YELLOW = np.array([255, 220, 0], dtype=np.uint8)
+_RISK_RED = np.array([220, 30, 0], dtype=np.uint8)
+
+
+def draw_risk_heatmap(
+    frame: np.ndarray,
+    cost_map: np.ndarray,
+    cell: int,
+    alpha: float = 0.4,
+) -> None:
+    """Draw risk cost map as green→yellow→red translucent overlay (z=3.2).
+
+    Only draws cells with cost > 0.01 (skip zero-risk areas for clarity).
+    """
+    # Skip trivial maps
+    if cost_map.max() < 0.01:
+        return
+
+    H, W = cost_map.shape
+    # Build RGB color map: interpolate green→yellow→red
+    risk_rgb = np.zeros((H, W, 3), dtype=np.uint8)
+
+    # Green to yellow (cost 0 to 0.5)
+    low = cost_map <= 0.5
+    t_low = cost_map * 2.0  # normalize to [0,1]
+    for c in range(3):
+        risk_rgb[:, :, c] = np.where(
+            low,
+            (_RISK_GREEN[c] * (1.0 - t_low) + _RISK_YELLOW[c] * t_low).astype(np.uint8),
+            risk_rgb[:, :, c],
+        )
+
+    # Yellow to red (cost 0.5 to 1.0)
+    high = cost_map > 0.5
+    t_high = (cost_map - 0.5) * 2.0  # normalize to [0,1]
+    for c in range(3):
+        risk_rgb[:, :, c] = np.where(
+            high,
+            (_RISK_YELLOW[c] * (1.0 - t_high) + _RISK_RED[c] * t_high).astype(np.uint8),
+            risk_rgb[:, :, c],
+        )
+
+    # Mask: only draw where cost > 0.01
+    active = cost_map > 0.01
+    if not active.any():
+        return
+
+    # Upscale to pixel resolution
+    risk_px = np.repeat(np.repeat(risk_rgb, cell, axis=0), cell, axis=1)
+    active_px = np.repeat(np.repeat(active, cell, axis=0), cell, axis=1)
+
+    # Alpha blend
+    mask_3d = active_px[:, :, np.newaxis]
+    alpha_int = int(alpha * 256)
+    bg_weight = 256 - alpha_int
+    blended = ((frame.astype(np.uint16) * bg_weight + risk_px.astype(np.uint16) * alpha_int) >> 8).astype(np.uint8)
+    frame[:] = np.where(mask_3d, blended, frame)

@@ -30,6 +30,7 @@ class MissionType(str, Enum):
     PHARMA_DELIVERY = "pharma_delivery"
     FLOOD_RESCUE = "flood_rescue"
     FIRE_SURVEILLANCE = "fire_surveillance"
+    TRIAGE = "triage"
 
 
 class Regime(str, Enum):
@@ -87,6 +88,19 @@ class ScenarioConfig:
     # Fire
     fire_ignition_points: int = 0
     fire_buffer_radius: int = 3  # safety buffer cells around burning fire (FD-2)
+
+    # Wind (Paper #1: Hazard-Coupled Planning)
+    # FD-5b: wind is OPTIONAL; wind_speed=0 → isotropic (backward compat)
+    wind_speed: float = 0.0              # 0 = isotropic, >0 = directional fire spread
+    wind_direction_deg: float = 0.0      # degrees, 0=East, 90=North
+
+    # Fog of War (Paper #1: partial observability)
+    # FG-1: fog filter is planner-agnostic
+    enable_fog_of_war: bool = False
+    sensor_radius: int = 50
+
+    # Energy budget (Paper #1: resource constraint)
+    energy_budget: float = 0.0  # 0 = unlimited, >0 = total energy units
 
     # Traffic
     num_emergency_vehicles: int = 0

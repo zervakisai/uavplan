@@ -1,7 +1,7 @@
 """Periodic replan planner (wraps A*).
 
 Replans every N steps with path-progress tracking to prevent
-replan storms (RS-1).
+replan storms (RS-1). Risk-averse: α=5.0 cost coefficient.
 """
 
 from __future__ import annotations
@@ -16,11 +16,16 @@ from uavbench.planners.astar import AStarPlanner
 from uavbench.planners.base import PlannerBase, PlanResult
 
 
+# Risk coefficient: risk-averse (can't react fast, compensates with caution)
+_RISK_ALPHA = 5.0
+
+
 class PeriodicReplanPlanner(PlannerBase):
     """Replans every replan_every_steps with path-progress tracking.
 
     RS-1 compliance: skips replans when at same position with same
     blocking mask (naive replan). Enforces cooldown of 3 steps.
+    Risk-averse: cost = 1.0 + α * risk (α=5.0).
     """
 
     def __init__(
@@ -52,14 +57,20 @@ class PeriodicReplanPlanner(PlannerBase):
         """Plan using A* with dynamic obstacle awareness.
 
         Uses cached blocking mask from update() to avoid recomputation.
+        Applies risk coefficient α=5.0 (risk-averse).
         """
+        # Apply risk-averse cost weighting
+        weighted = None
+        if cost_map is not None:
+            weighted = (1.0 + _RISK_ALPHA * cost_map).astype(np.float32)
+
         if self._cached_mask is not None:
             effective_height = self._heightmap.copy()
             dynamic_blocked = self._cached_mask & ~self._static_mask
             effective_height[dynamic_blocked] = 999.0
             inner = AStarPlanner(effective_height, self._no_fly, self._config)
-            return inner.plan(start, goal, cost_map)
-        return self._inner.plan(start, goal, cost_map)
+            return inner.search(start, goal, cost_map=weighted)
+        return self._inner.search(start, goal, cost_map=weighted)
 
     def update(self, dyn_state: dict[str, Any]) -> None:
         """Store dynamic state; mask computed lazily in should_replan()."""

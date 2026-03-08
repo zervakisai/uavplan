@@ -1,7 +1,7 @@
 """Aggressive replan planner (wraps A*).
 
 Replans whenever the blocking mask changes, with path-progress
-tracking for RS-1 compliance.
+tracking for RS-1 compliance. Risk-tolerant: β=0.5 cost coefficient.
 """
 
 from __future__ import annotations
@@ -16,8 +16,15 @@ from uavbench.planners.astar import AStarPlanner
 from uavbench.planners.base import PlannerBase, PlanResult
 
 
+# Risk coefficient: risk-tolerant (frequent replans let it escape danger)
+_RISK_BETA = 0.5
+
+
 class AggressiveReplanPlanner(PlannerBase):
-    """Replans on any dynamic change, with RS-1 storm prevention."""
+    """Replans on any dynamic change, with RS-1 storm prevention.
+
+    Risk-tolerant: cost = 1.0 + β * risk (β=0.5).
+    """
 
     def __init__(
         self,
@@ -47,14 +54,19 @@ class AggressiveReplanPlanner(PlannerBase):
         """Plan using A* with dynamic obstacle awareness.
 
         Uses cached blocking mask from update() to avoid recomputation.
+        Applies risk coefficient β=0.5 (risk-tolerant).
         """
+        weighted = None
+        if cost_map is not None:
+            weighted = (1.0 + _RISK_BETA * cost_map).astype(np.float32)
+
         if self._cached_mask is not None:
             effective_height = self._heightmap.copy()
             dynamic_blocked = self._cached_mask & ~self._static_mask
             effective_height[dynamic_blocked] = 999.0
             inner = AStarPlanner(effective_height, self._no_fly, self._config)
-            return inner.plan(start, goal, cost_map)
-        return self._inner.plan(start, goal, cost_map)
+            return inner.search(start, goal, cost_map=weighted)
+        return self._inner.search(start, goal, cost_map=weighted)
 
     def update(self, dyn_state: dict[str, Any]) -> None:
         """Store dynamic state; mask computed in should_replan() and cached for plan()."""

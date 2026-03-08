@@ -1,10 +1,15 @@
-"""Fire Cellular Automaton model (DC-1, FD-1 through FD-5).
+"""Fire Cellular Automaton model (DC-1, FD-1 through FD-5b).
 
-Isotropic fire spread on a 2D grid. NO WIND. 8-neighbor Moore neighborhood.
+Fire spread on a 2D grid. 8-neighbor Moore neighborhood.
 State per cell: UNBURNED(0) → BURNING(1) → BURNED_OUT(2).
+
+FD-5b: Wind is OPTIONAL. wind_speed=0 → isotropic (backward compat).
+Wind modulation follows Alexandridis et al. 2008, Eq. 4.
 """
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 from scipy.ndimage import binary_dilation, uniform_filter
@@ -23,12 +28,17 @@ _LANDUSE_PROB = {
     4: 0.00,  # water — never burns
 }
 
-# 8-connected Moore neighborhood (FD-2: isotropic, equal probability all 8)
+# 8-connected Moore neighborhood (FD-2)
+# (dy, dx) offsets in array coords; world direction computed via atan2(-dy, dx)
 _NEIGHBORS = [
     (-1, -1), (-1, 0), (-1, 1),
     (0, -1),           (0, 1),
     (1, -1),  (1, 0),  (1, 1),
 ]
+
+# Alexandridis et al. 2008 wind constants (Eq. 4)
+_WIND_C1 = 0.045
+_WIND_C2 = 0.131
 
 # Pre-computed Moore dilation structure
 _MOORE_STRUCT = np.ones((3, 3), dtype=bool)
@@ -37,8 +47,9 @@ _MOORE_STRUCT = np.ones((3, 3), dtype=bool)
 class FireSpreadModel:
     """Cellular automaton fire spread model.
 
-    Isotropic spread (FD-2): equal p_spread for all 8 neighbors.
-    NO wind parameters (FD-5). All randomness via caller-supplied rng (DC-1).
+    FD-5b: Wind is OPTIONAL. wind_speed=0 → isotropic (backward compat).
+    When wind_speed>0, spread probability is directionally modulated per
+    Alexandridis et al. 2008. All randomness via caller-supplied rng (DC-1).
     """
 
     def __init__(
@@ -51,6 +62,8 @@ class FireSpreadModel:
         corridor_cells: list[tuple[int, int]] | None = None,
         guarantee_targets: list[tuple[int, int]] | None = None,
         guarantee_step: int | None = None,
+        wind_speed: float = 0.0,
+        wind_direction: float = 0.0,
     ) -> None:
         self._rng = rng
         self._H, self._W = map_shape
@@ -64,6 +77,7 @@ class FireSpreadModel:
         self._smoke = np.zeros((self._H, self._W), dtype=np.float32)
 
         self._step_count = 0
+        self._fire_events: list[dict] = []
 
         # Fire corridor guarantee: corridor cells that must be burning
         # by guarantee_step. Approach ignitions try natural spread;
@@ -98,6 +112,20 @@ class FireSpreadModel:
         # Apply road firebreak to pre-computed prob map
         self._prob_map[self._roads] *= 0.5
 
+        # Wind modulation (FD-5b, WD-1: deterministic given same params)
+        self._wind_speed = wind_speed
+        self._wind_factors = np.ones(8, dtype=np.float32)
+        if wind_speed > 0.0:
+            for i, (dy, dx) in enumerate(_NEIGHBORS):
+                # _NEIGHBORS[i] = (dy, dx) is the offset to the BURNING neighbor.
+                # Spread direction is OPPOSITE: from burning TO candidate = (-dy, -dx).
+                # World coords: x=-dx (East), y=dy (North, array row inverted).
+                spread_angle = math.atan2(dy, -dx)
+                theta = spread_angle - wind_direction
+                self._wind_factors[i] = math.exp(
+                    wind_speed * (_WIND_C1 + _WIND_C2 * (math.cos(theta) - 1.0))
+                )
+
         # Initial ignition — random placement for environmental hazards
         if n_ignition > 0:
             self._ignite(n_ignition, corridor_cells)
@@ -129,6 +157,16 @@ class FireSpreadModel:
         """Count of cells that are burning or burned out."""
         return int((self._state > UNBURNED).sum())
 
+    def pop_events(self) -> list[dict]:
+        """Return and clear pending fire events.
+
+        Events emitted when fire reaches building cells (landuse 2/3).
+        Used by TriageMission for dynamic casualty injection.
+        """
+        events = self._fire_events
+        self._fire_events = []
+        return events
+
     # -- Step --
 
     def step(self, dt: float = 1.0) -> None:
@@ -146,25 +184,63 @@ class FireSpreadModel:
         # Increment burn timers for burning cells
         self._burn_timer[burning] += dt
 
-        # --- Spread (FD-2: vectorized isotropic 8-neighbor Moore) ---
+        # --- Spread (FD-2 / FD-5b) ---
         if burning.any():
-            # Moore neighborhood structure (8-connected, FD-2)
-            spread_candidates = (
-                binary_dilation(burning, structure=_MOORE_STRUCT)
-                & (self._state == UNBURNED)
-            )
+            if self._wind_speed == 0.0:
+                # Isotropic: original binary_dilation (backward compat, bit-identical)
+                spread_candidates = (
+                    binary_dilation(burning, structure=_MOORE_STRUCT)
+                    & (self._state == UNBURNED)
+                )
+                if spread_candidates.any():
+                    candidate_ys, candidate_xs = np.where(spread_candidates)
+                    rolls = self._rng.random(len(candidate_ys))
+                    probs = self._prob_map[candidate_ys, candidate_xs]
+                    ignite = rolls < probs
+                    ignite_ys = candidate_ys[ignite]
+                    ignite_xs = candidate_xs[ignite]
+                    if len(ignite_ys) > 0:
+                        self._state[ignite_ys, ignite_xs] = BURNING
+            else:
+                # Wind-modulated: per-direction spread (Alexandridis 2008)
+                unburned = self._state == UNBURNED
+                for i, (dy, dx) in enumerate(_NEIGHBORS):
+                    # Shift burning mask: find cells with a burning neighbor
+                    # in direction (dy, dx). np.roll wraps; fix boundaries.
+                    shifted = np.roll(np.roll(burning, -dy, axis=0), -dx, axis=1)
+                    if dy < 0:
+                        shifted[dy:, :] = False
+                    elif dy > 0:
+                        shifted[:dy, :] = False
+                    if dx < 0:
+                        shifted[:, dx:] = False
+                    elif dx > 0:
+                        shifted[:, :dx] = False
+                    candidates = shifted & unburned
+                    if not candidates.any():
+                        continue
+                    ys, xs = np.where(candidates)
+                    rolls = self._rng.random(len(ys))
+                    probs = self._prob_map[ys, xs] * self._wind_factors[i]
+                    ignite_mask = rolls < probs
+                    if ignite_mask.any():
+                        self._state[ys[ignite_mask], xs[ignite_mask]] = BURNING
+                        # Update unburned to avoid double-counting
+                        unburned = self._state == UNBURNED
 
-            if spread_candidates.any():
-                # Stochastic ignition — vectorized random rolls
-                candidate_ys, candidate_xs = np.where(spread_candidates)
-                rolls = self._rng.random(len(candidate_ys))
-                probs = self._prob_map[candidate_ys, candidate_xs]
-                ignite = rolls < probs
-
-                ignite_ys = candidate_ys[ignite]
-                ignite_xs = candidate_xs[ignite]
-                if len(ignite_ys) > 0:
-                    self._state[ignite_ys, ignite_xs] = BURNING
+        # --- Detect building fires (Upgrade 11: fire-spawned tasks) ---
+        newly_burning = (self._state == BURNING) & ~burning  # cells that just became BURNING
+        if newly_burning.any():
+            building_fire = newly_burning & np.isin(self._landuse, [2, 3])
+            if building_fire.any():
+                bfy, bfx = np.where(building_fire)
+                for y, x in zip(bfy, bfx):
+                    self._fire_events.append({
+                        "type": "building_fire",
+                        "x": int(x),
+                        "y": int(y),
+                        "step": self._step_count,
+                    })
 
         # --- Guarantee safety net: force-ignite corridor targets ---
         # Targets that haven't ignited naturally by guarantee_step are

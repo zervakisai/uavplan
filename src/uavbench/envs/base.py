@@ -18,6 +18,7 @@ class TerminationReason(str, Enum):
     TIMEOUT = "timeout"
     INFEASIBLE = "infeasible"
     WALL_TIMEOUT = "wall_timeout"
+    ENERGY_DEPLETED = "energy_depleted"
     IN_PROGRESS = "in_progress"
 
 

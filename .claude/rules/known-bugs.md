@@ -14,8 +14,10 @@ Fix: Feasibility pre-check + calibration protocol (CC-1..4). No wind. Reduced kn
 ## BUG-3: MPPI Dead Code (FIXED)
 Registered but never executed. Removed entirely.
 
-## BUG-4: Wind Complexity (FIXED)
-Removed. Isotropic fire CA (FD-2). 8-neighbor Moore neighborhood.
+## BUG-4: Wind Complexity (SUPERSEDED by FD-5b)
+v2 removed wind due to calibration issues (BUG-2). Paper #1 re-introduces
+wind as OPTIONAL with Alexandridis 2008 model. wind_speed=0 → isotropic
+(backward compat). Wind-driven fire is a core paper contribution.
 
 ## BUG-5: Mask Parity (FIXED)
 ONE compute_blocking_mask() in blocking.py used everywhere (MP-1).
