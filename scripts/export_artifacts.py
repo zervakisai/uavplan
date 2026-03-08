@@ -40,7 +40,7 @@ def _hash_obj(obj: object) -> str:
 
 def export_determinism_hashes() -> dict:
     """Run two identical episodes and verify bit-identical outputs (DC-2)."""
-    scenario_id = "osm_penteli_fire_delivery_medium"
+    scenario_id = "osm_penteli_pharma_delivery_medium"
     planner_id = "astar"
     seed = 42
 
@@ -91,7 +91,7 @@ def export_viz_artifacts() -> None:
 
     config = ScenarioConfig(
         name="repro_viz_test",
-        mission_type=MissionType.FIRE_DELIVERY,
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=20,
         building_density=0.1,
@@ -114,7 +114,7 @@ def export_viz_artifacts() -> None:
             "step_idx": step,
             "agent_xy": (5, 5),
             "goal_xy": (15, 15),
-            "mission_domain": "fire_delivery",
+            "mission_domain": "pharma_delivery",
             "objective_label": "Emergency Medical Supply Delivery",
             "distance_to_task": 20.0,
             "task_progress": "0/1",

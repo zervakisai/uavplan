@@ -25,7 +25,7 @@ from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 def _make_config(**overrides) -> ScenarioConfig:
     defaults = dict(
         name="test_visual",
-        mission_type=MissionType.FIRE_DELIVERY,
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=20,
         building_density=0.1,
@@ -45,7 +45,7 @@ def _make_frame_state(
     step_idx: int = 0,
     agent_xy: tuple[int, int] = (5, 5),
     goal_xy: tuple[int, int] = (15, 15),
-    mission_domain: str = "fire_delivery",
+    mission_domain: str = "pharma_delivery",
     objective_label: str = "Emergency Medical Supply Delivery",
     distance_to_task: float = 20.0,
     task_progress: str = "0/1",

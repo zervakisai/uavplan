@@ -38,13 +38,13 @@ SEED = 42
 
 # One representative scenario per family
 FAMILY_SCENARIOS = {
-    "fire_delivery": "osm_penteli_fire_delivery_medium",
+    "pharma_delivery": "osm_penteli_pharma_delivery_medium",
     "flood_rescue": "osm_piraeus_flood_rescue_medium",
     "fire_surveillance": "osm_downtown_fire_surveillance_medium",
 }
 
 # For the 5-panel planner comparison
-COMPARISON_SCENARIO = "osm_penteli_fire_delivery_medium"
+COMPARISON_SCENARIO = "osm_penteli_pharma_delivery_medium"
 
 PLANNER_ORDER = [
     "astar", "periodic_replan",

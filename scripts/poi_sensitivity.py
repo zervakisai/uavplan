@@ -13,7 +13,7 @@ from pathlib import Path
 THRESHOLDS = [20, 30, 50]
 SEEDS = list(range(5))
 SCENARIOS = [
-    "osm_penteli_fire_delivery_medium",
+    "osm_penteli_pharma_delivery_medium",
     "osm_piraeus_flood_rescue_medium",
     "osm_downtown_fire_surveillance_medium",
 ]

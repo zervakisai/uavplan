@@ -30,7 +30,7 @@ def _make_config(**overrides) -> ScenarioConfig:
     """Create a minimal ScenarioConfig for decision record tests."""
     defaults = dict(
         name="test_decision_record",
-        mission_type=MissionType.FIRE_DELIVERY,
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.EASY,
         map_size=10,
         building_density=0.3,

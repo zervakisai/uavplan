@@ -25,7 +25,7 @@ from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 def _make_dynamic_config(**overrides) -> ScenarioConfig:
     defaults = dict(
         name="test_replan_storm",
-        mission_type=MissionType.FIRE_DELIVERY,
+        mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.MEDIUM,
         map_size=30,
         building_density=0.12,

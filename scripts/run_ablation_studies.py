@@ -13,7 +13,7 @@ Runs three ablation studies to isolate the effects of individual design choices:
     across [3, 6, 12, 24, 48].  Shows the cadence sweet spot.
 
   Ablation 3 — Fire Intensity
-    For fire_delivery_medium, vary fire_ignition_points in [1, 2, 4, 6, 8].
+    For pharma_delivery_medium, vary fire_ignition_points in [1, 2, 4, 6, 8].
     Shows the phase transition where planners begin to fail.
 
 All experiments use `dataclasses.replace()` on frozen ScenarioConfig objects
@@ -60,7 +60,7 @@ OUTPUT_DIR = "outputs/ablation_results"
 
 # The 3 medium scenarios used as base configs for ablations.
 MEDIUM_SCENARIO_IDS = [
-    "osm_penteli_fire_delivery_medium",
+    "osm_penteli_pharma_delivery_medium",
     "osm_downtown_fire_surveillance_medium",
     "osm_piraeus_flood_rescue_medium",
 ]
@@ -308,12 +308,12 @@ def _build_replan_frequency_configs() -> list[tuple[str, str, ScenarioConfig]]:
 def _build_fire_intensity_configs() -> list[tuple[str, str, ScenarioConfig]]:
     """Ablation 3: fire ignition intensity sweep.
 
-    Vary fire_ignition_points in [1, 2, 4, 6, 8] on fire_delivery_medium.
+    Vary fire_ignition_points in [1, 2, 4, 6, 8] on pharma_delivery_medium.
 
     Returns list of (variant_label, scenario_id, modified_config).
     """
     ignition_counts = [1, 2, 4, 6, 8]
-    sid = "osm_penteli_fire_delivery_medium"
+    sid = "osm_penteli_pharma_delivery_medium"
     base = load_scenario(sid)
     variants: list[tuple[str, str, ScenarioConfig]] = []
 
@@ -544,7 +544,7 @@ def run_ablation_2(n_seeds: int) -> str:
 
 
 def run_ablation_3(n_seeds: int) -> str:
-    """Ablation 3: Fire intensity sweep (all planners, fire_delivery_medium).
+    """Ablation 3: Fire intensity sweep (all planners, pharma_delivery_medium).
 
     Runs all 5 planners x 5 ignition counts x n_seeds.
     Returns path to output CSV.

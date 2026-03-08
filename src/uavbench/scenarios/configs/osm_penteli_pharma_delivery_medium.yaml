@@ -1,5 +1,5 @@
-name: osm_penteli_fire_delivery_medium
-mission_type: fire_delivery
+name: osm_penteli_pharma_delivery_medium
+mission_type: pharma_delivery
 difficulty: medium
 domain: urban
 regime: stress_test

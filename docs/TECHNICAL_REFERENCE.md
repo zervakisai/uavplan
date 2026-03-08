@@ -76,7 +76,7 @@ src/uavbench/
 ### 3 Scenarios (OSM-based, all medium difficulty)
 | Scenario ID | Mission Type | OSM Tile | Dynamics |
 |-------------|-------------|----------|----------|
-| `osm_penteli_fire_delivery_medium` | fire_delivery | Penteli, Attica | fire=2, traffic=8+2, nfz=1 |
+| `osm_penteli_pharma_delivery_medium` | pharma_delivery | Penteli, Attica | fire=2, traffic=8+2, nfz=1 |
 | `osm_piraeus_flood_rescue_medium` | flood_rescue | Piraeus port | fire=2, traffic=8+2, nfz=1 |
 | `osm_downtown_fire_surveillance_medium` | fire_surveillance | Athens center | fire=1, traffic=8+2, nfz=1 |
 
@@ -404,7 +404,7 @@ mechanisms using existing dynamics layers:
 
 | Scenario | Map | Density | Fire | Buffer | Traffic | NFZ | Interdiction | t1 | t2 |
 |----------|-----|---------|------|--------|---------|-----|-------------|----|----|
-| osm_penteli_fire_delivery_medium | 500 | 0.18 | 2 | 1 | 8+2 | 1 | fire corridor | 40 | 120 |
+| osm_penteli_pharma_delivery_medium | 500 | 0.18 | 2 | 1 | 8+2 | 1 | fire corridor | 40 | 120 |
 | osm_piraeus_flood_rescue_medium | 500 | 0.29 | 2 | 1 | 8+2 | 1 | fire corridor + roadblock | 40 | 120 |
 | osm_downtown_fire_surveillance_medium | 500 | 0.50 | 1 | 1 | 8+2 | 1 | fire corridor | 40 | 120 |
 
@@ -418,7 +418,7 @@ mechanisms using existing dynamics layers:
 
 | Type | Service Time | Task Placement | Deliverable | Priority |
 |------|-------------|----------------|-------------|----------|
-| fire_delivery | 0 (fly-through) | At goal | medical_supplies | critical |
+| pharma_delivery | 0 (fly-through) | At goal | medical_supplies | critical |
 | flood_rescue | 2 steps (STAY) | At midpoint | rescue_assessment | critical |
 | fire_surveillance | 3 steps (STAY) | At midpoint | perimeter_report | high |
 
@@ -426,14 +426,14 @@ mechanisms using existing dynamics layers:
 
 | Type | Origin | Destination | Objective Label |
 |------|--------|-------------|----------------|
-| fire_delivery | Hospital Depot Alpha | Fire-Isolated Settlement | Emergency Medical Supply Delivery |
+| pharma_delivery | Hospital Depot Alpha | Fire-Isolated Settlement | Emergency Medical Supply Delivery |
 | flood_rescue | Emergency Operations Center | Flood-Stranded Area | Flood Search & Rescue Assessment |
 | fire_surveillance | Fire Command Post | Active Fire Perimeter | Aerial Fire Perimeter Survey |
 
 ### Mission Engine (`missions/engine.py`)
 
 **Completion (MC-2):** Agent must reach objective POI + stay for service_time consecutive steps.
-- fire_delivery: arrive at goal = complete (service_time=0)
+- pharma_delivery: arrive at goal = complete (service_time=0)
 - flood_rescue: arrive at midpoint, STAY 2 steps
 - fire_surveillance: arrive at midpoint, STAY 3 steps
 
@@ -543,7 +543,7 @@ Returns `GuardrailResult(feasible, depth, relaxations)`.
 | Medium | >= 50% |
 | Hard | >= 15% |
 
-### Medium Calibration Results (10 seeds, osm_penteli_fire_delivery_medium)
+### Medium Calibration Results (10 seeds, osm_penteli_pharma_delivery_medium)
 | Planner | Success Rate | Avg Replans |
 |---------|-------------|-------------|
 | A* (static) | 0% | 0 |
@@ -611,7 +611,7 @@ python scripts/gen_demo_gifs.py [--easy] [--fps 10]
 python scripts/export_artifacts.py
 
 # Single episode rendering for debugging
-python scripts/render_episode.py osm_penteli_fire_delivery_medium aggressive_replan 42
+python scripts/render_episode.py osm_penteli_pharma_delivery_medium aggressive_replan 42
 ```
 
 ### Expected Output Files
@@ -663,7 +663,7 @@ outputs/
 ```python
 # Check a specific episode
 from uavbench.benchmark.runner import run_episode
-result = run_episode("osm_penteli_fire_delivery_medium", "aggressive_replan", seed=42)
+result = run_episode("osm_penteli_pharma_delivery_medium", "aggressive_replan", seed=42)
 print(f"Success: {result.metrics['success']}")
 print(f"Steps: {result.metrics['executed_steps_len']}")
 print(f"Replans: {result.metrics['replans']}")
@@ -672,7 +672,7 @@ print(f"Reason: {result.metrics['termination_reason']}")
 # Check feasibility
 from uavbench.scenarios.calibration import feasibility_pre_check
 from uavbench.scenarios.loader import load_scenario
-config = load_scenario("osm_penteli_fire_delivery_medium")
+config = load_scenario("osm_penteli_pharma_delivery_medium")
 result = feasibility_pre_check(config, seed=42)
 print(f"Feasible: {result.feasible}, infeasible at step: {result.first_infeasible_step}")
 

@@ -18,7 +18,7 @@ src/uavbench/
 │   ├── registry.py                      # SCENARIO_IDS list (SC-4)
 │   ├── calibration.py                   # Feasibility pre-check (CC-1..4)
 │   └── configs/                         # 3 YAML files (SC-1)
-│       ├── osm_penteli_fire_delivery_medium.yaml
+│       ├── osm_penteli_pharma_delivery_medium.yaml
 │       ├── osm_piraeus_flood_rescue_medium.yaml
 │       └── osm_downtown_fire_surveillance_medium.yaml
 │
@@ -130,7 +130,7 @@ class ScenarioConfig:
     name: str
     domain: Domain                           # Enum: URBAN
     difficulty: Difficulty                   # Enum: EASY, MEDIUM, HARD
-    mission_type: MissionType               # Enum: FIRE_DELIVERY, FLOOD_RESCUE, FIRE_SURVEILLANCE
+    mission_type: MissionType               # Enum: PHARMA_DELIVERY, FLOOD_RESCUE, FIRE_SURVEILLANCE
     regime: Regime                           # Enum: NATURALISTIC, STRESS_TEST
     paper_track: Literal["static", "dynamic"]
 
@@ -265,7 +265,7 @@ class Difficulty(str, Enum):
     HARD = "hard"
 
 class MissionType(str, Enum):
-    FIRE_DELIVERY = "fire_delivery"
+    PHARMA_DELIVERY = "pharma_delivery"
     FLOOD_RESCUE = "flood_rescue"
     FIRE_SURVEILLANCE = "fire_surveillance"
 

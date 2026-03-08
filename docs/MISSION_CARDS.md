@@ -11,9 +11,9 @@ All missions use real Greek urban map tiles with dynamic obstacles.
 
 | Field | Value |
 |-------|-------|
-| Mission Type | `FIRE_DELIVERY` |
-| Scenario ID | `osm_penteli_fire_delivery_medium` |
-| Domain | `fire_delivery` |
+| Mission Type | `PHARMA_DELIVERY` |
+| Scenario ID | `osm_penteli_pharma_delivery_medium` |
+| Domain | `pharma_delivery` |
 | OSM Tile | Penteli, Attica |
 | Inspired by | Evia/Εύβοια wildfires 2021 |
 | Building Density | 0.18 |
