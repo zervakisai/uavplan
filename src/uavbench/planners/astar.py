@@ -1,7 +1,10 @@
 """A* planner (4-connected grid).
 
-Minimal Phase 2 implementation. Finds optimal shortest path on a grid
-with building obstacles.
+Static baseline planner. Finds optimal shortest path on a grid
+with building obstacles. Ignores cost_map (uniform cost).
+
+The search() method supports optional weighted cost maps for use
+by adaptive planners that wrap A* internally.
 """
 
 from __future__ import annotations
@@ -16,7 +19,11 @@ from uavbench.planners.base import PlannerBase, PlanResult
 
 
 class AStarPlanner(PlannerBase):
-    """A* path planner on 4-connected grid."""
+    """A* path planner on 4-connected grid.
+
+    plan() ignores cost_map — static baseline with uniform cost.
+    search() accepts cost_map for use by adaptive planner wrappers.
+    """
 
     def __init__(
         self,
@@ -33,7 +40,22 @@ class AStarPlanner(PlannerBase):
         goal: tuple[int, int],
         cost_map: np.ndarray | None = None,
     ) -> PlanResult:
-        """Run A* search from start to goal.
+        """Static A* baseline. Ignores cost_map (uniform cost 1.0)."""
+        return self.search(start, goal, cost_map=None)
+
+    def search(
+        self,
+        start: tuple[int, int],
+        goal: tuple[int, int],
+        cost_map: np.ndarray | None = None,
+    ) -> PlanResult:
+        """Core A* search with optional weighted cost map.
+
+        Args:
+            start: (x, y) start position
+            goal: (x, y) goal position
+            cost_map: optional float32[H, W] per-cell movement cost.
+                      When None, uniform cost 1.0 per step.
 
         Returns PlanResult with path as list[(x,y)] (PL-6).
         """
@@ -45,16 +67,16 @@ class AStarPlanner(PlannerBase):
         sx, sy = start
         gx, gy = goal
 
-        # Heuristic: Manhattan distance
-        def h(x: int, y: int) -> int:
-            return abs(x - gx) + abs(y - gy)
+        # Heuristic: Manhattan distance (admissible when min cost >= 1.0)
+        def h(x: int, y: int) -> float:
+            return float(abs(x - gx) + abs(y - gy))
 
         # Priority queue: (f, g, x, y)
-        open_set: list[tuple[int, int, int, int]] = []
-        heapq.heappush(open_set, (h(sx, sy), 0, sx, sy))
+        open_set: list[tuple[float, float, int, int]] = []
+        heapq.heappush(open_set, (h(sx, sy), 0.0, sx, sy))
 
         came_from: dict[tuple[int, int], tuple[int, int]] = {}
-        g_score: dict[tuple[int, int], int] = {(sx, sy): 0}
+        g_score: dict[tuple[int, int], float] = {(sx, sy): 0.0}
         expansions = 0
 
         # 4-connected neighbors: dx, dy
@@ -92,7 +114,12 @@ class AStarPlanner(PlannerBase):
                 if blocked[ny, nx]:
                     continue
 
-                new_g = g + 1
+                if cost_map is not None:
+                    move_cost = max(float(cost_map[ny, nx]), 0.01)
+                else:
+                    move_cost = 1.0
+                new_g = g + move_cost
+
                 if new_g < g_score.get((nx, ny), float("inf")):
                     g_score[(nx, ny)] = new_g
                     came_from[(nx, ny)] = (cx, cy)

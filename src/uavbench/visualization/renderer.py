@@ -33,6 +33,7 @@ from uavbench.visualization.overlays import (
     draw_goal,
     draw_nfz,
     draw_path,
+    draw_risk_heatmap,
     draw_smoke,
     draw_start,
     draw_traffic,
@@ -122,6 +123,11 @@ class Renderer:
             # Z=4: Fire overlay (drawn last — highest z in this group)
             if fire_mask is not None:
                 draw_fire(frame, fire_mask, cell)
+
+        # Z=3.2: Risk heatmap overlay (green→yellow→red)
+        cost_map = state.get("cost_map")
+        if cost_map is not None:
+            draw_risk_heatmap(frame, cost_map, cell)
 
         # Z=5: Dynamic NFZ (restriction zones)
         if dynamic_state is not None:
@@ -363,3 +369,44 @@ class Renderer:
         frame = self._render_legend(frame)
 
         return frame
+
+    def render_fog_comparison(
+        self,
+        heightmap: np.ndarray,
+        state: dict[str, Any],
+        fog_state: dict[str, Any],
+        ground_truth: dict[str, Any],
+    ) -> np.ndarray:
+        """Render side-by-side fog comparison: agent view vs ground truth.
+
+        Left panel: what the planner sees (fog-filtered state)
+        Right panel: actual environment state (ground truth)
+        """
+        # Render fog view (left)
+        fog_frame, _ = self.render_frame(heightmap, state, fog_state)
+
+        # Render ground truth (right) — create state without cost_map for cleaner view
+        truth_state = dict(state)
+        truth_state.pop("cost_map", None)
+        truth_frame, _ = self.render_frame(heightmap, truth_state, ground_truth)
+
+        # Ensure same height
+        h1, w1 = fog_frame.shape[:2]
+        h2, w2 = truth_frame.shape[:2]
+        h = max(h1, h2)
+        if h1 < h:
+            fog_frame = np.vstack([fog_frame, np.full((h - h1, w1, 3), 255, dtype=np.uint8)])
+        if h2 < h:
+            truth_frame = np.vstack([truth_frame, np.full((h - h2, w2, 3), 255, dtype=np.uint8)])
+
+        # Divider (2px black line)
+        divider = np.zeros((h, 2, 3), dtype=np.uint8)
+
+        # Composite
+        combined = np.hstack([fog_frame, divider, truth_frame])
+
+        # Add labels at top
+        _render_text(combined, "AGENT VIEW (FOG)", 4, 4, (255, 200, 0), 2)
+        _render_text(combined, "GROUND TRUTH", w1 + 6, 4, (0, 200, 0), 2)
+
+        return combined

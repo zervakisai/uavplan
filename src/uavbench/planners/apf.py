@@ -8,6 +8,8 @@ follows the negative gradient on a 4-connected grid.
 Known weakness: local minima when fire/obstacles create U-shaped traps.
 This is expected behavior that validates benchmark difficulty.
 
+Risk-modulated repulsion: k_rep *= (1 + δ * risk) where δ=3.0.
+
 Uses scipy.ndimage.distance_transform_cdt for O(H*W) precomputation of
 nearest-obstacle distances, making per-cell potential evaluation O(1).
 
@@ -19,6 +21,7 @@ References:
 from __future__ import annotations
 
 import hashlib
+import math
 import time
 from typing import Any
 
@@ -32,6 +35,9 @@ from uavbench.planners.base import PlannerBase, PlanResult
 # 4-connected grid actions: (dx, dy)
 _ACTIONS = [(0, -1), (0, 1), (-1, 0), (1, 0)]  # UP, DOWN, LEFT, RIGHT
 _N_ACTIONS = len(_ACTIONS)
+
+# Risk coefficient: risk modulates repulsive potential
+_RISK_DELTA = 3.0
 
 
 class APFPlanner(PlannerBase):
@@ -60,6 +66,10 @@ class APFPlanner(PlannerBase):
         self._last_replan_step = -3
         self._last_replan_pos: tuple[int, int] | None = None
         self._cooldown = 3
+        # Wind-aware momentum (Upgrade 12)
+        self._wind_speed = getattr(config, "wind_speed", 0.0) if config else 0.0
+        self._wind_dir = math.radians(getattr(config, "wind_direction_deg", 0.0)) if config else 0.0
+        self._momentum_alpha = 0.7  # blending: 0.7*prev + 0.3*gradient
 
     def plan(
         self,
@@ -70,6 +80,7 @@ class APFPlanner(PlannerBase):
         """Generate a path by greedy gradient descent on the potential field.
 
         One distance_transform precomputation, then O(path_len) rollout.
+        Risk-modulated: k_rep *= (1 + δ * risk) where δ=3.0.
         Falls back to A* if stuck in a local minimum.
         """
         t0 = time.perf_counter()
@@ -86,6 +97,8 @@ class APFPlanner(PlannerBase):
         path = [(sx, sy)]
         cx, cy = sx, sy
         visited_count: dict[tuple[int, int], int] = {(sx, sy): 1}
+
+        prev_dx, prev_dy = 0, 0  # momentum direction
 
         for _ in range(max_steps):
             if (cx, cy) == (gx, gy):
@@ -107,14 +120,28 @@ class APFPlanner(PlannerBase):
                 u_att = 0.5 * self._k_att * ((nx - gx) ** 2 + (ny - gy) ** 2)
 
                 # Repulsive: from precomputed distance transform
+                # Risk-modulated: k_rep scaled by local risk (δ=3.0)
                 d = dist_to_obs[ny, nx]
                 u_rep = 0.0
                 if 0 < d < self._d0:
-                    u_rep = self._k_rep * ((1.0 / d) - (1.0 / self._d0)) ** 2
+                    local_risk = float(cost_map[ny, nx]) if cost_map is not None else 0.0
+                    k_rep_eff = self._k_rep * (1.0 + _RISK_DELTA * local_risk)
+                    u_rep = k_rep_eff * ((1.0 / d) - (1.0 / self._d0)) ** 2
+                    # Wind bias: favor moving upwind (safer from fire spread)
+                    if self._wind_speed > 0:
+                        cell_angle = math.atan2(ny - cy, nx - cx)
+                        # Upwind = opposite to wind direction
+                        upwind_align = math.cos(cell_angle - self._wind_dir + math.pi)
+                        u_rep += self._wind_speed * 2.0 * max(0.0, -upwind_align)
 
                 pot = u_att + u_rep
                 # Penalize revisits to escape local minima
                 pot += visited_count.get((nx, ny), 0) * 20.0
+                # Momentum: penalize direction changes (smooth trajectory)
+                if self._wind_speed > 0 and (prev_dx != 0 or prev_dy != 0):
+                    # Dot product with previous direction (1=same, -1=reverse)
+                    dot = adx * prev_dx + ady * prev_dy
+                    pot += (1.0 - dot) * 5.0  # penalize direction changes
 
                 if pot < best_potential:
                     best_potential = pot
@@ -127,6 +154,7 @@ class APFPlanner(PlannerBase):
             cx, cy = cx + adx, cy + ady
             path.append((cx, cy))
             visited_count[(cx, cy)] = visited_count.get((cx, cy), 0) + 1
+            prev_dx, prev_dy = _ACTIONS[best_action]
 
         elapsed = (time.perf_counter() - t0) * 1000.0
 

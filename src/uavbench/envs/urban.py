@@ -6,6 +6,7 @@ Action space: Discrete(5) — UP(0), DOWN(1), LEFT(2), RIGHT(3), STAY(4).
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -248,6 +249,8 @@ class UrbanEnvV2(gym.Env):
                 corridor_cells=self._bfs_corridor,
                 guarantee_targets=guarantee_targets,
                 guarantee_step=self.config.event_t1 or 30,
+                wind_speed=self.config.wind_speed,
+                wind_direction=math.radians(self.config.wind_direction_deg),
             )
 
         if self.config.enable_traffic and self.config.num_emergency_vehicles > 0:

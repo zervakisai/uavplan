@@ -10,6 +10,8 @@ import time as _time
 from dataclasses import dataclass, field
 from typing import Any
 
+from uavbench.blocking import compute_risk_cost_map
+from uavbench.dynamics.fog_of_war import FogOfWar
 from uavbench.envs.base import TerminationReason
 from uavbench.envs.urban import UrbanEnvV2
 from uavbench.metrics.compute import compute_episode_metrics
@@ -82,13 +84,26 @@ def run_episode(
     planner = planner_cls(heightmap, no_fly, config)
     planner.set_seed(seed)
 
+    # Fog of war (FG-1: planner-agnostic partial observability)
+    fog = (
+        FogOfWar((config.map_size, config.map_size), config.sensor_radius)
+        if config.enable_fog_of_war
+        else None
+    )
+
+    # Initial risk cost map for risk-aware planning
+    initial_dyn = env.get_dynamic_state()
+    if fog is not None:
+        initial_dyn = fog.observe(start_xy, initial_dyn, 0)
+    risk_map = compute_risk_cost_map(heightmap, no_fly, config, initial_dyn)
+
     # Initial plan: ALWAYS start→goal (FC-1 corridor alignment).
     # POI is snapped to the corridor midpoint by the env, so the agent
     # naturally visits it while following the start→goal route.
     # Static planners get exactly ONE plan() call — fire/roadblock
     # interdictions on the corridor force them to fail. Adaptive
     # planners replan via should_replan().
-    plan_result = planner.plan(start_xy, goal_xy)
+    plan_result = planner.plan(start_xy, goal_xy, cost_map=risk_map)
 
     # CC-4: Detect structurally infeasible episodes (no path exists on
     # the static grid). If both A* and BFS fail at reset, the episode
@@ -154,6 +169,14 @@ def run_episode(
     _wall_start = _time.perf_counter()
     _WALL_TIMEOUT_S = 300.0
 
+    # Energy budget tracking
+    _energy_budget = config.energy_budget
+    _energy_remaining = _energy_budget  # starts full
+    _energy_consumed = 0.0
+    _ENERGY_MOVE = 1.0
+    _ENERGY_STAY = 0.3
+    _ENERGY_REPLAN = 2.0
+
     while not terminated and not truncated:
         step_idx += 1
 
@@ -176,6 +199,17 @@ def run_episode(
             truncated = True
         trajectory.append(env.agent_xy)
 
+        # Energy consumption
+        if _energy_budget > 0:
+            cost = _ENERGY_STAY if action == 4 else _ENERGY_MOVE
+            _energy_consumed += cost
+            _energy_remaining -= cost
+            if _energy_remaining <= 0:
+                final_info = dict(final_info)
+                final_info["termination_reason"] = TerminationReason.ENERGY_DEPLETED
+                final_info["objective_completed"] = False
+                truncated = True
+
         # Check if mission task completed → switch replan target to goal
         if not mission_task_done:
             task_progress = info.get("task_progress", "0/0")
@@ -190,7 +224,7 @@ def run_episode(
                 # Adaptive planners that replanned to POI during leg 1:
                 # path[-1]==POI → need fresh plan to goal.
                 if not path or path[-1] != goal_xy:
-                    plan_result_new = planner.plan(env.agent_xy, goal_xy)
+                    plan_result_new = planner.plan(env.agent_xy, goal_xy, cost_map=risk_map)
                     if plan_result_new.success:
                         path = plan_result_new.path
                         path_idx = 0
@@ -220,9 +254,11 @@ def run_episode(
             if env.agent_xy == next_wp:
                 path_idx += 1
 
-        # Update planner with dynamic state
+        # Update planner with dynamic state (fog-filtered if enabled)
         dyn_state = env.get_dynamic_state()
-        planner.update(dyn_state)
+        observed = fog.observe(env.agent_xy, dyn_state, step_idx) if fog else dyn_state
+        risk_map = compute_risk_cost_map(heightmap, no_fly, config, observed)
+        planner.update(observed)
 
         # Check if replan needed
         if _failed_plan_cooldown > 0:
@@ -236,7 +272,10 @@ def run_episode(
                 naive_replan_count += 1
             if should:
                 replan_attempts += 1
-                plan_result_new = planner.plan(env.agent_xy, current_target)
+                plan_result_new = planner.plan(env.agent_xy, current_target, cost_map=risk_map)
+                if _energy_budget > 0:
+                    _energy_consumed += _ENERGY_REPLAN
+                    _energy_remaining -= _ENERGY_REPLAN
                 if plan_result_new.success:
                     path = plan_result_new.path
                     path_idx = 0
@@ -266,6 +305,9 @@ def run_episode(
                 "scenario_id": scenario_id,
                 "replan_every_steps": getattr(config, "replan_every_steps", 6),
                 "dynamic_block_hits": 0,
+                "energy_remaining_pct": (_energy_remaining / _energy_budget * 100.0) if _energy_budget > 0 else 100.0,
+                "energy_consumed": _energy_consumed,
+                "cost_map": risk_map,
                 "landuse_map": _landuse_map,
                 "roads_mask": _roads_mask,
                 **_mission_meta,
@@ -301,6 +343,9 @@ def run_episode(
     metrics["feasible_after_guardrail"] = final_info.get(
         "feasible_after_guardrail", True
     )
+    if _energy_budget > 0:
+        metrics["energy_consumed"] = _energy_consumed
+        metrics["energy_remaining_pct"] = max(0.0, _energy_remaining / _energy_budget * 100.0)
 
     # Reject reason counts from env events (EC-1)
     reject_counts: dict[str, int] = {}
