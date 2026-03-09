@@ -21,7 +21,7 @@ COLOR_TRAJ_BLUE = np.array([0, 114, 178], dtype=np.uint8)  # #0072B2 — traject
 COLOR_TRAJ_OUTLINE = np.array([255, 255, 255], dtype=np.uint8)  # white outline
 COLOR_START = np.array([0, 158, 115], dtype=np.uint8)      # #009E73 — start (bluish-green)
 COLOR_GOAL = np.array([240, 228, 66], dtype=np.uint8)      # #F0E442 — goal (yellow)
-COLOR_AGENT = np.array([0, 114, 178], dtype=np.uint8)      # #0072B2 — UAV (blue)
+COLOR_AGENT = np.array([255, 140, 0], dtype=np.uint8)      # #FF8C00 — UAV (vivid orange)
 COLOR_FIRE = np.array([255, 80, 20], dtype=np.uint8)        # vivid red-orange — fire
 COLOR_SMOKE = np.array([160, 160, 160], dtype=np.uint8)     # #A0A0A0 — smoke (grey)
 COLOR_NFZ = np.array([204, 121, 167], dtype=np.uint8)       # #CC79A7 — NFZ (reddish purple)
@@ -113,8 +113,8 @@ def draw_path(
         return
 
     points = [_cell_center(x, y, cell) for x, y in path]
-    w_outer = max(3, cell)
-    w_inner = max(2, cell - 1)
+    w_outer = max(5, cell + 1)
+    w_inner = max(3, cell)
 
     for color, width in [(COLOR_PATH_OUTLINE, w_outer), (COLOR_CYAN, w_inner)]:
         for i in range(len(points) - 1):
@@ -140,8 +140,8 @@ def draw_trajectory(
         return
 
     points = [_cell_center(x, y, cell) for x, y in trajectory]
-    w_outer = max(3, cell)
-    w_inner = max(1, cell - 1)
+    w_outer = max(4, cell)
+    w_inner = max(2, cell - 1)
 
     for color, width in [(COLOR_TRAJ_OUTLINE, w_outer), (COLOR_TRAJ_BLUE, w_inner)]:
         for i in range(len(points) - 1):
@@ -213,15 +213,22 @@ def draw_agent(
     agent_xy: tuple[int, int],
     cell: int,
 ) -> None:
-    """Draw UAV agent icon (white ring + blue disc + white rotor cross)."""
+    """Draw UAV agent icon — prominent orange disc with white cross.
+
+    Must be visible at any zoom, distinct from trajectory (blue) and path (cyan).
+    """
     cx, cy = _cell_center(agent_xy[0], agent_xy[1], cell)
-    r_outer = max(8, cell * 3)
-    r_inner = max(6, int(cell * 2.5))
-    _draw_circle(frame, cx, cy, r_outer, COLOR_TRAJ_OUTLINE, filled=True)
+    r_outer = max(12, cell * 4)
+    r_inner = max(9, cell * 3)
+    # White outer ring (high contrast against any background)
+    _draw_circle(frame, cx, cy, r_outer + 2, np.array([255, 255, 255], dtype=np.uint8), filled=True)
+    # Black border
+    _draw_circle(frame, cx, cy, r_outer, np.array([0, 0, 0], dtype=np.uint8), filled=True)
+    # Orange fill
     _draw_circle(frame, cx, cy, r_inner, COLOR_AGENT, filled=True)
-    # White rotor cross
-    cross_size = max(4, int(r_inner * 0.6))
-    _draw_cross(frame, cx, cy, cross_size, COLOR_TRAJ_OUTLINE, width=max(1, cell // 2))
+    # White rotor cross (larger)
+    cross_size = max(6, int(r_inner * 0.7))
+    _draw_cross(frame, cx, cy, cross_size, np.array([255, 255, 255], dtype=np.uint8), width=max(2, cell // 2))
 
 
 # ---------------------------------------------------------------------------
@@ -249,15 +256,20 @@ def draw_smoke(
     frame: np.ndarray,
     smoke_mask: np.ndarray,
     cell: int,
+    alpha_256: int = 102,
 ) -> None:
-    """Draw smoke cells as grey overlay (vectorized, z=3.5)."""
+    """Draw smoke cells as grey overlay (vectorized, z=3.5).
+
+    alpha_256: opacity in [0, 256] scale. 102 ≈ 40% (ops), 51 ≈ 20% (paper).
+    """
     smoke_bool = smoke_mask >= SMOKE_BLOCKING_THRESHOLD
     if not smoke_bool.any():
         return
     smoke_px = np.repeat(np.repeat(smoke_bool, cell, axis=0), cell, axis=1)
     mask_3d = smoke_px[:, :, np.newaxis]
     fg = COLOR_SMOKE.astype(np.uint16)
-    blended = ((frame.astype(np.uint16) * 154 + fg * 102) >> 8).astype(np.uint8)
+    bg_weight = 256 - alpha_256
+    blended = ((frame.astype(np.uint16) * bg_weight + fg * alpha_256) >> 8).astype(np.uint8)
     frame[:] = np.where(mask_3d, blended, frame)
 
 

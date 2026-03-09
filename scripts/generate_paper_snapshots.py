@@ -28,6 +28,9 @@ from uavbench.benchmark.runner import run_episode
 from uavbench.planners import PLANNERS
 from uavbench.scenarios.loader import load_scenario
 from uavbench.visualization.renderer import Renderer
+from uavbench.visualization.labels import (
+    PLANNER_ORDER, PLANNER_LABELS, PLANNER_COLORS,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -45,18 +48,6 @@ FAMILY_SCENARIOS = {
 
 # For the 5-panel planner comparison
 COMPARISON_SCENARIO = "osm_penteli_pharma_delivery_medium"
-
-PLANNER_ORDER = [
-    "astar", "periodic_replan",
-    "aggressive_replan", "dstar_lite", "apf",
-]
-PLANNER_LABELS = {
-    "astar": "A*",
-    "periodic_replan": "Periodic Replan",
-    "aggressive_replan": "Aggressive Replan",
-    "dstar_lite": "D* Lite",
-    "apf": "APF",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +71,10 @@ def _run_with_snapshots(
     frames: dict[int, tuple[np.ndarray, dict]] = {}
     total_steps_box: list[int] = [0]
 
+    # For final-frame-only capture: keep last frame data without
+    # accumulating all frames in memory (7500x7500 frames = ~168MB each).
+    last_frame_data: list[tuple | None] = [None]
+
     def frame_callback(
         heightmap: np.ndarray,
         state: dict,
@@ -89,13 +84,21 @@ def _run_with_snapshots(
         step = state.get("step_idx", 0)
         total_steps_box[0] = step
 
-        if capture_steps is None or step in capture_steps:
+        if capture_steps is not None and step in capture_steps:
             frame, meta = renderer.render_frame(heightmap, state, dyn_state)
             frames[step] = (frame, meta)
+        elif capture_steps is None:
+            # Keep reference to latest args for final-frame rendering
+            last_frame_data[0] = (heightmap, state.copy(), dyn_state.copy())
 
     result = run_episode(scenario_id, planner_id, seed, frame_callback=frame_callback)
 
-    # Always capture info about total steps
+    # If capture_steps is None, render the final frame now
+    if capture_steps is None and last_frame_data[0] is not None:
+        hm, st, ds = last_frame_data[0]
+        frame, meta = renderer.render_frame(hm, st, ds)
+        frames[total_steps_box[0]] = (frame, meta)
+
     return {
         "frames": frames,
         "metrics": result.metrics,
@@ -106,6 +109,103 @@ def _run_with_snapshots(
 # ---------------------------------------------------------------------------
 # Snapshot generators
 # ---------------------------------------------------------------------------
+
+
+def generate_fire_evolution() -> None:
+    """Fig 1: 4-panel fire spread progression on Penteli scenario.
+
+    Shows t=0, t=50, t=200, t=1000 to illustrate fire dynamics.
+    """
+    print("Generating fire evolution 4-panel...")
+
+    scenario_id = "osm_penteli_pharma_delivery_medium"
+    target_steps = {1, 50, 200, 1000}
+    config = load_scenario(scenario_id)
+    renderer = Renderer(config, mode="paper_min")
+
+    captured: dict[int, np.ndarray] = {}
+
+    def cb(heightmap, state, dyn_state, cfg):
+        step = state.get("step_idx", 0)
+        if step in target_steps:
+            frame, _ = renderer.render_frame(heightmap, state, dyn_state)
+            captured[step] = frame
+
+    run_episode(scenario_id, "astar", SEED, frame_callback=cb)
+
+    # Build 4-panel figure
+    panels = [(1, "(a) t=1"), (50, "(b) t=50"), (200, "(c) t=200"), (1000, "(d) t=1000")]
+    available_steps = sorted(captured.keys())
+
+    fig, axes = plt.subplots(1, 4, figsize=(7.16, 2.2))
+    for ax, (step, label) in zip(axes, panels):
+        if step in captured:
+            frame = captured[step]
+        else:
+            # Use closest available
+            closest = min(available_steps, key=lambda k: abs(k - step))
+            frame = captured[closest]
+            label += f" (actual={closest})"
+        ax.imshow(frame)
+        ax.set_title(label, fontsize=8, fontweight="bold")
+        ax.axis("off")
+
+    fig.tight_layout()
+    _save_fig(fig, "fire_evolution_4panel")
+
+
+def generate_scenario_overview() -> None:
+    """Fig 2: 3-panel basemap overview — one per scenario family.
+
+    Shows clean maps (no fire, no HUD, no dynamics) with start/goal markers.
+    Purpose: illustrate building density and geography differences.
+    """
+    from uavbench.visualization.overlays import draw_start, draw_goal
+
+    print("Generating scenario overview (basemap-only)...")
+
+    fig, axes = plt.subplots(1, 3, figsize=(7.16, 2.8))
+    family_items = list(FAMILY_SCENARIOS.items())
+
+    for ax, (family, scenario_id) in zip(axes, family_items):
+        config = load_scenario(scenario_id)
+        renderer = Renderer(config, mode="paper_min")
+
+        # Run 1 step just to get heightmap, start, goal, landuse, roads
+        captured = {}
+
+        def cb(heightmap, state, dyn_state, cfg):
+            if not captured:
+                captured["heightmap"] = heightmap
+                captured["state"] = state.copy()
+
+        run_episode(scenario_id, "astar", SEED, frame_callback=cb)
+
+        heightmap = captured["heightmap"]
+        state = captured["state"]
+        H, W = heightmap.shape
+        cell = renderer._cell_px
+
+        # Render basemap only (no dynamics)
+        frame = renderer._render_basemap(
+            heightmap, H, W, cell,
+            state.get("landuse_map"),
+            state.get("roads_mask"),
+        )
+
+        # Add start/goal markers
+        start_xy = state.get("start_xy", state.get("agent_xy", (0, 0)))
+        goal_xy = state.get("goal_xy", (H - 1, W - 1))
+        draw_start(frame, start_xy, cell)
+        draw_goal(frame, goal_xy, cell)
+
+        ax.imshow(frame)
+        label = family.replace("_", " ").title()
+        ax.set_title(label, fontsize=9, fontweight="bold")
+        ax.axis("off")
+
+    fig.tight_layout()
+    _save_fig(fig, "scenario_overview_3panel")
 
 
 def generate_family_snapshots() -> None:
@@ -121,11 +221,11 @@ def generate_family_snapshots() -> None:
         mid = max(1, total // 2)
         print(f"    Total steps: {total}, mid: {mid}")
 
-        # Second pass: capture t=0, t=mid, t=end
-        capture = {0, mid, total}
+        # Second pass: capture t=1 (earliest), t=mid, t=end
+        capture = {1, mid, total}
         result = _run_with_snapshots(scenario_id, "astar", SEED, capture_steps=capture)
 
-        for label, step in [("t0", 0), ("mid", mid), ("end", total)]:
+        for label, step in [("t0", 1), ("mid", mid), ("end", total)]:
             if step in result["frames"]:
                 frame, meta = result["frames"][step]
             else:
@@ -259,10 +359,10 @@ def main() -> None:
         first = _run_with_snapshots(args.scenario, planner_id, SEED, capture_steps=set())
         total = first["total_steps"]
         mid = max(1, total // 2)
-        capture = {0, mid, total}
+        capture = {1, mid, total}
         result = _run_with_snapshots(args.scenario, planner_id, SEED, capture_steps=capture)
 
-        for label, step in [("t0", 0), ("mid", mid), ("end", total)]:
+        for label, step in [("t0", 1), ("mid", mid), ("end", total)]:
             if step in result["frames"]:
                 frame, meta = result["frames"][step]
             else:
@@ -280,6 +380,12 @@ def main() -> None:
             _save_fig(fig, name)
         print(f"\nDone. {len(capture)} snapshots in {FIG_DIR}/")
         return
+
+    # Fire evolution (4 panels: t=0, t=50, t=200, t=1000)
+    generate_fire_evolution()
+
+    # Scenario overview (basemap-only, no dynamics)
+    generate_scenario_overview()
 
     if not args.skip_families:
         generate_family_snapshots()

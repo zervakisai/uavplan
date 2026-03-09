@@ -34,26 +34,9 @@ DEFAULT_INPUT_CSV = "outputs/paper_results/all_episodes.csv"
 DEFAULT_TABLE_DIR = "outputs/paper_tables"
 DEFAULT_FIG_DIR = "outputs/paper_figures"
 
-# Planner display order
-PLANNER_ORDER = [
-    "astar", "periodic_replan",
-    "aggressive_replan", "dstar_lite", "apf",
-]
-PLANNER_LABELS = {
-    "astar": "A*",
-    "periodic_replan": "Periodic",
-    "aggressive_replan": "Aggressive",
-    "dstar_lite": "D* Lite",
-    "apf": "APF",
-}
-# Okabe-Ito colorblind-safe palette
-PLANNER_COLORS = {
-    "astar": "#E69F00",           # orange
-    "periodic_replan": "#009E73", # bluish green
-    "aggressive_replan": "#D55E00", # vermillion
-    "dstar_lite": "#CC79A7",      # reddish purple
-    "apf": "#0072B2",       # blue
-}
+from uavbench.visualization.labels import (
+    PLANNER_ORDER, PLANNER_SHORT as PLANNER_LABELS, PLANNER_COLORS,
+)
 DIFFICULTY_ORDER = ["medium"]  # only medium difficulty in v2
 
 

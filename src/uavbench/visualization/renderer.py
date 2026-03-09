@@ -115,19 +115,22 @@ class Renderer:
             smoke_mask = dynamic_state.get("smoke_mask")
             # Z=3.5: Smoke overlay (drawn first — lowest z in this group)
             if smoke_mask is not None:
-                draw_smoke(frame, smoke_mask, cell)
-            # Z=3.8: Fire buffer zone (safety exclusion ring)
-            if fire_mask is not None:
-                fire_buffer_r = getattr(self.config, "fire_buffer_radius", 3)
-                draw_fire_buffer(frame, fire_mask, fire_buffer_r, cell)
+                smoke_alpha = 51 if self.mode == "paper_min" else 102
+                draw_smoke(frame, smoke_mask, cell, alpha_256=smoke_alpha)
+            # Z=3.8: Fire buffer zone (safety exclusion ring) — ops_full only
+            if self.mode == "ops_full":
+                if fire_mask is not None:
+                    fire_buffer_r = getattr(self.config, "fire_buffer_radius", 3)
+                    draw_fire_buffer(frame, fire_mask, fire_buffer_r, cell)
             # Z=4: Fire overlay (drawn last — highest z in this group)
             if fire_mask is not None:
                 draw_fire(frame, fire_mask, cell)
 
-        # Z=3.2: Risk heatmap overlay (green→yellow→red)
-        cost_map = state.get("cost_map")
-        if cost_map is not None:
-            draw_risk_heatmap(frame, cost_map, cell)
+        # Z=3.2: Risk heatmap overlay (green→yellow→red) — ops_full only
+        if self.mode == "ops_full":
+            cost_map = state.get("cost_map")
+            if cost_map is not None:
+                draw_risk_heatmap(frame, cost_map, cell)
 
         # Z=5: Dynamic NFZ (restriction zones)
         if dynamic_state is not None:
@@ -227,9 +230,11 @@ class Renderer:
         frame = np.repeat(np.repeat(color_map, cell, axis=0), cell, axis=1)
         return frame
 
-    @staticmethod
-    def _render_legend(frame: np.ndarray) -> np.ndarray:
-        """Render color legend bar at bottom of frame (paper mode)."""
+    def _render_legend(self, frame: np.ndarray) -> np.ndarray:
+        """Render color legend bar at bottom of frame (ops_full only)."""
+        if self.mode == "paper_min":
+            return frame  # No legend in paper mode
+
         H, W = frame.shape[:2]
         legend_h = 20
         legend = np.full((legend_h, W, 3), 255, dtype=np.uint8)

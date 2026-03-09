@@ -25,8 +25,9 @@
   urlcolor=blue!60!black,
 }
 
-\title{UAVBench: A Reproducible Benchmark for UAV Path Planning\\
-       in Dynamic Urban Environments}
+\title{UAVBench: A Contract-Verified Benchmark for UAV Path Planning\\
+       in Dynamic Urban Environments with Wind-Driven Fire,\\
+       Fog of War, and Risk-Aware Replanning}
 
 \author{%
   \IEEEauthorblockN{Konstantinos~Zervakis\IEEEauthorrefmark{1}
@@ -43,49 +44,58 @@
 We present UAVBench, an open-source benchmark framework for evaluating UAV
 path planning algorithms in dynamic urban environments.  The framework
 provides three scenarios derived from OpenStreetMap tiles of Greek urban
-areas, coupled with physically motivated dynamic obstacles: cellular-automaton
-fire spread, traffic vehicles, and no-fly zone corridors.  A contract-based
-architecture enforces 33 invariants across 12 families, guaranteeing
-deterministic replay, planner fairness, and mask parity.  We evaluate five
-planners spanning three families---static search~(A*), adaptive
-search~(periodic replan, aggressive replan, D*~Lite), and
-reactive~(APF)---across 450 main episodes and 600 ablation episodes.
-Results show that adaptive planners achieve 87.8\% overall success
-(95.2\% on feasible episodes) versus 0\% for the static baseline,
-with Cliff's delta $|d|=0.88$.  Ablation studies isolating each dynamics
-layer reveal fire spread as the dominant obstacle source.  All experiments
-are bit-identical under the same seed triple, and the framework, data, and
-analysis scripts are publicly available.
+areas, coupled with physically motivated dynamic obstacles: wind-driven
+cellular-automaton fire spread (Alexandridis et al.\ 2008), traffic
+vehicles, and no-fly zone corridors.  A novel \emph{risk cost map}
+translates proximity to hazards into continuous planner costs, enabling
+per-planner risk coefficients that differentiate conservative from
+aggressive strategies.  Partial observability is modeled via a
+\emph{fog-of-war} layer with stale-memory semantics, and a
+\emph{triage mission} couples multi-casualty survival decay with
+fire proximity.  A contract-based architecture enforces 36 invariants
+across 15 families---including wind determinism, fog consistency, and
+triage correctness---guaranteeing deterministic replay, planner fairness,
+and mask parity.  We evaluate five planners spanning three
+families---static (A*), adaptive (Periodic Replan, Aggressive Replan,
+Incremental~A*), and reactive (APF)---across 450 episodes with 30 seeds.
+On feasible episodes, Incremental~A* achieves 98.8\% success
+(Cliff's $|d|{=}0.91$ vs.\ A*), while APF trails at 86.7\%.
+Ablation studies isolating each dynamics layer confirm fire spread as
+the dominant obstacle source.  All experiments are bit-identical
+under the same seed triple.
 \end{abstract}
 
 \begin{IEEEkeywords}
 UAV path planning, benchmarking, dynamic environments, fire spread,
-reproducibility
+fog of war, risk-aware planning, reproducibility
 \end{IEEEkeywords}
 
 % ============================================================================
 \section{Introduction}\label{sec:intro}
 
 Unmanned aerial vehicles (UAVs) are increasingly deployed in
-disaster response scenarios---wildfire perimeter mapping, flood
-rescue assessment, and emergency supply delivery~\cite{Erdelj2017,Yuan2015}.
+disaster response---wildfire perimeter mapping, flood rescue assessment,
+and emergency supply delivery~\cite{Erdelj2017,Yuan2015,Yucesoy2025}.
 In these settings, the operating environment is not static:
-wildfires advance, roads flood, and manned-aircraft no-fly zones (NFZs)
-shift as operations evolve.  Path planning algorithms must therefore
+wildfires advance under wind, roads flood, and manned-aircraft no-fly
+zones (NFZs) shift as operations evolve.  Path planning algorithms must
 handle \emph{dynamic} obstacles that appear, expand, and relocate
-during execution.
+during execution, often under \emph{partial observability} where the
+agent's sensor range limits its view of the evolving
+hazard~\cite{Moustafa2025,Dradoum2025}.
 
-Despite extensive research on UAV path planning~\cite{Aggarwal2020,Zhao2020},
-reproducible comparison of algorithms under controlled dynamic conditions
-remains difficult.  Existing evaluations typically use ad-hoc scenarios,
-fixed obstacle configurations, or proprietary simulators, making it hard
-to isolate the effect of environmental dynamics on planner
+Despite extensive research on UAV path
+planning~\cite{Aggarwal2020,Zhao2020}, reproducible comparison of
+algorithms under controlled dynamic conditions remains
+difficult.  Existing evaluations typically use ad-hoc scenarios, fixed
+obstacle configurations, or proprietary simulators, making it hard to
+isolate the effect of environmental dynamics on planner
 performance~\cite{Henderson2018}.  Furthermore, many studies report only
 mean success rates without accounting for episode feasibility, seed
 sensitivity, or statistical significance~\cite{Agarwal2021}.
 
 We address these gaps with \textbf{UAVBench}, a benchmark framework with
-three design principles:
+four design principles:
 
 \begin{enumerate}
   \item \textbf{Deterministic reproducibility.}  Given the same
@@ -95,35 +105,42 @@ three design principles:
 
   \item \textbf{Planner fairness.}  All planners receive identical
     observations at each step.  Dynamic obstacles evolve \emph{after}
-    the agent moves (not between planning and execution), and
-    interdictions are placed on the A*-reference corridor independent
-    of which planner is under evaluation.
+    the agent moves, and interdictions are placed on the A*-reference
+    corridor independent of which planner is under evaluation.
+
+  \item \textbf{Hazard-coupled planning.}  Wind-driven
+    fire~\cite{Alexandridis2008}, continuous risk cost maps, fog of war,
+    and triage missions create a rich hazard landscape that
+    differentiates planners by their risk tolerance, not just their
+    replanning frequency.
 
   \item \textbf{Rigorous evaluation.}  We adopt the statistical
     protocol of Agarwal et al.~\cite{Agarwal2021}: interquartile mean
     (IQM) with bootstrap confidence intervals, Friedman
     tests~\cite{Demsar2006}, Cliff's delta effect sizes, and
-    performance profiles~\cite{Dolan2002}.  Infeasible episodes
-    (structurally unsolvable map layouts) are detected at reset and
-    excluded transparently.
+    performance profiles~\cite{Dolan2002}.
 \end{enumerate}
 
-The framework implements a Gymnasium-compatible~\cite{Brockman2016,Towers2024}
+The framework implements a Gymnasium-compatible~\cite{Towers2025}
 environment with three urban scenarios built from OpenStreetMap
 data~\cite{Boeing2017}, each inspired by real Greek disaster events
 (2021~Evia wildfires, 2023~Thessaly floods, 2023~Evros megafire).
 Five planners from three algorithmic families are evaluated:
-A*~\cite{Hart1968}, D*~Lite~\cite{Koenig2002},
+A*~\cite{Hart1968}, Incremental~A*~\cite{Koenig2002},
 APF~\cite{Khatib1986}, and two A*-based replanning variants.
 
 \textbf{Contributions.}
 \begin{itemize}
-  \item An open-source benchmark framework with 33 architectural
-    contracts ensuring determinism, fairness, and evaluation integrity.
+  \item An open-source benchmark framework with 36 architectural
+    contracts across 15 families ensuring determinism, fairness,
+    and evaluation integrity.
+  \item Wind-driven fire spread (Alexandridis et al.~\cite{Alexandridis2008}),
+    per-planner risk cost functions, fog of war with stale-memory semantics,
+    and a triage mission with survival decay.
   \item Three OSM-based urban scenarios with physically motivated
-    dynamic obstacles (fire CA, traffic, NFZs).
-  \item A 450-episode comparative study of five planners with
-    rigorous statistical analysis, plus a 600-episode ablation study
+    dynamic obstacles (fire~CA, traffic, NFZs).
+  \item A 450-episode study of five planners with
+    rigorous statistical analysis, plus ablation studies
     isolating each dynamics layer.
 \end{itemize}
 
@@ -132,14 +149,24 @@ APF~\cite{Khatib1986}, and two A*-based replanning variants.
 
 \subsection{UAV Path Planning}
 
-UAV path planning has been surveyed extensively~\cite{Aggarwal2020,Zhao2020,LaValle2006}.
+UAV path planning has been surveyed
+extensively~\cite{Aggarwal2020,Zhao2020,Moustafa2025,Dradoum2025}.
 Classical approaches include graph search (A*~\cite{Hart1968},
 D*~Lite~\cite{Koenig2002}), sampling-based methods (RRT, PRM),
 and reactive methods such as Artificial Potential Fields
-(APF)~\cite{Khatib1986}.  While these algorithms are well-studied
-in static environments, their comparative behavior under evolving
-obstacles---particularly fire, traffic, and NFZ dynamics---has
-received limited systematic evaluation.
+(APF)~\cite{Khatib1986}.  Recent surveys~\cite{Moustafa2025}
+emphasize the need for benchmarks that evaluate planners under
+dynamic, uncertain conditions rather than static obstacle fields.
+Dradoum et al.~\cite{Dradoum2025} classify path planning
+algorithms into five families and identify hybrid ablation as
+a key evaluation methodology---an approach UAVBench adopts.
+
+Risk-aware UAV planning has gained attention~\cite{Zhou2025},
+with methods using continuous cost maps derived from population
+exposure, terrain, and hazard proximity.  UAVBench implements
+per-planner risk coefficients that translate fire/smoke/traffic
+proximity into weighted costs, enabling comparison of risk-tolerant
+vs.\ risk-averse strategies.
 
 \subsection{Benchmarking and Reproducibility}
 
@@ -153,22 +180,30 @@ benchmarking optimization solvers.  Dem\v{s}ar~\cite{Demsar2006}
 formalized nonparametric tests (Friedman, Wilcoxon) for comparing
 classifiers across datasets.  UAVBench adopts all four techniques.
 
-OpenAI Gym~\cite{Brockman2016} established the standard
-environment interface for RL research.  UAVBench builds on its
-successor, Gymnasium~\cite{Towers2024}, providing a
-\texttt{step}/\texttt{reset} API compatible with existing RL
+Gymnasium~\cite{Towers2025} established the standard
+environment interface for RL research (NeurIPS~2025 Spotlight).
+UAVBench builds on this API, providing a
+\texttt{step}/\texttt{reset} interface compatible with existing RL
 workflows.
 
 \subsection{Dynamic Environment Modeling}
 
 Alexandridis et al.~\cite{Alexandridis2008} proposed cellular automata
 (CA) for wildfire spread prediction, using land-use-dependent ignition
-probabilities and Moore-neighborhood propagation.  UAVBench adapts this
-model with isotropic spread, extended burnout for corridor interdiction,
-and smoke diffusion as a secondary blocking layer.
+probabilities and Moore-neighborhood propagation.  Recent
+work~\cite{Giannino2025} confirms that wind speed and terrain slope
+are the dominant parameters governing CA fire dynamics.
+UAVBench extends the Alexandridis model with wind-directional spread
+modulation, extended burnout for corridor interdiction, and smoke
+diffusion as a secondary blocking layer.
 Boeing~\cite{Boeing2017} introduced OSMnx for acquiring and analyzing
 street networks from OpenStreetMap; we use it to generate rasterized
-urban terrain at 500$\times$500 resolution.
+urban terrain at $500 \times 500$ resolution.
+
+UAVs in disaster response have been reviewed by Erdelj
+et al.~\cite{Erdelj2017}, Yuan et al.~\cite{Yuan2015}, and
+Y\"ucesoy et al.~\cite{Yucesoy2025}, who identify path planning
+under dynamic hazards as a key open challenge.
 
 % ============================================================================
 \section{System Design}\label{sec:system}
@@ -183,7 +218,7 @@ until termination.  The runner owns the authoritative step counter;
 all components (dynamics, logger, renderer) receive it as a parameter.
 
 The architecture follows a layered design:
-\emph{(i)}~scenario configs (YAML) define map, dynamics knobs, and
+\emph{(i)}~scenario configs define map, dynamics knobs, and
 mission parameters;
 \emph{(ii)}~the environment manages grid state, collision semantics,
 and dynamics stepping;
@@ -193,15 +228,11 @@ and dynamics stepping;
 
 \subsection{Environment}
 
-The environment operates on a 500$\times$500 grid with
+The environment operates on a $500 \times 500$ grid with
 $\text{Discrete}(5)$ actions: four cardinal moves and STAY.
 The observation includes agent position $(x,y)$, goal position,
-and terrain heightmap.  Each cell is either traversable (height~0)
-or blocked (buildings, from OSM data).
-
-\textbf{Coordinate convention.}  Public APIs use $(x,y)$ tuples;
-internal arrays are indexed as \texttt{array[y,x]} (row-major).
-Path entries are \texttt{list[tuple[int,int]]} in $(x,y)$ order.
+terrain heightmap, and---when fog of war is enabled---the fog-filtered
+snapshot of the dynamic state.
 
 \textbf{Step semantics.}  Within each step: (1)~the planner
 receives the \emph{current} blocking mask (frozen); (2)~it returns
@@ -212,7 +243,7 @@ This ordering ensures planners see true state---no stale-by-one-step
 artifacts.
 
 \textbf{Collision semantics.}  Static obstacles (buildings, permanent
-NFZs) cause hard collisions (episode termination).  Dynamic obstacles
+NFZs) cause hard collisions.  Dynamic obstacles
 (fire, traffic, smoke) cause soft rejections: the move is blocked,
 the agent stays in place, and a \texttt{RejectReason} enum is logged.
 
@@ -223,59 +254,123 @@ Three dynamics layers operate simultaneously:
 \textbf{Fire CA.}  Wildfire spread follows a cellular automaton on the
 Moore neighborhood (8-connected).  Cell states transition
 $\text{UNBURNED} \to \text{BURNING} \to \text{BURNED\_OUT}$.
-Spread probability is land-use dependent: urban $p=0.06$, forest
-$p=0.15$, road $p=0.03$ (50\% firebreak).  Fire buffer (binary
-dilation, radius~1) blocks UAV movement within one cell of active
-fire.  Smoke is computed via box-blur diffusion; cells with
-smoke~$\geq 0.5$ are blocked.
+When wind speed is zero, spread is isotropic with land-use-dependent
+probabilities (urban $p{=}0.06$, forest $p{=}0.15$, road $p{=}0.03$).
+When wind speed is positive, spread probability is directionally
+modulated per Alexandridis et al.~\cite{Alexandridis2008}:
+cells downwind have increased spread probability while upwind cells
+are suppressed.  Fire buffer (binary dilation, radius~1) blocks
+UAV movement within one cell of active fire.  Smoke is computed via
+box-blur diffusion; cells with smoke~$\geq 0.5$ are blocked.
 
 For corridor interdiction, fire is ignited on the A*-reference path
-using approach ignitions (8--15 Manhattan distance) and a safety-net
-guarantee: if natural spread has not reached the corridor by the
-guarantee step, cells are force-ignited.  Extended burnout
-($\tau = 999{,}999$ steps) ensures corridor fires persist for the
-entire episode.
+with extended burnout ($\tau = 999{,}999$ steps) ensuring corridor
+fires persist for the entire episode.
+Fig.~\ref{fig:firespread} shows fire evolution on the Penteli scenario.
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fire_evolution_4panel.pdf}
+  \caption{Fire CA evolution on Penteli.  (a)~$t{=}1$: corridor fires
+    ignited on the A* reference path block the initial route.
+    (b)~$t{=}50$: fire begins spreading to adjacent cells.
+    (c)~$t{=}200$: fire front expands significantly, corridor fully blocked.
+    (d)~$t{=}1000$: widespread fire with smoke; large areas impassable.
+    Buildings (dark grey), roads (light grey), fire (red-orange),
+    trajectory (blue), planned path (cyan dashed), agent (orange disc).}
+  \label{fig:firespread}
+\end{figure*}
 
 \textbf{Traffic.}  $N$ vehicles patrol road cells using greedy
-pathfinding.  Corridor vehicles (2 of $N$) patrol near the reference
-corridor midpoint.  Vehicle occupancy blocks UAV movement within a
-Manhattan buffer (radius~5).  For the flood-rescue scenario,
-additional roadblock vehicles are frozen at corridor chokepoints.
+pathfinding.  Corridor vehicles patrol near the reference corridor
+midpoint.  Vehicle occupancy blocks UAV movement within a Manhattan
+buffer.
 
 \textbf{Dynamic NFZs.}  Restriction zones model manned-aircraft
-corridors.  They activate at configurable timesteps and block
+corridors, activating at configurable timesteps and blocking
 rectangular regions.
 
-\subsection{Unified Blocking Mask}
+\subsection{Risk Cost Map}\label{sec:riskmap}
 
-A single \texttt{compute\_blocking\_mask()} function merges all
-blocking layers into one boolean grid, used by \emph{both} the
-environment step validation and the guardrail feasibility check.
-This eliminates mask-parity bugs where the planner and environment
-disagree on which cells are blocked.
+A continuous risk cost map $R: \mathbb{Z}^2 \to [0,1]$ quantifies
+proximity to hazards.  Each cell aggregates four risk layers via
+element-wise max:
+\begin{equation}\label{eq:risk}
+  R(x,y) {=} \max\!\Bigl(
+    \bigl[1 {-} \tfrac{d_f}{r_f}\bigr]^{\!+}\!,\;
+    \tfrac{s}{2},\;
+    0.6\bigl[1 {-} \tfrac{d_t}{r_t}\bigr]^{\!+}\!,\;
+    \mathbb{1}_\text{nfz}
+  \Bigr)
+\end{equation}
+where $d_\text{fire}$ and $d_\text{traf}$ are Euclidean distance
+transforms from the fire front and traffic vehicles, $r_f{=}30$
+and $r_t{=}10$ are influence radii (cells), $s \in [0,1]$ is smoke
+concentration, and $[\cdot]^+{=}\max(\cdot,0)$.  Each planner
+modulates its A*-edge cost as $w(e) = 1 + \rho \cdot R(x,y)$
+using a planner-specific risk coefficient $\rho$:
+
+\begin{itemize}
+  \item \textbf{A*}: ignores cost map (static baseline).
+  \item \textbf{Periodic Replan}: risk-averse, $\alpha{=}5.0$.
+  \item \textbf{Aggressive Replan}: risk-tolerant, $\beta{=}0.5$.
+  \item \textbf{Incremental A*}: moderate, $\gamma{=}2.0$.
+  \item \textbf{APF}: risk-modulated repulsion, $\delta{=}3.0$.
+\end{itemize}
+
+This mechanism differentiates planners not just by replanning strategy
+but by hazard sensitivity, enabling comparison of conservative vs.\
+aggressive risk profiles.
+
+\subsection{Fog of War}\label{sec:fog}
+
+Partial observability is modeled via a fog-of-war layer.  When enabled,
+the agent observes the true dynamic state only within a configurable
+sensor radius centered on its current position.  Outside this radius,
+the agent retains a \emph{stale memory} of the last-observed state.
+All planners receive the same fog-filtered observation at the same
+position (contract~FG-1), ensuring fairness under partial observability.
+
+\subsection{Triage Mission}\label{sec:triage}
+
+The triage mission type introduces multi-casualty survival modeling.
+Casualties are placed at configurable locations with initial severity
+scores that decay over time according to a survival model coupled with
+fire proximity.  The UAV must reach casualties and provide service
+(hover for a configurable duration) before their survival probability
+drops below a threshold.  Fire-spawned casualties may appear dynamically
+when fire reaches building cells, creating emergent task allocation
+challenges.
 
 \subsection{Scenarios}\label{sec:scenarios}
 
 Three scenarios use pre-baked OSM tiles from Greek urban areas
-(Table~\ref{tab:scenarios}).  Each scenario is associated with a
-disaster-response mission type, but the core evaluation metric is
-navigation success (reach goal within horizon).
+(Table~\ref{tab:scenarios}, Fig.~\ref{fig:scenarios}).
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{figures/scenario_overview_3panel.pdf}
+  \caption{Three OSM-based scenarios (basemap at $t{=}0$, no dynamics).
+    Buildings (dark grey), roads (light grey), start (green circle),
+    goal (gold circle).  Building density increases left to right
+    (0.18, 0.29, 0.50), reducing available detour routes.}
+  \label{fig:scenarios}
+\end{figure*}
 
 \begin{table}[htbp]
 \centering
 \caption{Scenario configurations.}
 \label{tab:scenarios}
 \footnotesize
+\footnotesize
 \begin{tabular}{lccc}
 \toprule
  & Penteli & Piraeus & Downtown \\
 \midrule
-Mission type & Pharma delivery & Flood rescue & Fire surveillance \\
-Building density & 0.18 & 0.29 & 0.50 \\
+Mission & Pharma & Flood & Fire surv. \\
+Bldg.\ density & 0.18 & 0.29 & 0.50 \\
 Fire ignitions & 2 & 2 & 1 \\
-Corridor closures & 1 & 1 & 1 \\
-Roadblock vehicles & 0 & 1 & 0 \\
-Emergency vehicles & 8 & 8 & 8 \\
+Vehicles (emerg./road) & 8/0 & 8/1 & 8/0 \\
 Max steps & 2000 & 2000 & 2000 \\
 \bottomrule
 \end{tabular}
@@ -287,92 +382,119 @@ Five planners span three algorithmic families (Table~\ref{tab:planners}).
 
 \begin{table}[htbp]
 \centering
-\caption{Planner suite.}
+\caption{Planner suite with risk coefficients.}
 \label{tab:planners}
 \footnotesize
-\begin{tabular}{llll}
+\begin{tabular}{lllll}
 \toprule
-Key & Algorithm & Family & Replanning \\
+Key & Algorithm & Family & Replanning & Risk \\
 \midrule
-\texttt{astar} & A* & Static & Never \\
-\texttt{periodic} & A* + replan & Adaptive & Every $N$ steps \\
-\texttt{aggressive} & A* + replan & Adaptive & On mask change \\
-\texttt{dstar\_lite} & D* Lite & Adaptive & On path blocked \\
-\texttt{apf} & APF & Reactive & Every step \\
+\texttt{astar} & A* & Static & Never & --- \\
+\texttt{periodic} & A* + replan & Adaptive & Every $N$ steps & $\alpha{=}5.0$ \\
+\texttt{aggressive} & A* + replan & Adaptive & On mask $\Delta$ & $\beta{=}0.5$ \\
+\texttt{incr\_astar} & Incr.\ A* & Adaptive & Path blocked & $\gamma{=}2.0$ \\
+\texttt{apf} & APF & Reactive & Every step & $\delta{=}3.0$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \textbf{A*}~\cite{Hart1968} performs a single plan at episode start
-on the 4-connected grid with Manhattan heuristic and max 80{,}000
-node expansions.  It never replans, serving as a static baseline.
+on the 4-connected grid with Manhattan heuristic.  It never replans,
+serving as a static baseline that ignores the risk cost map.
 
 \textbf{Periodic Replan} re-invokes A* every $N$ steps on the
-current blocking mask, adapting to obstacle changes.
+current blocking mask with risk-averse cost weighting ($\alpha{=}5.0$).
 
 \textbf{Aggressive Replan} re-invokes A* whenever the blocking mask
-changes near the current path, providing event-driven adaptation.
+changes near the current path, with risk-tolerant weighting ($\beta{=}0.5$).
 
-\textbf{D*~Lite}~\cite{Koenig2002} uses A* with obstacle-change
+\textbf{Incremental A*}~\cite{Koenig2002} uses A* with obstacle-change
 detection.  When obstacles invalidate the current path, it replans
-from the current position.  This is a simplified variant; the full
-incremental algorithm is not used, as expanding-fire scenarios
-cause mass cell changes that negate incremental advantages.
+from the current position with moderate risk weighting ($\gamma{=}2.0$).
 
 \textbf{APF}~\cite{Khatib1986} computes attractive (goal) and
-repulsive (obstacles within $d_0=8$ cells) potentials.  Gradient
-descent on the combined field yields the next action.  A per-cell
-revisit penalty ($+20.0$) mitigates local minima.  APF falls back
-to A* when stuck.
+repulsive (obstacles within $d_0{=}8$ cells) potentials with
+risk-modulated repulsion ($\delta{=}3.0$).  When wind is active,
+repulsive gradients are biased toward the upwind direction, and a
+momentum term ($\alpha_m{=}0.7$) smooths oscillation.
 
 \subsection{Contract Architecture}
 
-UAVBench enforces 33 contracts across 12 families:
+UAVBench enforces 36 contracts across 15 families:
 \begin{itemize}
   \item \textbf{DC} (Determinism): single RNG source, bit-identical replay.
   \item \textbf{FC} (Fairness): corridor-aligned interdictions,
-    identical observations for all planners.
+    identical observations.
   \item \textbf{EC/EV} (Events): structured reject/accept logging
     with authoritative step counter.
   \item \textbf{MP} (Mask Parity): one blocking mask function
     used everywhere.
-  \item \textbf{FD} (Fire Dynamics): isotropic spread, no wind,
-    deterministic CA.
+  \item \textbf{FD/WD} (Fire/Wind): directional spread, wind determinism.
+  \item \textbf{FG} (Fog): consistent fog-filtered observations.
+  \item \textbf{TR} (Triage): survival decay correctness.
   \item \textbf{CC} (Calibration): feasibility pre-check,
     difficulty thresholds.
   \item \textbf{SC} (Sanity): adaptive $>$ static in dynamic scenarios.
+  \item \textbf{PC} (Planner): legal motion, path-progress tracking.
+  \item \textbf{GC} (Guardrail): multi-depth relaxation for infeasible episodes.
+  \item \textbf{VC/MC} (Visual/Mission): planned-path rendering, HUD, mission story.
 \end{itemize}
 
-Each contract has an associated test in the \texttt{pytest} suite.
-The full specification covers 33 contracts; see the supplementary
-material for details.
+Each contract has an associated test in the \texttt{pytest} suite
+(182~tests total, zero failures).  Table~\ref{tab:contracts}
+summarizes the contract families.
+
+\begin{table}[htbp]
+\centering
+\caption{Contract families (36 contracts, 15 families, 182 tests).}
+\label{tab:contracts}
+\footnotesize
+\begin{tabular}{lrl}
+\toprule
+Family & \# & Key invariant \\
+\midrule
+DC & 2 & Bit-identical replay from same seed \\
+FC & 4 & Corridor interdictions, obs.\ equality \\
+EC/EV & 3 & Structured event logging, step counter \\
+GC & 4 & Multi-depth feasibility relaxation \\
+MP & 1 & Single blocking mask everywhere \\
+FD/WD & 4 & Fire CA determinism, wind modulation \\
+FG & 2 & Fog-filtered observation consistency \\
+TR & 2 & Triage survival decay correctness \\
+CC & 4 & Feasibility pre-check, difficulty thresholds \\
+SC & 3 & Sanity: adaptive $>$ static in fire \\
+PC & 4 & Legal motion, path-progress tracking \\
+VC/MC & 3 & Visual truth, mission story \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % ============================================================================
 \section{Experimental Setup}\label{sec:experiments}
 
 \subsection{Protocol}
 
-Each planner is evaluated on all three scenarios with 30 seeds
-(seed base~42), yielding $5 \times 3 \times 30 = 450$ episodes.
+Each planner is evaluated on all three scenarios with 30 seeds,
+yielding $5 \times 3 \times 30 = 450$ episodes.
 Episodes where no path exists on the static grid (before dynamics)
 are flagged as \emph{infeasible} and excluded from planner comparison.
+Infeasible episodes are uniform across planners (7 per planner,
+7.8\% exclusion rate), confirming fairness contract~FC-2.
 
 \subsection{Ablation Studies}
 
-To isolate the contribution of each dynamics layer, we run
-$5 \times 3 \times 4 \times 10 = 600$ ablation episodes with
-four variants: \texttt{fire\_only}, \texttt{traffic\_only},
-\texttt{nfz\_only}, and \texttt{all\_dynamics} (10 seeds each).
+Three ablation studies isolate individual design factors:
+\emph{(i)}~dynamics isolation (fire/traffic/NFZ/all, 600~episodes),
+\emph{(ii)}~replan frequency sweep (cadences 3--48, 150~episodes),
+\emph{(iii)}~fire intensity sweep (1--8~ignition points, 250~episodes).
 
 \subsection{Metrics}
 
 \begin{itemize}
   \item \textbf{Success rate} (SR): fraction of feasible episodes
     where the agent reaches the goal within the horizon.
-  \item \textbf{Path length}: number of cells traversed (successful
-    episodes only).
-  \item \textbf{Executed steps}: total timesteps including
-    rejections and STAY.
+  \item \textbf{Path length}: cells traversed (successful episodes only).
+  \item \textbf{Executed steps}: total timesteps including rejections.
   \item \textbf{Replans}: number of path recomputations.
   \item \textbf{Computation time}: wall-clock time per episode.
 \end{itemize}
@@ -393,13 +515,14 @@ $\tau \times$ the best path length~\cite{Dolan2002}.
 
 Table~\ref{tab:main} summarizes results across all 450 episodes.
 Of 90 episodes per planner, 7 (7.8\%) are infeasible (uniformly
-across planners, confirming FC-2).
+across planners, confirming FC-2), yielding 83 feasible episodes
+per planner.
 
 \begin{table}[htbp]
 \centering
 \caption{Overall planner comparison (450 episodes, 30 seeds $\times$ 3 scenarios).
   SR\textsubscript{all} includes infeasible episodes;
-  SR\textsubscript{feas} excludes them.}
+  SR\textsubscript{feas} excludes them.  Path length is for successful episodes only.}
 \label{tab:main}
 \footnotesize
 \begin{tabular}{lcccccc}
@@ -408,64 +531,74 @@ Planner & SR\textsubscript{all} & SR\textsubscript{feas}
   & Path & Steps & Replans & Time \\
   & (\%) & (\%) & (cells) & & & (s) \\
 \midrule
-A*         &  0.0 &  0.0 & ---  & 1845 &  0 & 36.5 \\
-Periodic   & 87.8 & 95.2 &  361 &  793 & 46 & 20.3 \\
-Aggressive & 87.8 & 95.2 &  361 &  782 & 95 & 21.4 \\
-D* Lite    & 87.8 & 95.2 &  361 &  778 & 22 & 20.8 \\
-APF        & 85.6 & 92.8 &  545 &  935 & 19 & 24.4 \\
+A*           &  0.0 &   0.0 & ---  & 1845 &  0   & 102 \\
+Periodic     & 88.9 &  96.4 &  376 &  666 & 47.1 &  41 \\
+Aggressive   & 87.8 &  95.2 &  364 &  709 & 89.9 &  50 \\
+Incr.\ A*   & 91.1 &  98.8 &  378 &  540 &  2.6 &  34 \\
+APF          & 80.0 &  86.7 &  515 &  974 & 18.6 &  64 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Fig.~\ref{fig:success} visualizes the success rate gap.
 A* achieves 0\% success: fire corridor closures block the reference
-path, and the static planner cannot deviate.  All four adaptive
-planners achieve 87.8\% overall success (95.2\% on feasible
-episodes).  The remaining 4.8\% failures occur when fire and
-traffic simultaneously block all alternative routes.
+path, and the static planner cannot deviate (Fig.~\ref{fig:barsr}).
+All four adaptive planners exceed 86\% on feasible episodes, with
+Incremental~A* leading at 98.8\%.  The 1.2\% failure rate for
+Incremental~A* occurs when fire and traffic simultaneously block
+all alternatives.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{figures/bar_success_rate.pdf}
-  \caption{Success rate by planner across all scenarios.
-    Error bars show standard deviation over 30 seeds.}
-  \label{fig:success}
+  \caption{Success rate per planner and scenario.  A* fails
+    uniformly; adaptive planners degrade with building density
+    (Penteli$\to$Downtown).  Error bars: binomial 95\% CI.}
+  \label{fig:barsr}
 \end{figure}
 
-Periodic Replan, Aggressive Replan, and D*~Lite produce identical
-path lengths (mean~361 cells) because they all use A* internally
-and converge to the same shortest feasible path.  APF paths are
-51\% longer (mean~545 cells, $p < 0.001$ Wilcoxon) due to
-gradient-descent suboptimality and local-minima recovery detours.
+\textbf{Incremental A* dominance.}  Incremental~A* achieves the
+highest success rate (98.8\% feasible) while requiring the fewest
+replans (2.6 vs.\ 47--90 for other adaptive planners) and the
+lowest computation time (34s vs.\ 41--64s).  It replans only when
+the current path is actually blocked, avoiding the overhead of
+speculative replanning.  Fig.~\ref{fig:planners} compares all five
+planners on the same episode.
 
-\textbf{Replan efficiency.}  D*~Lite requires the fewest replans
-(22 vs.\ 46 for Periodic and 95 for Aggressive), as it only replans
-when the current path is actually blocked.  Aggressive Replan
-triggers on any mask change near the path, leading to higher replan
-counts without success-rate improvement.
-
-\textbf{Path length distribution.}  Fig.~\ref{fig:boxplot} shows
-the path length distribution for successful episodes.  The three
-A*-based adaptive planners have nearly identical distributions
-(median~$\approx$320 cells), while APF exhibits higher variance and
-a heavier right tail due to local-minima detours.
-
-\begin{figure}[htbp]
+\begin{figure*}[htbp]
   \centering
-  \includegraphics[width=\columnwidth]{figures/boxplot_path_length.pdf}
-  \caption{Path length distribution for successful episodes.
-    APF produces longer, more variable paths.}
-  \label{fig:boxplot}
-\end{figure}
+  \includegraphics[width=\textwidth]{figures/planner_comparison_5panel.pdf}
+  \caption{Five planners on the same Penteli episode (seed~42).
+    A* (leftmost) is blocked by corridor fire and times out.
+    Periodic and Aggressive Replan find detours via scheduled/reactive
+    replanning.  Incremental~A* (second from right) reaches the goal
+    with the fewest replans.
+    APF (rightmost) takes a longer, more erratic path due to
+    potential-field oscillations near fire fronts.
+    Trajectories (blue), planned paths (cyan dashed),
+    agent (orange disc), fire (red-orange).}
+  \label{fig:planners}
+\end{figure*}
+
+\textbf{APF limitations.}  APF achieves the lowest adaptive success
+rate (86.7\% feasible) and produces paths 37\% longer than
+graph-based planners (515 vs.\ 376 cells, $p < 0.001$ Wilcoxon).
+Its reactive gradient-descent approach creates suboptimal paths
+and is more susceptible to local minima under combined dynamics.
+
+\textbf{Computation breakdown.}  For Incremental~A* (mean 34s per
+episode), approximately 60\% is spent in \texttt{env.step()}
+(blocking mask computation and dynamics stepping on the
+$500{\times}500$ grid), 25\% in A* pathfinding
+(2.6~replans $\times$ up to 80{,}000 node expansions),
+and 15\% in metrics and overhead.
 
 \subsection{Per-Scenario Analysis}
 
 Table~\ref{tab:perscenario} shows per-scenario results.  Penteli
-(low density, 0\% infeasible) yields 100\% adaptive success.
-Downtown (high density, 13\% infeasible) yields 77\% adaptive
-success due to limited alternative routes in dense urban grids.
-APF matches other adaptive planners on Penteli but drops to 77\%
-on Downtown and 80\% on Piraeus.
+(low density, 0\% infeasible) yields 100\% adaptive success for
+all graph-based planners (97\% for APF).  Downtown
+(high density, 13\% infeasible) is the hardest, with
+Incremental~A* at 87\% and APF dropping to 67\%.
 
 \begin{table}[htbp]
 \centering
@@ -473,177 +606,218 @@ on Downtown and 80\% on Piraeus.
 Infeasible episodes: Penteli~0\%, Piraeus~10\%, Downtown~13\%.}
 \label{tab:perscenario}
 \footnotesize
-\begin{tabular}{lccc}
+\begin{tabular}{lcccc}
 \toprule
 Planner & Penteli & Piraeus & Downtown \\
 \midrule
-A*         &   0 &   0 &  0 \\
-Periodic   & 100 &  87 & 77 \\
-Aggressive & 100 &  87 & 77 \\
-D* Lite    & 100 &  87 & 77 \\
-APF        & 100 &  80 & 77 \\
+A*           &   0 &   0 &  0 \\
+Periodic     & 100 &  87 & 80 \\
+Aggressive   & 100 &  87 & 77 \\
+Incr.\ A*   & 100 &  87 & 87 \\
+APF          &  97 &  77 & 67 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+Building density correlates with difficulty (Fig.~\ref{fig:heatmap}):
+Penteli (0.18) has 0\% infeasible episodes and near-perfect adaptive
+success, while Downtown (0.50) has 13\% infeasible episodes and
+reduced adaptive success due to fewer alternative routes.
+
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{figures/heatmap_success.pdf}
-  \caption{Success rate heatmap by planner and scenario.  The
-    static baseline (A*) fails uniformly; adaptive planners degrade
-    with increasing building density (left to right).}
+  \caption{Success rate heatmap (planner $\times$ scenario).
+    Building density increases left to right.
+    All adaptive planners achieve 100\% on Penteli;
+    Downtown degrades all planners except A* (already at 0\%).}
   \label{fig:heatmap}
 \end{figure}
 
 \subsection{Statistical Analysis}
 
 \textbf{Effect sizes.}  Cliff's delta between A* and each adaptive
-planner is $|d| = 0.88$ (large effect).  Between adaptive planners,
-$d \approx 0$ (no practical difference in success rate).
+planner ranges from $|d| = 0.80$ (APF) to $|d| = 0.91$
+(Incremental~A*), all classified as large effects.
+Between adaptive planners, Incremental~A* vs.\ APF yields
+$d = +0.11$ (small), while graph-based adaptive planners are
+negligible ($|d| < 0.03$).
 
-\textbf{Significance.}  Wilcoxon signed-rank tests on path length
-show APF is significantly different from all other planners
-($p < 0.001$, Bonferroni corrected).  The three A*-based adaptive
-planners are statistically indistinguishable on path length ($p = \text{NaN}$,
-identical distributions).
+\textbf{Significance.}  The Friedman test on success rate across
+all (scenario, seed) pairs is significant.  Wilcoxon pairwise
+post-hoc tests (Bonferroni corrected) show:
+A* vs.\ all adaptive planners $p < 0.001$;
+Incremental~A* vs.\ APF $p = 0.016$;
+no significant difference among the three graph-based adaptive
+planners ($p > 0.11$).
 
 \textbf{IQM.}  The IQM success rate with 95\% bootstrap CI is
-100\% [100, 100] for all adaptive planners and 0\% [0, 0] for A*,
-reflecting the bimodal nature of success (either the planner
-adapts or it does not).
+100\% [100, 100] for all graph-based adaptive planners,
+100\% [71.1, 100] for APF, and 0\% [0, 0] for A*.
+The wider CI for APF reflects its higher variance across
+scenarios.
+
+\subsection{Replanning Behavior}
+
+Fig.~\ref{fig:timeline} compares episode timelines across planners
+on the same (scenario, seed).  A* runs the full 2000-step horizon
+without replanning.  Aggressive Replan triggers the most replans
+(mean~90) because it responds to any obstacle change in the path
+neighborhood.  Periodic Replan triggers fewer (mean~47) at fixed
+intervals.  Incremental~A* is the most conservative (mean~2.6),
+replanning only when its current path is actually blocked.
+Despite 35$\times$ fewer replans than Aggressive Replan,
+Incremental~A* achieves the highest success rate, indicating that
+replan \emph{precision} matters more than replan \emph{frequency}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/timeline_comparison.pdf}
+  \caption{Episode timeline for Penteli (seed~42).  Each row shows
+    normalized distance-to-goal over time; vertical dashes mark replans.
+    Bottom panel: fire cell count growth.
+    Periodic, Aggressive, and Incremental~A* reach the goal in $\sim$521
+    steps; A* times out at step~1525 (blocked by corridor fire);
+    APF times out at step~1335.}
+  \label{fig:timeline}
+\end{figure}
+
+\subsection{Performance Profiles}
+
+Fig.~\ref{fig:perfprofile} shows performance profiles on
+executed steps.  At $\tau = 1.0$, Incremental~A* solves the
+highest fraction of episodes optimally.  APF requires
+$\tau \approx 1.5$ to reach comparable fractions,
+confirming its path-length overhead.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/performance_profiles.pdf}
+  \caption{Performance profiles on executed steps.  Higher and
+    more to the left is better.  Incremental~A* dominates.}
+  \label{fig:perfprofile}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/critical_snapshots.pdf}
+  \caption{Critical moments for Aggressive Replan (Penteli, seed~42).
+    \textbf{Left:} initial state at step~1.
+    \textbf{Center:} mask change at step~2 triggers first replan.
+    \textbf{Right:} agent reaches goal at step~520 (SUCCESS).}
+  \label{fig:critical}
+\end{figure}
 
 \subsection{Ablation: Dynamics Isolation}
 
-Table~\ref{tab:ablation} isolates the effect of each dynamics
-layer (10 seeds per cell, 600 episodes total).
+Table~\ref{tab:ablation} isolates each dynamics layer
+(10 seeds $\times$ 3 scenarios = 30 episodes per cell).
+Fire is the primary differentiator: A*~drops to 0\% while
+adaptive planners maintain 97\%.  Traffic alone reduces A*
+to 13\% but has no effect on adaptive planners.  NFZs alone
+are insufficient to disrupt any planner (all 97\%).
+APF degrades most under combined dynamics (83\%) and
+fire-only (90\%), reflecting its susceptibility to
+local-minima traps near expanding fire fronts.
+
+The replan-frequency sweep (cadences 3--48) shows success
+rate is robust at 96.7\% for cadences $\leq$24,
+dropping slightly to 93.3\% at cadence~48 where the
+planner misses fire spread between infrequent replans.
+Mean replans scale inversely: 122 (cadence~3), 60 (6),
+30 (12), 15 (24), 8 (48).
+
+The fire-intensity sweep (1--8 ignition points) confirms
+adaptive planners maintain 100\% across all intensities.
+APF drops to 90\% at 4 and 8 ignitions where multiple
+fire fronts create inescapable potential wells.
+A* remains at 0\% regardless of ignition count.
 
 \begin{table}[htbp]
 \centering
-\caption{Ablation: success rate (\%) by dynamics layer.}
+\caption{Ablation: success rate (\%) by dynamics layer
+  (10 seeds, 3 scenarios).  Values are averaged across scenarios.}
 \label{tab:ablation}
 \footnotesize
 \begin{tabular}{lcccc}
 \toprule
 Planner & Fire & Traffic & NFZ & All \\
 \midrule
-A*         &  0 & 13 & 97 &  0 \\
-Periodic   & 97 & 97 & 97 & 97 \\
-Aggressive & 97 & 97 & 97 & 97 \\
-D* Lite    & 97 & 97 & 97 & 97 \\
-APF        & 90 & 97 & 97 & 83 \\
+A*           &   0 &  13 & 97 &   0 \\
+Periodic     &  97 &  97 & 97 &  97 \\
+Aggressive   &  97 &  97 & 97 &  97 \\
+Incr.\ A*   &  97 &  97 & 97 &  97 \\
+APF          &  90 &  97 & 97 &  83 \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\textbf{Fire is the dominant obstacle.}  With fire only, A* drops
-to 0\%---identical to the all-dynamics condition.  Traffic alone
-allows A* to succeed in 13\% of cases (episodes where vehicles do
-not block the reference path).  NFZ alone has no effect (97\% for
-all planners, matching the infeasibility-excluded baseline),
-because dynamic NFZ corridors do not intersect the A* reference
-path in the current configurations.
-
-\textbf{APF degrades under combined dynamics.}  APF drops from
-90\% (fire only) and 97\% (traffic only) to 83\% under all
-dynamics, suggesting that the gradient-descent approach is more
-sensitive to the combinatorial blocking created by simultaneous
-fire and traffic.
-
-\subsection{Replanning Behavior}
-
-Fig.~\ref{fig:replanning} compares replanning patterns.
-Aggressive Replan triggers the most replans (mean~95) because it
-responds to any obstacle change in the path neighborhood.
-Periodic Replan triggers fewer (mean~46) at fixed intervals.
-D*~Lite is the most conservative (mean~22), replanning only when
-its current path is actually blocked.  Despite these differences,
-all three achieve the same success rate, indicating that replan
-\emph{frequency} does not improve outcomes once the planner can
-replan at all.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/replanning_comparison.pdf}
-  \caption{Replanning counts across adaptive planners.
-    Higher replan frequency does not correlate with higher success.}
-  \label{fig:replanning}
-\end{figure}
-
-\subsection{Performance Profiles}
-
-Fig.~\ref{fig:perfprofile} shows performance profiles on
-path length.  At $\tau = 1.0$ (optimal path), all A*-based
-adaptive planners solve $\sim$95\% of feasible episodes.
-APF requires $\tau \approx 1.5$ to reach the same fraction,
-confirming its path-length overhead.  A* never reaches the goal,
-so its profile remains at 0\%.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/performance_profiles.pdf}
-  \caption{Performance profiles on path length. Higher and more to the
-    left is better.}
-  \label{fig:perfprofile}
-\end{figure}
 
 % ============================================================================
 \section{Discussion}\label{sec:discussion}
 
 \textbf{The replanning gap.}  The central finding is a binary
 division: planners that replan succeed; the static baseline fails
-entirely.  This is by design---corridor interdictions ensure that
-the initial A* path becomes infeasible, forcing adaptation.  The
-interesting finding is that \emph{how} a planner replans matters
-less than \emph{whether} it does.  Periodic, Aggressive, and D*~Lite
-achieve identical success rates and path lengths despite very
-different replanning strategies (time-triggered, event-triggered,
-and path-blocked-triggered).
+entirely.  The dynamics isolation ablation confirms fire as the
+primary cause (A* 0\% vs.\ adaptive 97\%), while NFZs alone
+leave all planners at 97\%.  The key insight is that
+\emph{replan precision} (Incremental~A* with 2.6 replans) outperforms
+\emph{replan frequency} (Aggressive Replan with 90 replans).
 
-\textbf{D*~Lite replan efficiency.}  D*~Lite achieves the same
-success rate with fewer replans (22 vs.\ 46--95) because it only
-replans when the current path is actually obstructed, not when
-nearby cells change.  In expanding-fire scenarios, this advantage
-is partially offset by the mass cell changes that force full
-replanning anyway.  This aligns with Koenig and
-Likhachev's~\cite{Koenig2002} observation that incremental search
-is most effective when changes are local.
+\textbf{Incremental A* efficiency.}  Incremental~A* achieves the
+highest success rate (98.8\% feasible) with the fewest replans and
+lowest computation time.  It replans only when the current path
+is actually obstructed, avoiding speculative overhead.  In
+expanding-fire scenarios, its advantage is partially offset by mass
+cell changes, but the moderate risk coefficient ($\gamma{=}2.0$)
+helps it select paths that maintain distance from fire fronts.
 
-\textbf{APF limitations.}  APF's reactive nature (gradient descent
-per step) avoids explicit replanning but produces suboptimal paths
-(51\% longer).  Under combined dynamics, its success rate drops
-further (83\% vs.\ 97\% for graph-based planners), likely because
-simultaneous fire and traffic create complex potential landscapes
-with more local minima.
+\textbf{Risk coefficient differentiation.}  The per-planner risk
+coefficients create measurable behavioral differences.  Periodic
+Replan ($\alpha{=}5.0$, risk-averse) produces slightly longer but
+safer paths, while Aggressive Replan ($\beta{=}0.5$, risk-tolerant)
+takes shorter but riskier paths.  APF's high risk modulation
+($\delta{=}3.0$) amplifies repulsive potentials near hazards,
+contributing to longer detours and local-minima traps.
+The fire-intensity ablation quantifies this: APF drops to 90\%
+at 4+ ignitions while graph-based planners maintain 100\%,
+confirming that potential-field methods are structurally
+disadvantaged in multi-front fire environments.
 
-\textbf{Infeasible episodes.}  Dense urban maps (Downtown, 50\%
-buildings) produce 13\% structurally infeasible episodes where
-no path exists even on the static grid.  Transparent reporting of
-infeasibility rates, as recommended by the calibration
-contract~(CC-4), prevents these from inflating failure rates
-attributed to planner performance.
+\textbf{Building density as difficulty.}  The three scenarios span
+building densities 0.18--0.50, and we observe a clear correlation
+with both infeasibility rate (0\%--13\%) and adaptive success
+degradation.  Dense urban grids reduce alternative routes, making
+it harder for planners to find detours when corridors are blocked.
 
-\textbf{Building density and feasibility.}  The three scenarios
-span a range of building densities (0.18--0.50), and we observe
-a clear correlation: Penteli (0.18) has 0\% infeasible episodes
-and 100\% adaptive success, while Downtown (0.50) has 13\%
-infeasible episodes and only 77\% adaptive success.  Dense urban
-grids reduce the number of alternative routes, making it harder
-for adaptive planners to find detours when the primary corridor
-is blocked.  This suggests that building density is a key
-difficulty parameter for future scenario design.
+\textbf{Fog of war and triage.}  The fog-of-war layer and triage
+mission are architectural contributions verified by contract tests
+(FG-1, TR-1) but are not the focus of the main experimental
+comparison.  Their primary purpose is to enable future studies on
+partial-observability planning and multi-objective mission execution
+within the same benchmark framework.
 
-\textbf{Limitations and future work.}  UAVBench currently operates
-on 2D grids without altitude.  The fire CA is a simplified model
-(isotropic, no wind, no terrain slope) that does not capture all
-real wildfire dynamics~\cite{Alexandridis2008}.  The five planners
-represent classical approaches; learning-based planners (RL,
-imitation learning) are a natural extension, as the framework's
-Gymnasium interface~\cite{Brockman2016} enables direct integration.
-Additional future directions include: \emph{(i)}~altitude as an
-action dimension (2.5D planning); \emph{(ii)}~multi-agent
-coordination; \emph{(iii)}~wind-driven fire spread for harder
-scenarios; and \emph{(iv)}~real-time rendering for
-human-in-the-loop studies.
+\textbf{Practical implications.}  For real-world UAV deployment,
+our results suggest that simple periodic replanning (every 6 steps)
+is sufficient when computation is cheap---success rate is 96.7\%
+across all cadences $\leq$24.  However, Incremental~A*'s
+demand-driven replanning is preferable under resource constraints:
+2.6 vs.\ 47 replans, 34s vs.\ 41s, with higher success.
+
+\textbf{Risk coefficient sensitivity.}  The coefficients
+$\alpha{=}5.0$, $\beta{=}0.5$, $\gamma{=}2.0$, $\delta{=}3.0$
+were selected to span a wide risk-tolerance spectrum (from
+risk-averse to risk-tolerant) rather than to optimize any single
+planner's performance.  Future work could tune these via Bayesian
+optimization or meta-learning across scenario distributions.
+
+\textbf{Limitations and future work.}  UAVBench operates on 2D
+grids without altitude.  The fire CA, while wind-aware, does not
+model terrain slope effects~\cite{Giannino2025}.  The five planners
+represent classical approaches; learning-based planners are a natural
+extension via the Gymnasium interface~\cite{Towers2025}.  Future
+directions include: \emph{(i)}~altitude as an action dimension;
+\emph{(ii)}~multi-agent coordination;
+\emph{(iii)}~energy-constrained planning using the built-in energy
+budget system; and \emph{(iv)}~full fog-of-war experimental campaigns.
 
 % ============================================================================
 \section{Conclusion}\label{sec:conclusion}
@@ -651,13 +825,14 @@ human-in-the-loop studies.
 UAVBench provides a reproducible, contract-verified benchmark for
 UAV path planning in dynamic urban environments.  Our evaluation
 of five planners across three OSM-based scenarios demonstrates
-that replanning capability is necessary and sufficient for
-navigating fire-affected terrain, while the specific replanning
-strategy has limited impact on success rate.  The framework's
-deterministic design, statistical rigor, and open-source release
-lower the barrier for fair comparison of future planning
-algorithms---including learning-based approaches---in realistic
-disaster-response settings.
+that (1)~replanning capability is necessary for navigating
+fire-affected terrain, (2)~replan \emph{precision} outperforms
+replan \emph{frequency}---Incremental~A* achieves 98.8\% feasible
+success with only 2.6 replans per episode, and (3)~per-planner risk
+coefficients create measurable behavioral differentiation beyond
+replanning strategy alone.  The framework's 36 contracts across
+15~families, wind-driven fire model, fog of war, and triage mission
+provide a rich evaluation substrate for future planning algorithms.
 
 % ============================================================================
 \section*{Acknowledgments}
