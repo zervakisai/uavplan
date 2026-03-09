@@ -94,9 +94,9 @@ class ScenarioConfig:
     wind_speed: float = 0.0              # 0 = isotropic, >0 = directional fire spread
     wind_direction_deg: float = 0.0      # degrees, 0=East, 90=North
 
-    # Fog of War (Paper #1: partial observability)
-    # FG-1: fog filter is planner-agnostic
-    enable_fog_of_war: bool = False
+    # Limited Visibility (Paper #1: partial observability)
+    # LV-1: visibility filter is planner-agnostic
+    enable_limited_visibility: bool = False
     sensor_radius: int = 50
 
     # Energy budget (Paper #1: resource constraint)

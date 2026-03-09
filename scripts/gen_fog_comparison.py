@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate fog-of-war split-screen comparison GIF.
+"""Generate limited-visibility split-screen comparison GIF.
 
 Shows side-by-side: what the planner sees (fog-filtered) vs ground truth.
 
@@ -19,7 +19,7 @@ import numpy as np
 
 from uavbench.benchmark.runner import run_episode
 from uavbench.blocking import compute_risk_cost_map
-from uavbench.dynamics.fog_of_war import FogOfWar
+from uavbench.dynamics.limited_visibility import LimitedVisibility
 from uavbench.scenarios.loader import load_scenario
 from uavbench.visualization.renderer import Renderer
 
@@ -46,7 +46,7 @@ def main() -> None:
     renderer = Renderer(config, mode="ops_full")
 
     # Force fog for this visualization
-    fog = FogOfWar((config.map_size, config.map_size), config.sensor_radius or 50)
+    fog = LimitedVisibility((config.map_size, config.map_size), config.sensor_radius or 50)
 
     frames: list[np.ndarray] = []
     frame_count = 0

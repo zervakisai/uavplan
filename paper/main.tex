@@ -27,7 +27,7 @@
 
 \title{UAVBench: A Contract-Verified Benchmark for UAV Path Planning\\
        in Dynamic Urban Environments with Wind-Driven Fire,\\
-       Fog of War, and Risk-Aware Replanning}
+       Limited Visibility, and Risk-Aware Replanning}
 
 \author{%
   \IEEEauthorblockN{Konstantinos~Zervakis\IEEEauthorrefmark{1}
@@ -50,10 +50,10 @@ vehicles, and no-fly zone corridors.  A novel \emph{risk cost map}
 translates proximity to hazards into continuous planner costs, enabling
 per-planner risk coefficients that differentiate conservative from
 aggressive strategies.  Partial observability is modeled via a
-\emph{fog-of-war} layer with stale-memory semantics, and a
+\emph{limited-visibility} layer with stale-memory semantics, and a
 \emph{triage mission} couples multi-casualty survival decay with
 fire proximity.  A contract-based architecture enforces 36 invariants
-across 15 families---including wind determinism, fog consistency, and
+across 15 families---including wind determinism, visibility consistency, and
 triage correctness---guaranteeing deterministic replay, planner fairness,
 and mask parity.  We evaluate five planners spanning three
 families---static (A*), adaptive (Periodic Replan, Aggressive Replan,
@@ -61,7 +61,7 @@ Incremental~A*), and reactive (APF)---across 450 episodes with 30 seeds.
 On feasible episodes, Incremental~A* achieves 98.8\% success
 (Cliff's $|d|{=}0.99$ vs.\ A*), while APF trails at 86.7\%.
 Ablation studies isolating each dynamics layer confirm fire spread as
-the dominant obstacle source; a fog-of-war ablation (300~episodes)
+the dominant obstacle source; a limited-visibility ablation (300~episodes)
 shows partial observability has an asymmetric effect---graph-based
 planners degrade slightly ($-3.3$~pp) while APF improves
 ($+6.7$~pp).  All experiments are bit-identical under the same
@@ -70,7 +70,7 @@ seed triple.
 
 \begin{IEEEkeywords}
 UAV path planning, benchmarking, dynamic environments, fire spread,
-fog of war, risk-aware planning, reproducibility
+limited visibility, risk-aware planning, reproducibility
 \end{IEEEkeywords}
 
 % ============================================================================
@@ -112,7 +112,7 @@ four design principles:
     corridor independent of which planner is under evaluation.
 
   \item \textbf{Hazard-coupled planning.}  Wind-driven
-    fire~\cite{Alexandridis2008}, continuous risk cost maps, fog of war,
+    fire~\cite{Alexandridis2008}, continuous risk cost maps, limited visibility,
     and triage missions create a rich hazard landscape that
     differentiates planners by their risk tolerance, not just their
     replanning frequency.
@@ -138,13 +138,13 @@ APF~\cite{Khatib1986}, and two A*-based replanning variants.
     contracts across 15 families ensuring determinism, fairness,
     and evaluation integrity.
   \item Wind-driven fire spread (Alexandridis et al.~\cite{Alexandridis2008}),
-    per-planner risk cost functions, fog of war with stale-memory semantics,
+    per-planner risk cost functions, limited visibility with stale-memory semantics,
     and a triage mission with survival decay.
   \item Three OSM-based urban scenarios with physically motivated
     dynamic obstacles (fire~CA, traffic, NFZs).
   \item A 450-episode study of five planners with
     rigorous statistical analysis, plus ablation studies
-    isolating dynamics layers and fog of war (300~episodes).
+    isolating dynamics layers and limited visibility (300~episodes).
 \end{itemize}
 
 % ============================================================================
@@ -237,7 +237,7 @@ and dynamics stepping;
 The environment operates on a $500 \times 500$ grid with
 $\text{Discrete}(5)$ actions: four cardinal moves and STAY.
 The observation includes agent position $(x,y)$, goal position,
-terrain heightmap, and---when fog of war is enabled---the fog-filtered
+terrain heightmap, and---when limited visibility is enabled---the fog-filtered
 snapshot of the dynamic state.
 
 \textbf{Step semantics.}  Within each step: (1)~the planner
@@ -328,14 +328,14 @@ This mechanism differentiates planners not just by replanning strategy
 but by hazard sensitivity, enabling comparison of conservative vs.\
 aggressive risk profiles.
 
-\subsection{Fog of War}\label{sec:fog}
+\subsection{Limited Visibility}\label{sec:fog}
 
-Partial observability is modeled via a fog-of-war layer.  When enabled,
+Partial observability is modeled via a limited-visibility layer.  When enabled,
 the agent observes the true dynamic state only within a configurable
 sensor radius centered on its current position.  Outside this radius,
 the agent retains a \emph{stale memory} of the last-observed state.
 All planners receive the same fog-filtered observation at the same
-position (contract~FG-1), ensuring fairness under partial observability.
+position (contract~LV-1), ensuring fairness under partial observability.
 
 \subsection{Triage Mission}\label{sec:triage}
 
@@ -436,7 +436,7 @@ UAVBench enforces 36 contracts across 15 families:
   \item \textbf{MP} (Mask Parity): one blocking mask function
     used everywhere.
   \item \textbf{FD/WD} (Fire/Wind): directional spread, wind determinism.
-  \item \textbf{FG} (Fog): consistent fog-filtered observations.
+  \item \textbf{LV} (Limited Visibility): consistent visibility-filtered observations.
   \item \textbf{TR} (Triage): survival decay correctness.
   \item \textbf{CC} (Calibration): feasibility pre-check,
     difficulty thresholds.
@@ -465,7 +465,7 @@ EC/EV & 3 & Structured event logging, step counter \\
 GC & 4 & Multi-depth feasibility relaxation \\
 MP & 1 & Single blocking mask everywhere \\
 FD/WD & 4 & Fire CA determinism, wind modulation \\
-FG & 2 & Fog-filtered observation consistency \\
+LV & 2 & Visibility-filtered observation consistency \\
 TR & 2 & Triage survival decay correctness \\
 CC & 4 & Feasibility pre-check, difficulty thresholds \\
 SC & 3 & Sanity: adaptive $>$ static in fire \\
@@ -493,7 +493,7 @@ Four ablation studies isolate individual design factors:
 \emph{(i)}~dynamics isolation (fire/traffic/NFZ/all, 600~episodes),
 \emph{(ii)}~replan frequency sweep (cadences 3--48, 150~episodes),
 \emph{(iii)}~fire intensity sweep (1--8~ignition points, 250~episodes),
-\emph{(iv)}~fog of war (fog-ON vs.\ fog-OFF, 300~episodes).
+\emph{(iv)}~limited visibility (fog-ON vs.\ fog-OFF, 300~episodes).
 
 \subsection{Metrics}
 
@@ -748,7 +748,7 @@ APF          &  90 &  97 & 97 &  83 \\
 \end{tabular}
 \end{table}
 
-\subsection{Ablation: Fog of War}\label{sec:fogablation}
+\subsection{Ablation: Limited Visibility}\label{sec:fogablation}
 
 Table~\ref{tab:fog} compares fog-ON (sensor radius~50, stale memory
 outside) vs.\ fog-OFF (full visibility) across 300~episodes
@@ -757,7 +757,7 @@ outside) vs.\ fog-OFF (full visibility) across 300~episodes
 
 \begin{table}[htbp]
 \centering
-\caption{Fog-of-war ablation: success rate (\%) and mean replans.
+\caption{Limited-visibility ablation: success rate (\%) and mean replans.
   $\Delta$SR is fog-ON minus fog-OFF.}
 \label{tab:fog}
 \footnotesize
@@ -831,7 +831,7 @@ with both infeasibility rate (0\%--13\%) and adaptive success
 degradation.  Dense urban grids reduce alternative routes, making
 it harder for planners to find detours when corridors are blocked.
 
-\textbf{Fog of war.}  The fog ablation (Table~\ref{tab:fog}) reveals
+\textbf{Limited visibility.}  The fog ablation (Table~\ref{tab:fog}) reveals
 that partial observability has an asymmetric effect: graph-based
 planners degrade slightly ($-3.3$~pp) while APF improves
 ($+6.7$~pp).  This is consistent with the POMDP
@@ -865,7 +865,7 @@ extension via the Gymnasium interface~\cite{Towers2025}.  Future
 directions include: \emph{(i)}~altitude as an action dimension;
 \emph{(ii)}~multi-agent coordination;
 \emph{(iii)}~energy-constrained planning using the built-in energy
-budget system; and \emph{(iv)}~extended fog-of-war studies with
+budget system; and \emph{(iv)}~extended limited-visibility studies with
 varying sensor radii and multi-agent information sharing.
 
 % ============================================================================
@@ -880,7 +880,7 @@ replan \emph{frequency}---Incremental~A* achieves 98.8\% feasible
 success with only 2.9 replans per episode, and (3)~per-planner risk
 coefficients create measurable behavioral differentiation beyond
 replanning strategy alone.  The framework's 36 contracts across
-15~families, wind-driven fire model, fog of war, and triage mission
+15~families, wind-driven fire model, limited visibility, and triage mission
 provide a rich evaluation substrate for future planning algorithms.
 
 % ============================================================================

@@ -11,8 +11,8 @@ Implementation: PHYSICAL INTERDICTIONS
 
 ## FC-2: Observation Equality
 All planners receive identical observation at each step_idx.
-If fog of war enabled, all planners get same fog-filtered snapshot
-(FG-1: same position + state → same observation).
+If limited visibility enabled, all planners get same visibility-filtered snapshot
+(LV-1: same position + state → same observation).
 
 ## FC-3: Fire State Consistency
 During planner computation, fire state is FROZEN.
