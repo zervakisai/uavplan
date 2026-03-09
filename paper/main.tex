@@ -59,10 +59,13 @@ and mask parity.  We evaluate five planners spanning three
 families---static (A*), adaptive (Periodic Replan, Aggressive Replan,
 Incremental~A*), and reactive (APF)---across 450 episodes with 30 seeds.
 On feasible episodes, Incremental~A* achieves 98.8\% success
-(Cliff's $|d|{=}0.91$ vs.\ A*), while APF trails at 86.7\%.
+(Cliff's $|d|{=}0.99$ vs.\ A*), while APF trails at 86.7\%.
 Ablation studies isolating each dynamics layer confirm fire spread as
-the dominant obstacle source.  All experiments are bit-identical
-under the same seed triple.
+the dominant obstacle source; a fog-of-war ablation (300~episodes)
+shows partial observability has an asymmetric effect---graph-based
+planners degrade slightly ($-3.3$~pp) while APF improves
+($+6.7$~pp).  All experiments are bit-identical under the same
+seed triple.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -141,7 +144,7 @@ APF~\cite{Khatib1986}, and two A*-based replanning variants.
     dynamic obstacles (fire~CA, traffic, NFZs).
   \item A 450-episode study of five planners with
     rigorous statistical analysis, plus ablation studies
-    isolating each dynamics layer.
+    isolating dynamics layers and fog of war (300~episodes).
 \end{itemize}
 
 % ============================================================================
@@ -184,7 +187,10 @@ Gymnasium~\cite{Towers2025} established the standard
 environment interface for RL research (NeurIPS~2025 Spotlight).
 UAVBench builds on this API, providing a
 \texttt{step}/\texttt{reset} interface compatible with existing RL
-workflows.
+workflows.  Bonsignorio et al.~\cite{Bonsignorio2025} recently
+argued for a ``science of reproducible results'' in robotics,
+emphasizing the need for standardized benchmarks with deterministic
+replay---a principle central to UAVBench's contract architecture.
 
 \subsection{Dynamic Environment Modeling}
 
@@ -483,10 +489,11 @@ Infeasible episodes are uniform across planners (7 per planner,
 
 \subsection{Ablation Studies}
 
-Three ablation studies isolate individual design factors:
+Four ablation studies isolate individual design factors:
 \emph{(i)}~dynamics isolation (fire/traffic/NFZ/all, 600~episodes),
 \emph{(ii)}~replan frequency sweep (cadences 3--48, 150~episodes),
-\emph{(iii)}~fire intensity sweep (1--8~ignition points, 250~episodes).
+\emph{(iii)}~fire intensity sweep (1--8~ignition points, 250~episodes),
+\emph{(iv)}~fog of war (fog-ON vs.\ fog-OFF, 300~episodes).
 
 \subsection{Metrics}
 
@@ -531,11 +538,11 @@ Planner & SR\textsubscript{all} & SR\textsubscript{feas}
   & Path & Steps & Replans & Time \\
   & (\%) & (\%) & (cells) & & & (s) \\
 \midrule
-A*           &  0.0 &   0.0 & ---  & 1845 &  0   & 102 \\
-Periodic     & 88.9 &  96.4 &  376 &  666 & 47.1 &  41 \\
-Aggressive   & 87.8 &  95.2 &  364 &  709 & 89.9 &  50 \\
-Incr.\ A*   & 91.1 &  98.8 &  378 &  540 &  2.6 &  34 \\
-APF          & 80.0 &  86.7 &  515 &  974 & 18.6 &  64 \\
+A*           &  0.0 &   0.0 & ---  & 2001 &  0   & 111 \\
+Periodic     & 88.9 &  96.4 &  376 &  722 & 51.1 &  45 \\
+Aggressive   & 87.8 &  95.2 &  364 &  769 & 97.5 &  54 \\
+Incr.\ A*   & 91.1 &  98.8 &  378 &  585 &  2.9 &  37 \\
+APF          & 80.0 &  86.7 &  515 & 1057 & 20.2 &  70 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -558,8 +565,8 @@ all alternatives.
 
 \textbf{Incremental A* dominance.}  Incremental~A* achieves the
 highest success rate (98.8\% feasible) while requiring the fewest
-replans (2.6 vs.\ 47--90 for other adaptive planners) and the
-lowest computation time (34s vs.\ 41--64s).  It replans only when
+replans (2.9 vs.\ 51--98 for other adaptive planners) and the
+lowest computation time (37s vs.\ 45--70s).  It replans only when
 the current path is actually blocked, avoiding the overhead of
 speculative replanning.  Fig.~\ref{fig:planners} compares all five
 planners on the same episode.
@@ -585,11 +592,11 @@ graph-based planners (515 vs.\ 376 cells, $p < 0.001$ Wilcoxon).
 Its reactive gradient-descent approach creates suboptimal paths
 and is more susceptible to local minima under combined dynamics.
 
-\textbf{Computation breakdown.}  For Incremental~A* (mean 34s per
+\textbf{Computation breakdown.}  For Incremental~A* (mean 37s per
 episode), approximately 60\% is spent in \texttt{env.step()}
 (blocking mask computation and dynamics stepping on the
 $500{\times}500$ grid), 25\% in A* pathfinding
-(2.6~replans $\times$ up to 80{,}000 node expansions),
+(2.9~replans $\times$ up to 80{,}000 node expansions),
 and 15\% in metrics and overhead.
 
 \subsection{Per-Scenario Analysis}
@@ -619,29 +626,19 @@ APF          &  97 &  77 & 67 \\
 \end{tabular}
 \end{table}
 
-Building density correlates with difficulty (Fig.~\ref{fig:heatmap}):
+Building density correlates with difficulty:
 Penteli (0.18) has 0\% infeasible episodes and near-perfect adaptive
 success, while Downtown (0.50) has 13\% infeasible episodes and
 reduced adaptive success due to fewer alternative routes.
 
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/heatmap_success.pdf}
-  \caption{Success rate heatmap (planner $\times$ scenario).
-    Building density increases left to right.
-    All adaptive planners achieve 100\% on Penteli;
-    Downtown degrades all planners except A* (already at 0\%).}
-  \label{fig:heatmap}
-\end{figure}
-
 \subsection{Statistical Analysis}
 
 \textbf{Effect sizes.}  Cliff's delta between A* and each adaptive
-planner ranges from $|d| = 0.80$ (APF) to $|d| = 0.91$
+planner ranges from $|d| = 0.87$ (APF) to $|d| = 0.99$
 (Incremental~A*), all classified as large effects.
 Between adaptive planners, Incremental~A* vs.\ APF yields
-$d = +0.11$ (small), while graph-based adaptive planners are
-negligible ($|d| < 0.03$).
+$d = +0.12$ (small), while graph-based adaptive planners are
+negligible ($|d| < 0.04$).
 
 \textbf{Significance.}  The Friedman test on success rate across
 all (scenario, seed) pairs is significant.  Wilcoxon pairwise
@@ -662,11 +659,11 @@ scenarios.
 Fig.~\ref{fig:timeline} compares episode timelines across planners
 on the same (scenario, seed).  A* runs the full 2000-step horizon
 without replanning.  Aggressive Replan triggers the most replans
-(mean~90) because it responds to any obstacle change in the path
-neighborhood.  Periodic Replan triggers fewer (mean~47) at fixed
-intervals.  Incremental~A* is the most conservative (mean~2.6),
+(mean~98) because it responds to any obstacle change in the path
+neighborhood.  Periodic Replan triggers fewer (mean~51) at fixed
+intervals.  Incremental~A* is the most conservative (mean~2.9),
 replanning only when its current path is actually blocked.
-Despite 35$\times$ fewer replans than Aggressive Replan,
+Despite 34$\times$ fewer replans than Aggressive Replan,
 Incremental~A* achieves the highest success rate, indicating that
 replan \emph{precision} matters more than replan \emph{frequency}.
 
@@ -751,6 +748,52 @@ APF          &  90 &  97 & 97 &  83 \\
 \end{tabular}
 \end{table}
 
+\subsection{Ablation: Fog of War}\label{sec:fogablation}
+
+Table~\ref{tab:fog} compares fog-ON (sensor radius~50, stale memory
+outside) vs.\ fog-OFF (full visibility) across 300~episodes
+(5~planners $\times$ 3~scenarios $\times$ 10~seeds $\times$
+2~conditions).
+
+\begin{table}[htbp]
+\centering
+\caption{Fog-of-war ablation: success rate (\%) and mean replans.
+  $\Delta$SR is fog-ON minus fog-OFF.}
+\label{tab:fog}
+\footnotesize
+\begin{tabular}{lccccc}
+\toprule
+ & \multicolumn{2}{c}{SR (\%)} & $\Delta$SR &
+   \multicolumn{2}{c}{Replans} \\
+Planner & OFF & ON & (pp) & OFF & ON \\
+\midrule
+A*           &  0.0 &  0.0 &   0.0 &  0.0 &  0.0 \\
+Periodic     & 96.7 & 93.3 & $-3.3$ & 52.3 & 55.5 \\
+Aggressive   & 93.3 & 93.3 &   0.0 & 103.0 & 102.8 \\
+Incr.\ A*   & 96.7 & 93.3 & $-3.3$ &  2.1 & 10.4 \\
+APF          & 86.7 & 93.3 & $+6.7$ & 29.8 & 25.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Fog has a modest overall effect on success rate ($\leq$7~pp),
+suggesting that the planners' replanning strategies are robust to
+partial observability at this sensor range.  Two findings stand out:
+
+\emph{(i)}~Incremental~A* replans increase 5$\times$ under fog
+(2.1~$\to$~10.4) because stale fire positions in the memory map
+cause plan-path invalidations when the agent re-enters the observed
+region and discovers the true (expanded) fire state.  Despite the
+increased replanning, success drops only 3.3~pp, confirming the
+planner's demand-driven replanning remains effective.
+
+\emph{(ii)}~APF \emph{improves} by 6.7~pp under fog.  With stale
+memory, distant fire fronts appear less threatening than they truly
+are, reducing the reactive repulsive gradients that cause APF to
+over-detour.  This suggests APF's conservative repulsion (with
+$\delta{=}3.0$) over-reacts to accurate distant-fire observations
+under full visibility.
+
 % ============================================================================
 \section{Discussion}\label{sec:discussion}
 
@@ -759,8 +802,8 @@ division: planners that replan succeed; the static baseline fails
 entirely.  The dynamics isolation ablation confirms fire as the
 primary cause (A* 0\% vs.\ adaptive 97\%), while NFZs alone
 leave all planners at 97\%.  The key insight is that
-\emph{replan precision} (Incremental~A* with 2.6 replans) outperforms
-\emph{replan frequency} (Aggressive Replan with 90 replans).
+\emph{replan precision} (Incremental~A* with 2.9 replans) outperforms
+\emph{replan frequency} (Aggressive Replan with 98 replans).
 
 \textbf{Incremental A* efficiency.}  Incremental~A* achieves the
 highest success rate (98.8\% feasible) with the fewest replans and
@@ -788,19 +831,24 @@ with both infeasibility rate (0\%--13\%) and adaptive success
 degradation.  Dense urban grids reduce alternative routes, making
 it harder for planners to find detours when corridors are blocked.
 
-\textbf{Fog of war and triage.}  The fog-of-war layer and triage
-mission are architectural contributions verified by contract tests
-(FG-1, TR-1) but are not the focus of the main experimental
-comparison.  Their primary purpose is to enable future studies on
-partial-observability planning and multi-objective mission execution
-within the same benchmark framework.
+\textbf{Fog of war.}  The fog ablation (Table~\ref{tab:fog}) reveals
+that partial observability has an asymmetric effect: graph-based
+planners degrade slightly ($-3.3$~pp) while APF improves
+($+6.7$~pp).  This is consistent with the POMDP
+literature~\cite{Kaelbling1998}: information-limited agents sometimes
+benefit from reduced observation noise when their policy over-reacts
+to accurate but distant threats.  The 5$\times$ replan increase for
+Incremental~A* under fog highlights a practical trade-off:
+demand-driven replanning is efficient under full visibility but
+becomes more expensive under partial observability, though still
+fewer replans than scheduled approaches.
 
 \textbf{Practical implications.}  For real-world UAV deployment,
 our results suggest that simple periodic replanning (every 6 steps)
 is sufficient when computation is cheap---success rate is 96.7\%
 across all cadences $\leq$24.  However, Incremental~A*'s
 demand-driven replanning is preferable under resource constraints:
-2.6 vs.\ 47 replans, 34s vs.\ 41s, with higher success.
+2.9 vs.\ 51 replans, 37s vs.\ 45s, with higher success.
 
 \textbf{Risk coefficient sensitivity.}  The coefficients
 $\alpha{=}5.0$, $\beta{=}0.5$, $\gamma{=}2.0$, $\delta{=}3.0$
@@ -817,7 +865,8 @@ extension via the Gymnasium interface~\cite{Towers2025}.  Future
 directions include: \emph{(i)}~altitude as an action dimension;
 \emph{(ii)}~multi-agent coordination;
 \emph{(iii)}~energy-constrained planning using the built-in energy
-budget system; and \emph{(iv)}~full fog-of-war experimental campaigns.
+budget system; and \emph{(iv)}~extended fog-of-war studies with
+varying sensor radii and multi-agent information sharing.
 
 % ============================================================================
 \section{Conclusion}\label{sec:conclusion}
@@ -828,7 +877,7 @@ of five planners across three OSM-based scenarios demonstrates
 that (1)~replanning capability is necessary for navigating
 fire-affected terrain, (2)~replan \emph{precision} outperforms
 replan \emph{frequency}---Incremental~A* achieves 98.8\% feasible
-success with only 2.6 replans per episode, and (3)~per-planner risk
+success with only 2.9 replans per episode, and (3)~per-planner risk
 coefficients create measurable behavioral differentiation beyond
 replanning strategy alone.  The framework's 36 contracts across
 15~families, wind-driven fire model, fog of war, and triage mission
