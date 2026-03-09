@@ -37,31 +37,15 @@ import matplotlib.patches as mpatches
 from uavbench.benchmark.runner import run_episode
 from uavbench.scenarios.loader import load_scenario
 from uavbench.visualization.renderer import Renderer
+from uavbench.visualization.labels import (
+    PLANNER_ORDER, PLANNER_SHORT as PLANNER_LABELS, PLANNER_COLORS,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
 OUTPUT_DIR = "outputs/paper_figures"
-
-PLANNER_ORDER = [
-    "astar", "periodic_replan", "aggressive_replan",
-    "incremental_astar", "apf",
-]
-PLANNER_LABELS = {
-    "astar": "A*",
-    "periodic_replan": "Periodic",
-    "aggressive_replan": "Aggressive",
-    "incremental_astar": "Incr. A*",
-    "apf": "APF",
-}
-PLANNER_COLORS = {
-    "astar": "#e74c3c",
-    "periodic_replan": "#3498db",
-    "aggressive_replan": "#2ecc71",
-    "incremental_astar": "#f39c12",
-    "apf": "#9b59b6",
-}
 
 DEFAULT_SCENARIO = "osm_penteli_pharma_delivery_medium"
 DEFAULT_SEED = 42
@@ -83,7 +67,8 @@ def _collect_episode_data(
 ) -> dict[str, Any]:
     """Run episode and collect per-step telemetry for timeline."""
     config = load_scenario(scenario_id)
-    renderer = Renderer(config, mode="paper_min")
+    # Use ops_full for speed — critical snapshots appear small in figure anyway
+    renderer = Renderer(config, mode="ops_full")
 
     steps: list[int] = []
     distances: list[float] = []
@@ -176,8 +161,9 @@ def generate_timeline_figure(
         sharex=True,
     )
 
+    # Find actual max step count (including timeouts that run full horizon)
     max_steps = max(
-        len(d["steps"]) for d in all_data.values()
+        (d["steps"][-1] if d["steps"] else 0) for d in all_data.values()
     )
 
     for i, pid in enumerate(PLANNER_ORDER):
@@ -240,6 +226,10 @@ def generate_timeline_figure(
     ax_fire.set_ylabel("Fire\ncells", fontsize=7, rotation=0, labelpad=35, va="center")
     ax_fire.set_xlabel("Step", fontsize=8)
     ax_fire.tick_params(labelsize=6)
+
+    # Force x-axis to full horizon so A* timeout bar visually spans the whole width
+    for ax in axes:
+        ax.set_xlim(0, max_steps * 1.02)
 
     fig.suptitle("Episode Timeline — Planner Behavior Comparison",
                  fontsize=9, fontweight="bold", y=0.98)
