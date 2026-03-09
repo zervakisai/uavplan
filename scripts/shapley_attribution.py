@@ -49,7 +49,7 @@ N_FEATURES = len(FEATURES)
 _FEATURE_CONFIGS = {
     "wind": {"wind_speed": 2.0, "wind_direction_deg": 45.0},
     "fire_risk": {},  # risk cost map is always computed; this is a no-op marker
-    "fog": {"enable_fog_of_war": True, "sensor_radius": 50},
+    "fog": {"enable_limited_visibility": True, "sensor_radius": 50},
     "task_urgency": {},  # triage mission marker (handled at mission level)
 }
 
@@ -181,7 +181,7 @@ def plot_shapley_bar_chart(
 
     # Colors for each feature
     colors = ["#e74c3c", "#f39c12", "#3498db", "#2ecc71"]
-    feature_labels = ["Wind", "Fire Risk", "Fog of War", "Task Urgency"]
+    feature_labels = ["Wind", "Fire Risk", "Limited Visibility", "Task Urgency"]
 
     bottoms_pos = np.zeros(n_planners)
     bottoms_neg = np.zeros(n_planners)

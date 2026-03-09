@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from uavbench.blocking import compute_risk_cost_map
-from uavbench.dynamics.fog_of_war import FogOfWar
+from uavbench.dynamics.limited_visibility import LimitedVisibility
 from uavbench.envs.base import TerminationReason
 from uavbench.envs.urban import UrbanEnvV2
 from uavbench.metrics.compute import compute_episode_metrics
@@ -84,10 +84,10 @@ def run_episode(
     planner = planner_cls(heightmap, no_fly, config)
     planner.set_seed(seed)
 
-    # Fog of war (FG-1: planner-agnostic partial observability)
+    # Limited visibility (LV-1: planner-agnostic partial observability)
     fog = (
-        FogOfWar((config.map_size, config.map_size), config.sensor_radius)
-        if config.enable_fog_of_war
+        LimitedVisibility((config.map_size, config.map_size), config.sensor_radius)
+        if config.enable_limited_visibility
         else None
     )
 

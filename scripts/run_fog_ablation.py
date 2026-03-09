@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fog-of-War ablation study for IEEE RA-L paper.
+"""Limited-Visibility ablation study for IEEE RA-L paper.
 
 Compares fog-ON (partial observability, sensor_radius=50) vs fog-OFF
 (full visibility) across all planners and scenarios.
@@ -68,7 +68,7 @@ def _run_episode_worker(args: tuple) -> dict:
 
     # Local imports for clean subprocess
     from uavbench.blocking import compute_risk_cost_map
-    from uavbench.dynamics.fog_of_war import FogOfWar
+    from uavbench.dynamics.limited_visibility import LimitedVisibility
     from uavbench.envs.base import TerminationReason
     from uavbench.envs.urban import UrbanEnvV2
     from uavbench.metrics.compute import compute_episode_metrics
@@ -97,10 +97,10 @@ def _run_episode_worker(args: tuple) -> dict:
         planner = planner_cls(heightmap, no_fly, config)
         planner.set_seed(seed)
 
-        # Fog of war (FG-1)
+        # Limited visibility (LV-1)
         fog = (
-            FogOfWar((config.map_size, config.map_size), config.sensor_radius)
-            if config.enable_fog_of_war
+            LimitedVisibility((config.map_size, config.map_size), config.sensor_radius)
+            if config.enable_limited_visibility
             else None
         )
 
@@ -310,8 +310,8 @@ def _config_to_dict(config) -> dict:
 def _build_fog_ablation_configs():
     """Build fog-ON and fog-OFF variants for all 3 medium scenarios.
 
-    fog_off: enable_fog_of_war=False (full visibility)
-    fog_on:  enable_fog_of_war=True, sensor_radius=50
+    fog_off: enable_limited_visibility=False (full visibility)
+    fog_on:  enable_limited_visibility=True, sensor_radius=50
     """
     from uavbench.scenarios.loader import load_scenario
 
@@ -323,7 +323,7 @@ def _build_fog_ablation_configs():
         cfg_off = replace(
             base,
             name=f"{sid}__fog_off",
-            enable_fog_of_war=False,
+            enable_limited_visibility=False,
         )
         variants.append(("fog_off", sid, cfg_off))
 
@@ -331,7 +331,7 @@ def _build_fog_ablation_configs():
         cfg_on = replace(
             base,
             name=f"{sid}__fog_on",
-            enable_fog_of_war=True,
+            enable_limited_visibility=True,
             sensor_radius=50,
         )
         variants.append(("fog_on", sid, cfg_on))
@@ -365,7 +365,7 @@ def run_fog_ablation(n_seeds: int) -> str:
 
     total = len(work_units)
     print(f"\n{'='*70}")
-    print(f"Fog-of-War Ablation Study")
+    print(f"Limited-Visibility Ablation Study")
     print(f"  Conditions: fog_off (full visibility), fog_on (sensor_radius=50)")
     print(f"  Planners:   {', '.join(ALL_PLANNERS)}")
     print(f"  Scenarios:  {len(MEDIUM_SCENARIO_IDS)}")
@@ -450,7 +450,7 @@ def print_fog_summary(csv_path: str) -> None:
     df = pd.read_csv(csv_path)
 
     print(f"\n{'='*70}")
-    print("FOG-OF-WAR ABLATION — SUCCESS RATE (%)")
+    print("LIMITED-VISIBILITY ABLATION — SUCCESS RATE (%)")
     print(f"{'='*70}\n")
 
     # Overall by planner x fog condition
@@ -557,7 +557,7 @@ def main() -> None:
     multiprocessing.set_start_method("spawn", force=True)
 
     global OUTPUT_DIR
-    p = argparse.ArgumentParser(description="Fog-of-War ablation study for UAVBench.")
+    p = argparse.ArgumentParser(description="Limited-Visibility ablation study for UAVBench.")
     p.add_argument("--seeds", type=int, default=10,
                    help="Number of seeds per (scenario, planner, condition)")
     p.add_argument("--output-dir", type=str, default=OUTPUT_DIR)
@@ -568,7 +568,7 @@ def main() -> None:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     wall_start = time.perf_counter()
-    print(f"UAVBench Fog-of-War Ablation (parallel, {MAX_WORKERS} workers)")
+    print(f"UAVBench Limited-Visibility Ablation (parallel, {MAX_WORKERS} workers)")
     print(f"  Seeds: {n_seeds}")
 
     csv_path = run_fog_ablation(n_seeds)
