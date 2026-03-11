@@ -71,6 +71,10 @@ def compute_blocking_mask(
     if dnfz is not None:
         np.bitwise_or(mask, dnfz, out=mask)
 
+    debris = dynamic_state.get("debris_mask")
+    if debris is not None:
+        np.bitwise_or(mask, debris, out=mask)
+
     return mask
 
 
@@ -136,5 +140,13 @@ def compute_risk_cost_map(
         risk[dnfz] = 1.0
         boundary = binary_dilation(dnfz, structure=_CROSS_STRUCT) & ~dnfz
         np.maximum(risk, np.where(boundary, 0.5, 0.0), out=risk)
+
+    # Debris: impassable inside, moderate risk falloff around
+    debris = dynamic_state.get("debris_mask")
+    if debris is not None and debris.any():
+        risk[debris] = 1.0
+        debris_dist = distance_transform_edt(~debris)
+        debris_risk = np.clip(1.0 - debris_dist / 8.0, 0.0, 1.0)
+        np.maximum(risk, debris_risk * 0.7, out=risk)
 
     return np.clip(risk, 0.0, 1.0)

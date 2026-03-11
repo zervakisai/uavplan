@@ -5,6 +5,8 @@ Tracks task queue, completion via service_time, and generates events.
 
 from __future__ import annotations
 
+import numpy as np
+
 from uavbench.envs.base import TaskStatus
 from uavbench.missions.schema import MissionBriefing, TaskSpec
 from uavbench.scenarios.schema import MissionType, ScenarioConfig
@@ -21,12 +23,12 @@ _MISSION_META: dict[str, dict] = {
             "Pharmaceutical delivery to fire-isolated settlement"
         ),
         "deliverable_name": "pharmaceuticals",
-        "default_service_time": 0,
-        "task_category": "delivery_point",
+        "default_service_time": 1,
+        "task_category": "pharmacy_pickup",
         "origin_name": "Hospital Depot Alpha",
         "destination_name": "Fire-Isolated Settlement",
         "briefing_objective": (
-            "Deliver emergency pharmaceuticals to fire-isolated settlement"
+            "Collect pharmaceuticals from pharmacy, deliver to fire-isolated settlement"
         ),
         "constraints": ["Avoid active fire zones", "Respect firefighting NFZs"],
         "priority": "critical",
@@ -91,26 +93,62 @@ class MissionEngine:
         self._completed_count = 0
 
         service_time = int(self._meta["default_service_time"])
+        # Default midpoint for initial placement (snap_poi_to_path
+        # will distribute along corridor later for multi-POI missions).
+        mx = (start_xy[0] + goal_xy[0]) // 2
+        my = (start_xy[1] + goal_xy[1]) // 2
 
-        if service_time > 0:
-            # Place task at midpoint between start and goal (not at goal)
-            # so the agent can complete service_time before episode terminates
-            mx = (start_xy[0] + goal_xy[0]) // 2
-            my = (start_xy[1] + goal_xy[1]) // 2
-            task_xy = (mx, my)
+        if mission_type.value == "flood_rescue":
+            # Multi-POI: 3 casualties with decreasing severity
+            weights = [3.0, 2.0, 1.0]  # CRITICAL, SERIOUS, MINOR
+            for i, w in enumerate(weights):
+                self._tasks.append(
+                    TaskSpec(
+                        task_id=f"task_{i}",
+                        xy=(mx, my),
+                        service_time=service_time,
+                        weight=w,
+                        category=str(self._meta["task_category"]),
+                        status=TaskStatus.ACTIVE,
+                    )
+                )
+        elif mission_type.value == "fire_surveillance":
+            # Multi-POI: 3 survey points along corridor
+            for i in range(3):
+                self._tasks.append(
+                    TaskSpec(
+                        task_id=f"task_{i}",
+                        xy=(mx, my),
+                        service_time=service_time,
+                        weight=1.0,
+                        category=str(self._meta["task_category"]),
+                        status=TaskStatus.ACTIVE,
+                    )
+                )
         else:
-            # Fly-through: task at the goal
-            task_xy = goal_xy
-
-        self._tasks.append(
-            TaskSpec(
-                task_id="task_0",
-                xy=task_xy,
-                service_time=service_time,
-                category=str(self._meta["task_category"]),
-                status=TaskStatus.ACTIVE,
+            # pharma_delivery: 2-POI mission
+            #   task_0 = pharmacy pickup (collect meds)
+            #   task_1 = delivery point (hand off to settlement)
+            self._tasks.append(
+                TaskSpec(
+                    task_id="task_0",
+                    xy=(mx, my),
+                    service_time=service_time,
+                    weight=1.0,
+                    category="pharmacy_pickup",
+                    status=TaskStatus.ACTIVE,
+                )
             )
-        )
+            self._tasks.append(
+                TaskSpec(
+                    task_id="task_1",
+                    xy=(mx, my),  # temporary — scatter_pois will reposition
+                    service_time=max(1, service_time),
+                    weight=1.0,
+                    category="delivery_point",
+                    status=TaskStatus.ACTIVE,
+                )
+            )
 
     @property
     def events(self) -> list[dict]:
@@ -123,6 +161,26 @@ class MissionEngine:
             if t.status in (TaskStatus.PENDING, TaskStatus.ACTIVE):
                 return t.xy
         return self.goal_xy
+
+    @property
+    def all_task_positions(self) -> list[tuple[int, int]]:
+        """All task positions (for cell clearing after snap)."""
+        return [t.xy for t in self._tasks]
+
+    @property
+    def task_info_list(self) -> list[dict]:
+        """Task positions, categories, status, and service_time for rendering."""
+        return [
+            {
+                "xy": t.xy,
+                "category": t.category,
+                "status": t.status.value,
+                "task_id": t.task_id,
+                "weight": t.weight,
+                "service_time": t.service_time,
+            }
+            for t in self._tasks
+        ]
 
     @property
     def objective_reason(self) -> str:
@@ -168,21 +226,85 @@ class MissionEngine:
         return all(t.status == TaskStatus.COMPLETED for t in self._tasks)
 
     def snap_poi_to_path(self, path: list[tuple[int, int]]) -> None:
-        """Snap task POI to path midpoint for corridor alignment (FC-1).
+        """Legacy: snap task POIs to corridor positions.
 
-        Places the active task at the midpoint of the given path so that
-        the POI naturally lies on the reference corridor.  This ensures
-        corridor interdictions (fire closures, vehicle roadblocks) intersect
-        the agent's executed path, preventing static planners from bypassing
-        them via two-leg geometric detours.
+        Kept for backward compat; prefer scatter_pois() for realistic placement.
         """
         if not path or not self._tasks:
             return
-        mid_idx = len(path) // 2
-        new_poi = path[mid_idx]
-        for task in self._tasks:
-            if task.status in (TaskStatus.PENDING, TaskStatus.ACTIVE) and task.service_time > 0:
-                task.xy = new_poi
+        active = [t for t in self._tasks if t.service_time > 0]
+        n = len(active)
+        for i, task in enumerate(active):
+            if n == 1:
+                frac_idx = len(path) // 2
+            else:
+                frac = (i + 1) / (n + 2)
+                frac_idx = int(len(path) * frac)
+            frac_idx = min(frac_idx, len(path) - 1)
+            task.xy = path[frac_idx]
+
+    def scatter_pois(
+        self,
+        corridor: list[tuple[int, int]],
+        heightmap: np.ndarray,
+        rng: np.random.Generator,
+        min_corridor_dist: int = 10,
+        search_radius: int = 50,
+    ) -> None:
+        """Place task POIs at realistic off-corridor positions.
+
+        For each task, finds a walkable cell near the corresponding
+        corridor fraction but offset perpendicular to the corridor by
+        at least *min_corridor_dist* cells.  Falls back to corridor
+        position if no suitable cell exists.
+
+        Deterministic: same (corridor, heightmap, rng state) → same POIs.
+        """
+        from scipy.ndimage import binary_dilation
+
+        if not corridor or not self._tasks:
+            return
+
+        H, W = heightmap.shape
+        walkable = heightmap == 0.0
+
+        # Build corridor proximity mask (cells within min_corridor_dist)
+        corridor_mask = np.zeros((H, W), dtype=bool)
+        for cx, cy in corridor:
+            if 0 <= cy < H and 0 <= cx < W:
+                corridor_mask[cy, cx] = True
+        near_corridor = binary_dilation(
+            corridor_mask, iterations=min_corridor_dist,
+        )
+        # Valid candidates: walkable AND far from corridor
+        valid = walkable & ~near_corridor
+
+        n = len(self._tasks)
+        for i, task in enumerate(self._tasks):
+            # Corridor fraction: front-loaded (same as snap)
+            frac = (i + 1) / (n + 2)
+            frac_idx = min(int(len(corridor) * frac), len(corridor) - 1)
+            base_x, base_y = corridor[frac_idx]
+
+            # Collect valid candidates within search_radius of base
+            candidates: list[tuple[int, int]] = []
+            for dy in range(-search_radius, search_radius + 1):
+                ny = base_y + dy
+                if ny < 0 or ny >= H:
+                    continue
+                for dx in range(-search_radius, search_radius + 1):
+                    nx = base_x + dx
+                    if nx < 0 or nx >= W:
+                        continue
+                    if valid[ny, nx]:
+                        candidates.append((nx, ny))
+
+            if candidates:
+                idx = int(rng.integers(len(candidates)))
+                task.xy = candidates[idx]
+            else:
+                # Fallback: corridor position
+                task.xy = (base_x, base_y)
 
     def distance_to_task(self, agent_xy: tuple[int, int]) -> float:
         """Manhattan distance to current objective POI."""
@@ -243,6 +365,7 @@ class MissionEngine:
                         "task_id": task.task_id,
                         "step_idx": step_idx,
                         "xy": task.xy,
+                        "weight": task.weight,
                     })
             else:
                 # Agent left POI — reset stay counter

@@ -94,11 +94,6 @@ class ScenarioConfig:
     wind_speed: float = 0.0              # 0 = isotropic, >0 = directional fire spread
     wind_direction_deg: float = 0.0      # degrees, 0=East, 90=North
 
-    # Limited Visibility (Paper #1: partial observability)
-    # LV-1: visibility filter is planner-agnostic
-    enable_limited_visibility: bool = False
-    sensor_radius: int = 50
-
     # Energy budget (Paper #1: resource constraint)
     energy_budget: float = 0.0  # 0 = unlimited, >0 = total energy units
 
@@ -111,6 +106,11 @@ class ScenarioConfig:
 
     # Forced replans (deprecated — kept for backward compat, unused)
     force_replan_count: int = 0
+
+    # Structural collapse (Paper #1: 3rd dynamics layer)
+    enable_collapse: bool = False
+    collapse_delay: int = 80       # fire exposure steps before building collapses
+    debris_prob: float = 0.6       # probability of debris in each candidate cell
 
     # Physical interdictions (replace abstract forced_block)
     num_fire_corridor_closures: int = 0  # fire seeds guaranteed to reach corridor

@@ -14,7 +14,8 @@ min_start_goal_l1: 100
 
 enable_fire: true
 enable_traffic: true
-enable_dynamic_nfz: true
+enable_dynamic_nfz: false
+enable_collapse: true
 fire_blocks_movement: true
 traffic_blocks_movement: true
 terminate_on_collision: true
@@ -26,8 +27,8 @@ fire_ignition_points: 2
 fire_buffer_radius: 1
 num_emergency_vehicles: 8
 num_corridor_vehicles: 2
-num_nfz_zones: 1
+num_nfz_zones: 0
 force_replan_count: 0
 num_fire_corridor_closures: 1
-num_roadblock_vehicles: 1
+num_roadblock_vehicles: 2
 replan_every_steps: 6

@@ -80,7 +80,7 @@ def _run_planner_frames(
 ) -> dict:
     """Run one episode and collect per-step data for the grid."""
     config = load_scenario(scenario_id)
-    renderer = Renderer(config, mode="paper_min")
+    renderer = Renderer(config, mode="ops_full")
 
     frames: list[np.ndarray] = []
     distances: list[float] = []
@@ -171,8 +171,8 @@ def _render_legend_cell(
     # Render to numpy array
     canvas = FigureCanvasAgg(fig)
     canvas.draw()
-    buf = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
-    img = buf.reshape(int(fig.get_figheight() * dpi), int(fig.get_figwidth() * dpi), 3)
+    buf = np.asarray(canvas.buffer_rgba())
+    img = buf[:, :, :3].copy()  # RGBA → RGB
     plt.close(fig)
 
     # Resize to target

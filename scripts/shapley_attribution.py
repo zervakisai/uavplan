@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Shapley attribution analysis — which hazard features matter most per planner.
 
-Computes exact Shapley values for N=4 hazard features:
+Computes exact Shapley values for N=3 hazard features:
   1. wind        (wind_speed > 0)
   2. fire_risk   (risk cost map from fire proximity)
-  3. fog         (partial observability)
-  4. task_urgency (triage mission with survival decay)
+  3. task_urgency (triage mission with survival decay)
 
-For each planner, runs episodes with all 2^4=16 feature coalitions.
+For each planner, runs episodes with all 2^3=8 feature coalitions.
 Shapley value = marginal contribution of each feature averaged over
 all coalition orderings.
 
@@ -41,7 +40,7 @@ import numpy as np
 
 OUTPUT_DIR = "outputs/shapley"
 
-FEATURES = ["wind", "fire_risk", "fog", "task_urgency"]
+FEATURES = ["wind", "fire_risk", "task_urgency"]
 N_FEATURES = len(FEATURES)
 
 # Feature configurations: each feature maps to scenario config overrides
@@ -49,7 +48,6 @@ N_FEATURES = len(FEATURES)
 _FEATURE_CONFIGS = {
     "wind": {"wind_speed": 2.0, "wind_direction_deg": 45.0},
     "fire_risk": {},  # risk cost map is always computed; this is a no-op marker
-    "fog": {"enable_limited_visibility": True, "sensor_radius": 50},
     "task_urgency": {},  # triage mission marker (handled at mission level)
 }
 

@@ -554,12 +554,12 @@ def test_successful_episode_objective_completed():
         name="test_success_pharma_delivery",
         mission_type=MissionType.PHARMA_DELIVERY,
         difficulty=Difficulty.EASY,
-        map_size=10,
+        map_size=30,
         map_source="synthetic",
         osm_tile_id=None,
         building_density=0.0,
         fixed_start_xy=(1, 1),
-        fixed_goal_xy=(3, 3),          # close goal for speed
+        fixed_goal_xy=(28, 28),
         min_start_goal_l1=2,
         enable_fire=False,
         enable_traffic=False,
@@ -567,7 +567,7 @@ def test_successful_episode_objective_completed():
         fire_blocks_movement=False,
         traffic_blocks_movement=False,
         terminate_on_collision=False,
-        max_episode_steps=100,
+        max_episode_steps=500,
     )
     env = UrbanEnvV2(cfg)
     _obs, info = env.reset(seed=FIXED_SEED)
@@ -576,34 +576,49 @@ def test_successful_episode_objective_completed():
     assert goal_xy is not None, "info must expose 'goal_pos' or 'goal_xy' after reset"
     goal_xy = tuple(goal_xy)
 
-    # Act — navigate to goal
+    # Build waypoint sequence: visit each task POI, then goal.
+    # Each POI requires service_time STAY steps after arrival.
+    task_info = info.get("task_info_list", [])
+    waypoints = [(t["xy"], t.get("service_time", 1)) for t in task_info]
+    waypoints.append((goal_xy, 1))  # final STAY at goal
+
+    # Act — navigate through all POIs then to goal
     final_info: dict = info
     terminated = truncated = False
-    max_steps = 100
+    max_steps = 500
 
-    for _ in range(max_steps):
+    def _nav_to(target, env, final_info, max_steps):
+        """Navigate Manhattan-optimal to target, return (terminated, truncated, final_info, steps)."""
+        terminated = truncated = False
+        steps = 0
+        for _ in range(max_steps):
+            if terminated or truncated:
+                break
+            agent_xy = final_info.get("agent_pos") or final_info.get("agent_xy")
+            ax, ay = agent_xy
+            tx, ty = target
+            if (ax, ay) == (tx, ty):
+                break
+            dx, dy = tx - ax, ty - ay
+            if abs(dx) >= abs(dy):
+                action = ACTION_RIGHT if dx > 0 else ACTION_LEFT
+            else:
+                action = ACTION_DOWN if dy > 0 else ACTION_UP
+            _obs, _rew, terminated, truncated, final_info = env.step(action)
+            steps += 1
+        return terminated, truncated, final_info, steps
+
+    for wp_xy, svc_time in waypoints:
         if terminated or truncated:
             break
-
-        agent_xy = final_info.get("agent_pos") or final_info.get("agent_xy")
-        assert agent_xy is not None, "info must expose 'agent_pos' or 'agent_xy'"
-        ax, ay = agent_xy
-        gx, gy = goal_xy
-
-        if (ax, ay) == (gx, gy):
-            # At goal: perform one extra STAY to let mission engine settle
+        terminated, truncated, final_info, _ = _nav_to(
+            wp_xy, env, final_info, max_steps,
+        )
+        # STAY at waypoint for service_time
+        for _ in range(svc_time + 1):
+            if terminated or truncated:
+                break
             _obs, _rew, terminated, truncated, final_info = env.step(ACTION_STAY)
-            break
-
-        dx = gx - ax
-        dy = gy - ay
-
-        if abs(dx) >= abs(dy):
-            action = ACTION_RIGHT if dx > 0 else ACTION_LEFT
-        else:
-            action = ACTION_DOWN if dy > 0 else ACTION_UP
-
-        _obs, _rew, terminated, truncated, final_info = env.step(action)
 
     # Assert — episode terminated successfully
     assert terminated or truncated, (
