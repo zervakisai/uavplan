@@ -37,12 +37,13 @@ MEDIUM_SCENARIO_IDS = [
     "osm_piraeus_flood_rescue_medium",
 ]
 
-ALL_PLANNERS = ["astar", "periodic_replan", "aggressive_replan", "dstar_lite", "apf"]
+ALL_PLANNERS = ["astar", "periodic_replan", "aggressive_replan", "incremental_astar", "apf"]
 
 BASE_COLUMNS = [
     "ablation", "variant", "scenario_id", "planner_id", "seed",
     "success", "path_length", "executed_steps", "replans",
     "termination_reason", "objective_completed", "computation_time_ms",
+    "mission_score", "tasks_completed", "tasks_total",
 ]
 
 
@@ -152,6 +153,9 @@ def _run_block(args: tuple) -> list[dict]:
                 "termination_reason": m.get("termination_reason", "unknown"),
                 "objective_completed": m.get("objective_completed", False),
                 "computation_time_ms": round(elapsed_ms, 2),
+                "mission_score": round(m.get("mission_score", 0.0), 4),
+                "tasks_completed": m.get("tasks_completed", 0),
+                "tasks_total": m.get("tasks_total", 0),
             }
             results.append({"status": "ok", "row": row})
 
@@ -225,13 +229,6 @@ def _build_dynamics_ablation_configs():
                               traffic_blocks_movement=True,
                               fire_ignition_points=0, num_nfz_zones=0)
         variants.append(("traffic_only", sid, cfg_traffic))
-
-        cfg_nfz = replace(base, name=f"{sid}__nfz_only",
-                          enable_fire=False, enable_traffic=False,
-                          enable_dynamic_nfz=True, fire_blocks_movement=False,
-                          traffic_blocks_movement=False,
-                          fire_ignition_points=0, num_emergency_vehicles=0)
-        variants.append(("nfz_only", sid, cfg_nfz))
 
         cfg_all = replace(base, name=f"{sid}__all_dynamics")
         variants.append(("all_dynamics", sid, cfg_all))
@@ -368,7 +365,7 @@ def print_dynamics_summary(csv_path: str) -> None:
     print(f"\n--- Ablation 1: Dynamics Isolation Summary ---\n")
     pivot = df.pivot_table(index="variant", columns="planner_id",
                            values="success", aggfunc="mean")
-    order = ["fire_only", "traffic_only", "nfz_only", "all_dynamics"]
+    order = ["fire_only", "traffic_only", "all_dynamics"]
     pivot = pivot.reindex(order)
     pivot = pivot[[p for p in ALL_PLANNERS if p in pivot.columns]]
     print("Success Rate (%):")

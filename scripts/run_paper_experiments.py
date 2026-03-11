@@ -48,6 +48,9 @@ COLUMNS = [
     "difficulty",
     "track",
     "reject_reason_counts",
+    "mission_score",
+    "tasks_completed",
+    "tasks_total",
 ]
 
 
@@ -122,6 +125,9 @@ def _extract_row(
         "difficulty": config.difficulty.value,
         "track": config.paper_track,
         "reject_reason_counts": json.dumps(reject_counts) if reject_counts else "{}",
+        "mission_score": round(m.get("mission_score", 0.0), 4),
+        "tasks_completed": m.get("tasks_completed", 0),
+        "tasks_total": m.get("tasks_total", 0),
     }
 
 
@@ -207,9 +213,12 @@ def main() -> None:
         [s.strip() for s in args.scenarios.split(",")]
         if args.scenarios else list_scenarios()
     )
+    # Exclude backward-compat aliases (dstar_lite → incremental_astar)
+    _PAPER_PLANNERS = ["astar", "periodic_replan", "aggressive_replan",
+                       "incremental_astar", "apf"]
     planners = (
         [p.strip() for p in args.planners.split(",")]
-        if args.planners else sorted(PLANNERS.keys())
+        if args.planners else _PAPER_PLANNERS
     )
     n_seeds = args.seeds
     output_file = args.output
@@ -335,20 +344,15 @@ def main() -> None:
 
     # Ablation studies (optional, after main run)
     if args.ablation:
+        import subprocess
         print(f"\n{'='*70}")
         print("ABLATION STUDIES")
         print(f"{'='*70}")
-        from run_ablation_studies import run_ablation_1, run_ablation_2, run_ablation_3
-        from run_ablation_studies import print_dynamics_summary, print_replan_frequency_summary, print_fire_intensity_summary
-        csv1 = run_ablation_1(n_seeds)
-        csv2 = run_ablation_2(n_seeds)
-        csv3 = run_ablation_3(n_seeds)
-        print(f"\n{'='*70}")
-        print("ABLATION SUMMARY TABLES")
-        print(f"{'='*70}")
-        print_dynamics_summary(csv1)
-        print_replan_frequency_summary(csv2)
-        print_fire_intensity_summary(csv3)
+        subprocess.run(
+            [sys.executable, "scripts/run_ablation_studies.py",
+             "--seeds", str(n_seeds)],
+            check=True,
+        )
 
 
 if __name__ == "__main__":

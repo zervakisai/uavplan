@@ -1,4 +1,4 @@
-"""Tests for visualization upgrades (13: fog split-screen, 14: risk heatmap)."""
+"""Tests for visualization upgrades (risk heatmap)."""
 from __future__ import annotations
 
 import numpy as np
@@ -43,21 +43,3 @@ def test_draw_risk_heatmap_color_gradient():
     assert frame_low[0, 0, 0] < frame_high[0, 0, 0]  # red channel
 
 
-def test_fog_comparison_render():
-    """Fog comparison produces a wider frame than single render."""
-    from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
-    from uavbench.visualization.renderer import Renderer
-    config = ScenarioConfig(
-        name="test", mission_type=MissionType.PHARMA_DELIVERY,
-        difficulty=Difficulty.EASY, map_size=20,
-    )
-    renderer = Renderer(config, mode="ops_full")
-    heightmap = np.zeros((20, 20), dtype=np.float32)
-    state = {"agent_xy": (10, 10), "start_xy": (0, 0), "goal_xy": (19, 19)}
-    dyn_state = {}
-
-    single_frame, _ = renderer.render_frame(heightmap, state, dyn_state)
-    fog_frame = renderer.render_fog_comparison(heightmap, state, dyn_state, dyn_state)
-
-    # Fog comparison should be roughly 2x wider (two panels + divider)
-    assert fog_frame.shape[1] > single_frame.shape[1]

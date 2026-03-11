@@ -17,6 +17,7 @@ from gymnasium import spaces
 from scipy.ndimage import binary_dilation
 
 from uavbench.blocking import SMOKE_BLOCKING_THRESHOLD, _CROSS_STRUCT, compute_blocking_mask
+from uavbench.dynamics.collapse import CollapseModel
 from uavbench.dynamics.fire_ca import FireSpreadModel
 from uavbench.planners.astar import AStarPlanner
 from uavbench.dynamics.interaction_engine import InteractionEngine
@@ -92,12 +93,14 @@ class UrbanEnvV2(gym.Env):
         self._fire: FireSpreadModel | None = None
         self._traffic: TrafficModel | None = None
         self._nfz: RestrictionZoneModel | None = None
+        self._collapse: CollapseModel | None = None
         self._interaction: InteractionEngine | None = None
         self._bfs_corridor: list[tuple[int, int]] = []
         self._use_dynamics: bool = (
             config.enable_fire
             or config.enable_traffic
             or config.enable_dynamic_nfz
+            or config.enable_collapse
         )
 
     # -- Public properties (EN-5) --
@@ -135,8 +138,8 @@ class UrbanEnvV2(gym.Env):
 
         # DC-1: ONE RNG source — all children via spawn()
         root_rng = np.random.default_rng(seed)
-        children = root_rng.spawn(5)
-        env_rng, fire_rng, traffic_rng, nfz_rng, _reserved_rng = children
+        children = root_rng.spawn(6)
+        env_rng, fire_rng, traffic_rng, nfz_rng, collapse_rng, _reserved_rng = children
 
         # Generate or load map
         if self.config.map_source == "osm" and self.config.osm_tile_id:
@@ -211,27 +214,29 @@ class UrbanEnvV2(gym.Env):
                 self._heightmap, self._agent_xy, self._goal_xy
             )
 
-        # Snap mission POI to corridor midpoint for path alignment (FC-1).
-        # This ensures the agent visits the POI while following the
-        # start→goal path, and corridor interdictions (fire/roadblock)
-        # intersect the executed path.  Without this, two-leg routing
-        # (start→POI→goal) takes a different geometry that bypasses
-        # interdictions placed on the start→goal corridor.
+        # Scatter mission POIs to realistic off-corridor positions.
+        # POIs are placed near corridor fractions but offset perpendicular
+        # by ≥10 cells, forcing the agent to deviate from the corridor.
+        # Dynamic obstacles (fire, traffic) on the corridor still affect
+        # the journey, and each planner must independently route to POIs.
         if (self._mission is not None
                 and self._mission.service_time_s > 0
                 and len(self._bfs_corridor) > 2):
-            self._mission.snap_poi_to_path(self._bfs_corridor)
-            # Ensure snapped POI cell is free
-            new_poi = self._mission.objective_poi
-            px, py = new_poi
-            if 0 <= px < self._map_size and 0 <= py < self._map_size:
-                self._heightmap[py, px] = 0.0
+            self._mission.scatter_pois(
+                self._bfs_corridor, self._heightmap, env_rng,
+            )
+            # Ensure all scattered task cells are free (walkable)
+            for pos in self._mission.all_task_positions:
+                px, py = pos
+                if 0 <= px < self._map_size and 0 <= py < self._map_size:
+                    self._heightmap[py, px] = 0.0
 
         # Initialize dynamics (Phase 4)
         map_shape = (self._map_size, self._map_size)
         self._fire = None
         self._traffic = None
         self._nfz = None
+        self._collapse = None
         self._interaction = None
 
         if self.config.enable_fire and self.config.fire_ignition_points > 0:
@@ -277,6 +282,15 @@ class UrbanEnvV2(gym.Env):
                 num_zones=self.config.num_nfz_zones,
                 event_t1=self.config.event_t1 or 30,
                 event_t2=self.config.event_t2 or 80,
+                corridor=self._bfs_corridor,
+            )
+
+        if self.config.enable_collapse and self._fire is not None:
+            self._collapse = CollapseModel(
+                heightmap=self._heightmap,
+                rng=collapse_rng,
+                collapse_delay=self.config.collapse_delay,
+                debris_prob=self.config.debris_prob,
             )
 
         if self._fire is not None or self._traffic is not None:
@@ -458,6 +472,10 @@ class UrbanEnvV2(gym.Env):
             "dynamic_nfz_mask": (
                 self._nfz.get_nfz_mask() if self._nfz is not None else None
             ),
+            "debris_mask": (
+                self._collapse.debris_mask
+                if self._collapse is not None else None
+            ),
         }
 
     # -- Internal --
@@ -476,6 +494,11 @@ class UrbanEnvV2(gym.Env):
 
         if self._nfz is not None:
             self._nfz.step(fire_mask=fire_mask)
+
+        if self._collapse is not None:
+            self._collapse.step(
+                fire_mask=fire_mask, step_idx=self._step_idx,
+            )
 
         if self._interaction is not None:
             self._interaction.update(
@@ -524,6 +547,8 @@ class UrbanEnvV2(gym.Env):
             return RejectReason.TRAFFIC_BUFFER
         if dyn_state.get("dynamic_nfz_mask") is not None and dyn_state["dynamic_nfz_mask"][ny, nx]:
             return RejectReason.DYNAMIC_NFZ
+        if dyn_state.get("debris_mask") is not None and dyn_state["debris_mask"][ny, nx]:
+            return RejectReason.DEBRIS
         # Fallback (should not happen if blocking mask is consistent)
         return RejectReason.BUILDING
 
@@ -642,6 +667,7 @@ class UrbanEnvV2(gym.Env):
             info["origin_name"] = self._mission.origin_name
             info["destination_name"] = self._mission.destination_name
             info["priority"] = self._mission.priority
+            info["task_info_list"] = self._mission.task_info_list
 
         return info
 

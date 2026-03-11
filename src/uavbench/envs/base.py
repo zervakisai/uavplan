@@ -19,6 +19,7 @@ class TerminationReason(str, Enum):
     INFEASIBLE = "infeasible"
     WALL_TIMEOUT = "wall_timeout"
     ENERGY_DEPLETED = "energy_depleted"
+    GOAL_STALL = "goal_stall"
     IN_PROGRESS = "in_progress"
 
 
@@ -33,6 +34,7 @@ class RejectReason(str, Enum):
     SMOKE = "smoke"
     TRAFFIC_BUFFER = "traffic_buffer"
     DYNAMIC_NFZ = "dynamic_nfz"
+    DEBRIS = "debris"
     OUT_OF_BOUNDS = "out_of_bounds"
 
 

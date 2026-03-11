@@ -1,4 +1,4 @@
-# UAVBench
+# FLARE (formerly UAVBench)
 
 ## Project
 UAV navigation benchmark framework for reproducible planner evaluation.
@@ -6,7 +6,7 @@ Motion planners navigate grid-based urban environments with dynamic obstacles (f
 The benchmark measures planner performance under identical, reproducible conditions.
 
 **Paper #1: Hazard-Coupled Planning Under Uncertainty** — planners differentiated by
-risk cost functions, wind-driven fire, limited visibility, and triage missions.
+risk cost functions, wind-driven fire, structural collapse, and triage missions.
 
 ## Rules
 
@@ -14,7 +14,7 @@ risk cost functions, wind-driven fire, limited visibility, and triage missions.
 2. **Skeptical**: No "first", no "guarantee", no fabricated citations. Use `[CITE]` placeholders in docs.
 3. **Dual-use safety**: No weaponization, targeting, tactics. Only benchmark integrity: navigation, safety constraints, fairness, reproducibility.
 4. **Determinism**: Same `(scenario_id, planner_id, seed)` → bit-identical outputs. ONE RNG source.
-5. **Backward compat**: wind_speed=0, enable_limited_visibility=False → bit-identical to v2.
+5. **Backward compat**: wind_speed=0 → bit-identical to v2.
 
 ## Architecture
 
@@ -25,7 +25,7 @@ src/uavbench/
   missions/                     # schema, engine, triage (TRIAGE mission + survival model)
   envs/                         # base, urban (UrbanEnvV2)
   dynamics/                     # fire_ca (wind-driven), traffic, restriction_zones,
-                                # interaction_engine, limited_visibility
+                                # interaction_engine, collapse
   planners/                     # base, astar, periodic_replan, aggressive_replan,
                                 # incremental_astar (was dstar_lite), apf
   blocking.py                   # compute_blocking_mask() + compute_risk_cost_map() (MP-1)
@@ -45,7 +45,7 @@ src/uavbench/
 ## Key Features (Paper #1)
 - **Wind-driven fire** (FD-5b): Alexandridis 2008 directional modulation
 - **Risk cost maps**: continuous [0,1] planner cost from fire/smoke/traffic proximity
-- **Limited visibility**: partial observability with stale memory outside sensor radius
+- **Structural collapse**: fire-triggered building collapse spawning permanent debris
 - **TRIAGE mission**: multi-casualty survival decay coupled with fire proximity
 
 ## Key Commands
@@ -59,7 +59,7 @@ python scripts/export_artifacts.py           # export evidence
 
 ## Test Strategy
 - Contract tests enforce architectural invariants (determinism, fairness, event semantics, etc.)
-- Unit tests for pure functions (fire CA, BFS, metrics, wind, limited visibility, triage)
+- Unit tests for pure functions (fire CA, BFS, metrics, wind, collapse, triage)
 - Run `pytest tests/contract_test_*.py` after every structural change
 
 ## Code Style
@@ -73,7 +73,7 @@ python scripts/export_artifacts.py           # export evidence
 DC (Determinism), FC (Fairness), EC (Events/Decisions), GC (Guardrail),
 EV (Event Semantics), VC (Visual Truth), MC (Mission Story), PC (Planner),
 FD (Fire Dynamics), CC (Calibration), SC (Sanity Check), MP (Mask Parity),
-WD (Wind Determinism), LV (Limited Visibility), TR (Triage)
+WD (Wind Determinism), TR (Triage)
 
 See `docs/CONTRACTS.md` for full specification.
 

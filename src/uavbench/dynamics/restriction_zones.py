@@ -43,6 +43,7 @@ class RestrictionZoneModel:
         max_coverage: float = 0.30,
         event_t1: int = 30,
         event_t2: int = 80,
+        corridor: list[tuple[int, int]] | None = None,
     ) -> None:
         self._rng = rng
         self._H, self._W = map_shape
@@ -60,10 +61,23 @@ class RestrictionZoneModel:
             else:
                 act_step = event_t1
 
-            # Random center
-            cx = int(rng.integers(self._W))
-            cy = int(rng.integers(self._H))
             radius = int(rng.integers(8, 20))
+
+            if corridor and len(corridor) > 4:
+                # Mission-aware placement: center near corridor so NFZ
+                # edge clips ~20% of the corridor (operational relevance).
+                seg_start = len(corridor) // 4
+                seg_end = 3 * len(corridor) // 4
+                target_idx = int(rng.integers(seg_start, seg_end))
+                tx, ty = corridor[target_idx]
+                offset = max(1, int(radius * 0.7))
+                cx = int(tx + rng.integers(-offset, offset + 1))
+                cy = int(ty + rng.integers(-offset, offset + 1))
+                cx = max(0, min(self._W - 1, cx))
+                cy = max(0, min(self._H - 1, cy))
+            else:
+                cx = int(rng.integers(self._W))
+                cy = int(rng.integers(self._H))
 
             self._zones.append(
                 RestrictionZone(

@@ -8,7 +8,7 @@ from __future__ import annotations
 # Registry order (uses actual planner registry keys)
 PLANNER_ORDER = [
     "astar", "periodic_replan", "aggressive_replan",
-    "dstar_lite", "apf",
+    "incremental_astar", "apf",
 ]
 
 # Full names (for figure titles, HUD)

@@ -19,15 +19,20 @@ from uavbench.visualization.hud import (
 from uavbench.visualization.overlays import (
     COLOR_AGENT,
     COLOR_CYAN,
+    COLOR_DEBRIS,
     COLOR_FIRE,
     COLOR_FIRE_BUFFER,
     COLOR_GOAL,
     COLOR_NFZ,
+    COLOR_POI_PHARMACY,
+    COLOR_POI_RESCUE,
+    COLOR_POI_SURVEY,
     COLOR_SMOKE,
     COLOR_START,
     COLOR_TRAFFIC,
     COLOR_TRAJ_BLUE,
     draw_agent,
+    draw_debris,
     draw_fire,
     draw_fire_buffer,
     draw_goal,
@@ -36,6 +41,7 @@ from uavbench.visualization.overlays import (
     draw_risk_heatmap,
     draw_smoke,
     draw_start,
+    draw_task_pois,
     draw_traffic,
     draw_trajectory,
 )
@@ -126,6 +132,12 @@ class Renderer:
             if fire_mask is not None:
                 draw_fire(frame, fire_mask, cell)
 
+        # Z=4.5: Debris overlay (permanent structural collapse)
+        if dynamic_state is not None:
+            debris_mask = dynamic_state.get("debris_mask")
+            if debris_mask is not None:
+                draw_debris(frame, debris_mask, cell)
+
         # Z=3.2: Risk heatmap overlay (green→yellow→red) — ops_full only
         if self.mode == "ops_full":
             cost_map = state.get("cost_map")
@@ -167,6 +179,11 @@ class Renderer:
         goal_xy = state.get("goal_xy", (H - 1, W - 1))
         draw_start(frame, start_xy, cell)
         draw_goal(frame, goal_xy, cell)
+
+        # Z=9.7: Mission POI icons (pharmacy ✚, rescue ✚, survey ◆)
+        task_info = state.get("task_info_list", [])
+        if task_info:
+            draw_task_pois(frame, task_info, cell)
 
         # Z=10: Agent icon
         draw_agent(frame, agent_xy, cell)
@@ -243,12 +260,14 @@ class Renderer:
             (COLOR_START, "START"),
             (COLOR_GOAL, "GOAL"),
             (COLOR_AGENT, "UAV"),
+            (COLOR_POI_PHARMACY, "PHARMA"),
+            (COLOR_POI_RESCUE, "RESCUE"),
+            (COLOR_POI_SURVEY, "SURVEY"),
             (COLOR_CYAN, "PLAN"),
             (COLOR_TRAJ_BLUE, "TRAJ"),
             (COLOR_FIRE, "FIRE"),
-            (COLOR_FIRE_BUFFER, "BUFFER"),
             (COLOR_SMOKE, "SMOKE"),
-            (COLOR_NFZ, "NFZ"),
+            (COLOR_DEBRIS, "DEBRIS"),
             (COLOR_TRAFFIC, "TRAFFIC"),
         ]
         x = 4
@@ -374,44 +393,3 @@ class Renderer:
         frame = self._render_legend(frame)
 
         return frame
-
-    def render_fog_comparison(
-        self,
-        heightmap: np.ndarray,
-        state: dict[str, Any],
-        fog_state: dict[str, Any],
-        ground_truth: dict[str, Any],
-    ) -> np.ndarray:
-        """Render side-by-side fog comparison: agent view vs ground truth.
-
-        Left panel: what the planner sees (fog-filtered state)
-        Right panel: actual environment state (ground truth)
-        """
-        # Render fog view (left)
-        fog_frame, _ = self.render_frame(heightmap, state, fog_state)
-
-        # Render ground truth (right) — create state without cost_map for cleaner view
-        truth_state = dict(state)
-        truth_state.pop("cost_map", None)
-        truth_frame, _ = self.render_frame(heightmap, truth_state, ground_truth)
-
-        # Ensure same height
-        h1, w1 = fog_frame.shape[:2]
-        h2, w2 = truth_frame.shape[:2]
-        h = max(h1, h2)
-        if h1 < h:
-            fog_frame = np.vstack([fog_frame, np.full((h - h1, w1, 3), 255, dtype=np.uint8)])
-        if h2 < h:
-            truth_frame = np.vstack([truth_frame, np.full((h - h2, w2, 3), 255, dtype=np.uint8)])
-
-        # Divider (2px black line)
-        divider = np.zeros((h, 2, 3), dtype=np.uint8)
-
-        # Composite
-        combined = np.hstack([fog_frame, divider, truth_frame])
-
-        # Add labels at top
-        _render_text(combined, "AGENT VIEW (FOG)", 4, 4, (255, 200, 0), 2)
-        _render_text(combined, "GROUND TRUTH", w1 + 6, 4, (0, 200, 0), 2)
-
-        return combined

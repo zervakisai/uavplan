@@ -27,6 +27,13 @@ COLOR_SMOKE = np.array([160, 160, 160], dtype=np.uint8)     # #A0A0A0 — smoke 
 COLOR_NFZ = np.array([204, 121, 167], dtype=np.uint8)       # #CC79A7 — NFZ (reddish purple)
 COLOR_TRAFFIC = np.array([230, 159, 0], dtype=np.uint8)     # #E69F00 — traffic closure (orange)
 COLOR_FIRE_BUFFER = np.array([255, 180, 100], dtype=np.uint8)  # light orange — fire buffer
+COLOR_DEBRIS = np.array([120, 100, 80], dtype=np.uint8)       # dark brown — structural debris
+
+# POI icon colors (Okabe-Ito + mission-specific)
+COLOR_POI_PHARMACY = np.array([0, 158, 115], dtype=np.uint8)   # #009E73 — green pharmacy cross
+COLOR_POI_RESCUE = np.array([213, 94, 0], dtype=np.uint8)      # #D55E00 — vermillion rescue cross
+COLOR_POI_SURVEY = np.array([0, 114, 178], dtype=np.uint8)     # #0072B2 — blue survey diamond
+COLOR_POI_COMPLETED = np.array([160, 160, 160], dtype=np.uint8)  # grey for completed POIs
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +239,144 @@ def draw_agent(
 
 
 # ---------------------------------------------------------------------------
+# POI icons (z=9.7) — mission-specific markers
+# ---------------------------------------------------------------------------
+
+# Category → icon color mapping
+_POI_CATEGORY_COLORS: dict[str, np.ndarray] = {
+    "pharmacy_pickup": COLOR_POI_PHARMACY,
+    "delivery_point": COLOR_POI_PHARMACY,
+    "rescue_site": COLOR_POI_RESCUE,
+    "survey_point": COLOR_POI_SURVEY,
+}
+
+
+def _draw_pharmacy_icon(
+    frame: np.ndarray, cx: int, cy: int, size: int, color: np.ndarray,
+) -> None:
+    """Draw a pharmacy cross (✚) — thick plus sign."""
+    H, W = frame.shape[:2]
+    arm_w = max(2, size // 3)  # arm width
+    half_w = arm_w // 2
+    for i in range(-size, size + 1):
+        for w in range(-half_w, half_w + 1):
+            # Horizontal arm
+            py, px = cy + w, cx + i
+            if 0 <= py < H and 0 <= px < W:
+                frame[py, px] = color
+            # Vertical arm
+            py, px = cy + i, cx + w
+            if 0 <= py < H and 0 <= px < W:
+                frame[py, px] = color
+
+
+def _draw_rescue_icon(
+    frame: np.ndarray, cx: int, cy: int, size: int, color: np.ndarray,
+) -> None:
+    """Draw a rescue cross — thin cross with circle outline."""
+    H, W = frame.shape[:2]
+    arm_w = max(1, size // 4)
+    half_w = arm_w // 2
+    # Cross arms
+    for i in range(-size, size + 1):
+        for w in range(-half_w, half_w + 1):
+            py, px = cy + w, cx + i
+            if 0 <= py < H and 0 <= px < W:
+                frame[py, px] = color
+            py, px = cy + i, cx + w
+            if 0 <= py < H and 0 <= px < W:
+                frame[py, px] = color
+    # Circle outline
+    _draw_circle(frame, cx, cy, size + 2, color, filled=False)
+
+
+def _draw_survey_icon(
+    frame: np.ndarray, cx: int, cy: int, size: int, color: np.ndarray,
+) -> None:
+    """Draw a surveillance diamond (◆) with center dot."""
+    H, W = frame.shape[:2]
+    # Diamond: |dx| + |dy| <= size
+    for dy in range(-size, size + 1):
+        for dx in range(-size, size + 1):
+            if abs(dx) + abs(dy) <= size:
+                py, px = cy + dy, cx + dx
+                if 0 <= py < H and 0 <= px < W:
+                    # Fill interior, outline on border
+                    if abs(dx) + abs(dy) >= size - 1:
+                        frame[py, px] = color  # border
+                    else:
+                        # Lighter fill
+                        frame[py, px] = (
+                            (frame[py, px].astype(np.uint16) + color.astype(np.uint16)) >> 1
+                        ).astype(np.uint8)
+    # Center dot (solid)
+    dot_r = max(2, size // 3)
+    _draw_circle(frame, cx, cy, dot_r, color, filled=True)
+
+
+def draw_task_pois(
+    frame: np.ndarray,
+    task_info_list: list[dict],
+    cell: int,
+) -> None:
+    """Draw mission POI icons at z=9.7.
+
+    Each task dict has: xy, category, status, task_id.
+    Active tasks get full-color icons; completed tasks get grey.
+    """
+    if not task_info_list:
+        return
+
+    for task in task_info_list:
+        xy = task["xy"]
+        category = task.get("category", "")
+        status = task.get("status", "active")
+        completed = status == "completed"
+
+        cx, cy = _cell_center(xy[0], xy[1], cell)
+        size = max(9, int(cell * 3))
+
+        # Color: grey if completed, mission-specific if active
+        color = COLOR_POI_COMPLETED if completed else _POI_CATEGORY_COLORS.get(
+            category, COLOR_GOAL,
+        )
+
+        # White background circle for visibility
+        bg_radius = size + 3
+        _draw_circle(frame, cx, cy, bg_radius + 1,
+                      np.array([0, 0, 0], dtype=np.uint8), filled=True)
+        _draw_circle(frame, cx, cy, bg_radius,
+                      np.array([255, 255, 255], dtype=np.uint8), filled=True)
+
+        # Mission-specific icon shape
+        if category in ("pharmacy_pickup", "delivery_point"):
+            _draw_pharmacy_icon(frame, cx, cy, size, color)
+        elif category == "rescue_site":
+            _draw_rescue_icon(frame, cx, cy, size, color)
+        elif category == "survey_point":
+            _draw_survey_icon(frame, cx, cy, size, color)
+        else:
+            # Fallback: filled circle
+            _draw_circle(frame, cx, cy, size, color, filled=True)
+
+        # Completed checkmark overlay (small ✓)
+        if completed:
+            check_s = max(3, size // 2)
+            _draw_line(
+                frame,
+                cx - check_s, cy,
+                cx - check_s // 3, cy + check_s,
+                np.array([60, 180, 60], dtype=np.uint8), width=2,
+            )
+            _draw_line(
+                frame,
+                cx - check_s // 3, cy + check_s,
+                cx + check_s, cy - check_s,
+                np.array([60, 180, 60], dtype=np.uint8), width=2,
+            )
+
+
+# ---------------------------------------------------------------------------
 # Fire overlay (z=4)
 # ---------------------------------------------------------------------------
 
@@ -363,6 +508,33 @@ def draw_fire_buffer(
 _RISK_GREEN = np.array([0, 180, 0], dtype=np.uint8)
 _RISK_YELLOW = np.array([255, 220, 0], dtype=np.uint8)
 _RISK_RED = np.array([220, 30, 0], dtype=np.uint8)
+
+
+def draw_debris(
+    frame: np.ndarray,
+    debris_mask: np.ndarray,
+    cell: int,
+) -> None:
+    """Draw debris cells as dark brown overlay with cross-hatching (z=4.5)."""
+    if not debris_mask.any():
+        return
+    debris_px = np.repeat(np.repeat(debris_mask, cell, axis=0), cell, axis=1)
+    mask_3d = debris_px[:, :, np.newaxis]
+    fg = COLOR_DEBRIS.astype(np.uint16)
+    # 85% opacity
+    blended = ((frame.astype(np.uint16) * 38 + fg * 218) >> 8).astype(np.uint8)
+    frame[:] = np.where(mask_3d, blended, frame)
+
+    # Cross-hatching pattern (every 3rd pixel on both diagonals)
+    ys, xs = np.where(debris_px)
+    hatch = ((ys + xs) % 3 == 0) | ((ys - xs) % 3 == 0)
+    hatch_color = np.array([80, 65, 50], dtype=np.uint8)
+    frame[ys[hatch], xs[hatch]] = hatch_color
+
+
+# ---------------------------------------------------------------------------
+# Risk heatmap overlay (z=3.2) — continuous cost map visualization
+# ---------------------------------------------------------------------------
 
 
 def draw_risk_heatmap(

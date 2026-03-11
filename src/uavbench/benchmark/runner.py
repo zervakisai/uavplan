@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from uavbench.blocking import compute_risk_cost_map
-from uavbench.dynamics.limited_visibility import LimitedVisibility
 from uavbench.envs.base import TerminationReason
 from uavbench.envs.urban import UrbanEnvV2
 from uavbench.metrics.compute import compute_episode_metrics
@@ -84,17 +83,8 @@ def run_episode(
     planner = planner_cls(heightmap, no_fly, config)
     planner.set_seed(seed)
 
-    # Limited visibility (LV-1: planner-agnostic partial observability)
-    fog = (
-        LimitedVisibility((config.map_size, config.map_size), config.sensor_radius)
-        if config.enable_limited_visibility
-        else None
-    )
-
     # Initial risk cost map for risk-aware planning
     initial_dyn = env.get_dynamic_state()
-    if fog is not None:
-        initial_dyn = fog.observe(start_xy, initial_dyn, 0)
     risk_map = compute_risk_cost_map(heightmap, no_fly, config, initial_dyn)
 
     # Initial plan: ALWAYS start→goal (FC-1 corridor alignment).
@@ -122,6 +112,8 @@ def run_episode(
             plan_result=plan_result,
             replan_count=0,
             goal_xy=goal_xy,
+            mission_type=config.mission_type.value,
+            max_steps=config.effective_max_steps,
         )
         metrics["planned_waypoints_len"] = 0
         metrics["naive_replan_count"] = 0
@@ -159,15 +151,23 @@ def run_episode(
     truncated = False
     final_info = info
 
+    # Multi-POI tracking: detect when a new task completes
+    _prev_done_count = 0
+
     # POI unreachability detection: if the agent makes no progress toward
     # the POI for _POI_STUCK_LIMIT steps, abandon POI and target goal directly.
     _poi_stuck_counter = 0
     _poi_best_dist = float("inf")
     _POI_STUCK_LIMIT = 30
 
+    # Goal stall detector: terminate if no progress toward goal for N steps
+    _goal_stall_counter = 0
+    _goal_best_dist = abs(start_xy[0] - goal_xy[0]) + abs(start_xy[1] - goal_xy[1])
+    _GOAL_STALL_LIMIT = 500  # steps without progress → terminate
+
     # Wall-clock timeout safety net
     _wall_start = _time.perf_counter()
-    _WALL_TIMEOUT_S = 300.0
+    _WALL_TIMEOUT_S = 600.0
 
     # Energy budget tracking
     _energy_budget = config.energy_budget
@@ -199,6 +199,19 @@ def run_episode(
             truncated = True
         trajectory.append(env.agent_xy)
 
+        # Goal stall check: early-terminate if agent is stuck
+        _goal_dist = abs(env.agent_xy[0] - goal_xy[0]) + abs(env.agent_xy[1] - goal_xy[1])
+        if _goal_dist < _goal_best_dist:
+            _goal_best_dist = _goal_dist
+            _goal_stall_counter = 0
+        else:
+            _goal_stall_counter += 1
+        if _goal_stall_counter >= _GOAL_STALL_LIMIT and not terminated and not truncated:
+            final_info = dict(final_info)
+            final_info["termination_reason"] = TerminationReason.GOAL_STALL
+            final_info["objective_completed"] = False
+            truncated = True
+
         # Energy consumption
         if _energy_budget > 0:
             cost = _ENERGY_STAY if action == 4 else _ENERGY_MOVE
@@ -210,19 +223,18 @@ def run_episode(
                 final_info["objective_completed"] = False
                 truncated = True
 
-        # Check if mission task completed → switch replan target to goal
+        # Check mission task progress → cycle through POIs or switch to goal
         if not mission_task_done:
             task_progress = info.get("task_progress", "0/0")
-            if task_progress.startswith("1/"):
+            done_str, total_str = task_progress.split("/")
+            done_count, total_count = int(done_str), int(total_str)
+
+            if done_count == total_count and total_count > 0:
+                # All tasks completed → switch to goal
                 mission_task_done = True
                 current_target = goal_xy
                 _poi_stuck_counter = 0
-                # Only replan if current path doesn't lead to goal.
-                # Static planners on start→goal path: path[-1]==goal → no
-                # replan (they continue on original path through fire/
-                # roadblock interdictions → stuck → timeout).
-                # Adaptive planners that replanned to POI during leg 1:
-                # path[-1]==POI → need fresh plan to goal.
+                _prev_done_count = done_count
                 if not path or path[-1] != goal_xy:
                     plan_result_new = planner.plan(env.agent_xy, goal_xy, cost_map=risk_map)
                     if plan_result_new.success:
@@ -231,11 +243,26 @@ def run_episode(
                         replan_count += 1
                         planned_waypoints_total += len(plan_result_new.path)
                         _last_plan_step = step_idx
+            elif done_count > _prev_done_count:
+                # New task completed, more remain → advance to next POI
+                _prev_done_count = done_count
+                new_poi = info.get("objective_poi", goal_xy)
+                mission_poi = new_poi
+                current_target = new_poi
+                _poi_stuck_counter = 0
+                _poi_best_dist = float("inf")
+                # Only replan if remaining path doesn't pass through new POI
+                remaining = path[path_idx:]
+                if new_poi not in remaining:
+                    plan_result_new = planner.plan(env.agent_xy, new_poi, cost_map=risk_map)
+                    if plan_result_new.success:
+                        path = plan_result_new.path
+                        path_idx = 0
+                        replan_count += 1
+                        planned_waypoints_total += len(plan_result_new.path)
+                        _last_plan_step = step_idx
             else:
-                # POI unreachability detection: if stuck for _POI_STUCK_LIMIT
-                # steps with no progress toward POI, abandon POI and go to goal.
-                # Does NOT replan — adaptive planners replan via should_replan(),
-                # static planners (A*) continue on original start→goal path.
+                # No new completions — check POI unreachability
                 poi_dist = (abs(env.agent_xy[0] - mission_poi[0])
                             + abs(env.agent_xy[1] - mission_poi[1]))
                 if poi_dist < _poi_best_dist:
@@ -244,7 +271,7 @@ def run_episode(
                 else:
                     _poi_stuck_counter += 1
                 if _poi_stuck_counter >= _POI_STUCK_LIMIT:
-                    mission_task_done = True  # abandon POI
+                    mission_task_done = True  # abandon all remaining
                     current_target = goal_xy
                     _poi_stuck_counter = 0
 
@@ -254,11 +281,10 @@ def run_episode(
             if env.agent_xy == next_wp:
                 path_idx += 1
 
-        # Update planner with dynamic state (fog-filtered if enabled)
+        # Update planner with dynamic state
         dyn_state = env.get_dynamic_state()
-        observed = fog.observe(env.agent_xy, dyn_state, step_idx) if fog else dyn_state
-        risk_map = compute_risk_cost_map(heightmap, no_fly, config, observed)
-        planner.update(observed)
+        risk_map = compute_risk_cost_map(heightmap, no_fly, config, dyn_state)
+        planner.update(dyn_state)
 
         # Check if replan needed
         if _failed_plan_cooldown > 0:
@@ -314,7 +340,7 @@ def run_episode(
             }
             # Add mission fields from info
             for k in ("objective_label", "distance_to_task", "task_progress",
-                       "deliverable_name", "mission_domain"):
+                       "deliverable_name", "mission_domain", "task_info_list"):
                 if k in info:
                     frame_state[k] = info[k]
             frame_callback(heightmap, frame_state, dyn_state, config)
@@ -330,6 +356,8 @@ def run_episode(
         plan_result=plan_result,
         replan_count=replan_count,
         goal_xy=goal_xy,
+        mission_type=config.mission_type.value,
+        max_steps=config.effective_max_steps,
     )
     # Augment with runner-tracked fields
     metrics["planned_waypoints_len"] = planned_waypoints_total
