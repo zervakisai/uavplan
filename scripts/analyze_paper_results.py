@@ -45,6 +45,17 @@ DIFFICULTY_ORDER = ["medium"]  # only medium difficulty in v2
 # ---------------------------------------------------------------------------
 
 
+SCENARIO_LABELS = {
+    "osm_penteli_pharma_delivery_medium": "Penteli\nPharma Delivery",
+    "osm_piraeus_flood_rescue_medium": "Piraeus\nUrban Rescue",
+    "osm_downtown_fire_surveillance_medium": "Downtown\nFire Surveillance",
+}
+
+
+def _scenario_label(sid: str) -> str:
+    return SCENARIO_LABELS.get(sid, sid.replace("osm_", "").replace("_", "\n"))
+
+
 def _label(pid: str) -> str:
     return PLANNER_LABELS.get(pid, pid)
 
@@ -348,7 +359,7 @@ def fig_bar_success_rate(df: pd.DataFrame) -> None:
         )
 
     ax.set_xticks(x)
-    short_labels = [s.replace("osm_", "").replace("_", "\n") for s in scenarios]
+    short_labels = [_scenario_label(s) for s in scenarios]
     ax.set_xticklabels(short_labels, fontsize=8)
     ax.set_ylabel("Success Rate (%)")
     ax.set_ylim(0, 105)
@@ -373,7 +384,7 @@ def fig_heatmap_success(df: pd.DataFrame) -> None:
     im = ax.imshow(matrix, cmap="RdYlGn", vmin=0, vmax=100, aspect="auto")
 
     ax.set_xticks(range(len(scenarios)))
-    short_labels = [s.replace("osm_", "").replace("_", "\n") for s in scenarios]
+    short_labels = [_scenario_label(s) for s in scenarios]
     ax.set_xticklabels(short_labels, fontsize=7)
     ax.set_yticks(range(len(PLANNER_ORDER)))
     ax.set_yticklabels([_label(p) for p in PLANNER_ORDER], fontsize=9)
