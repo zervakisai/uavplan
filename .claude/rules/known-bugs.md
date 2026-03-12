@@ -46,3 +46,13 @@ When fire/traffic blocked access to mission POI, agent targeted POI forever,
 never switching to goal. Agent got permanently stuck with 0 replans.
 Fix: POI stuck detection (30 steps without progress toward POI) → abandon
 POI, switch target to goal. No free replan given (fairness preserved).
+
+## BUG-10: Fire/Debris on Agent Cell Not Terminal (FIXED)
+Fire or debris spreading to the agent's cell after dynamics advance didn't
+terminate the episode. Agent would sit in fire indefinitely, getting move
+rejections but never failing. `terminate_on_collision` only checked BUILDING
+and NO_FLY static obstacles.
+Fix: Post-dynamics survival check in env.step() after `_step_dynamics()`.
+If fire_mask[ay, ax] → FIRE_CAUGHT termination with -25 penalty.
+If debris_mask[ay, ax] → DEBRIS_CAUGHT termination with -25 penalty.
+New TerminationReason values: FIRE_CAUGHT, DEBRIS_CAUGHT.

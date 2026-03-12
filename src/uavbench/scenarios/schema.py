@@ -28,7 +28,7 @@ class Difficulty(str, Enum):
 
 class MissionType(str, Enum):
     PHARMA_DELIVERY = "pharma_delivery"
-    FLOOD_RESCUE = "flood_rescue"
+    URBAN_RESCUE = "urban_rescue"
     FIRE_SURVEILLANCE = "fire_surveillance"
     TRIAGE = "triage"
 

@@ -77,7 +77,7 @@ src/uavbench/
 | Scenario ID | Mission Type | OSM Tile | Dynamics |
 |-------------|-------------|----------|----------|
 | `osm_penteli_pharma_delivery_medium` | pharma_delivery | Penteli, Attica | fire=2, traffic=8+2, nfz=1 |
-| `osm_piraeus_flood_rescue_medium` | flood_rescue | Piraeus port | fire=2, traffic=8+2, nfz=1 |
+| `osm_piraeus_urban_rescue_medium` | urban_rescue | Piraeus port | fire=2, traffic=8+2, nfz=1 |
 | `osm_downtown_fire_surveillance_medium` | fire_surveillance | Athens center | fire=1, traffic=8+2, nfz=1 |
 
 ---
@@ -405,7 +405,7 @@ mechanisms using existing dynamics layers:
 | Scenario | Map | Density | Fire | Buffer | Traffic | NFZ | Interdiction | t1 | t2 |
 |----------|-----|---------|------|--------|---------|-----|-------------|----|----|
 | osm_penteli_pharma_delivery_medium | 500 | 0.18 | 2 | 1 | 8+2 | 1 | fire corridor | 40 | 120 |
-| osm_piraeus_flood_rescue_medium | 500 | 0.29 | 2 | 1 | 8+2 | 1 | fire corridor + roadblock | 40 | 120 |
+| osm_piraeus_urban_rescue_medium | 500 | 0.29 | 2 | 1 | 8+2 | 1 | fire corridor + roadblock | 40 | 120 |
 | osm_downtown_fire_surveillance_medium | 500 | 0.50 | 1 | 1 | 8+2 | 1 | fire corridor | 40 | 120 |
 
 **All scenarios:** Dynamic track, OSM-based maps, 500x500, fire_buffer_radius=1, event window t1=40 t2=120. Traffic=8 emergency + 2 corridor-aware vehicles.
@@ -419,7 +419,7 @@ mechanisms using existing dynamics layers:
 | Type | Service Time | Task Placement | Deliverable | Priority |
 |------|-------------|----------------|-------------|----------|
 | pharma_delivery | 0 (fly-through) | At goal | medical_supplies | critical |
-| flood_rescue | 2 steps (STAY) | At midpoint | rescue_assessment | critical |
+| urban_rescue | 2 steps (STAY) | At midpoint | rescue_assessment | critical |
 | fire_surveillance | 3 steps (STAY) | At midpoint | perimeter_report | high |
 
 ### Mission Metadata
@@ -427,14 +427,14 @@ mechanisms using existing dynamics layers:
 | Type | Origin | Destination | Objective Label |
 |------|--------|-------------|----------------|
 | pharma_delivery | Hospital Depot Alpha | Fire-Isolated Settlement | Emergency Medical Supply Delivery |
-| flood_rescue | Emergency Operations Center | Flood-Stranded Area | Flood Search & Rescue Assessment |
+| urban_rescue | Emergency Operations Center | Stranded Area | Urban Search & Rescue Assessment |
 | fire_surveillance | Fire Command Post | Active Fire Perimeter | Aerial Fire Perimeter Survey |
 
 ### Mission Engine (`missions/engine.py`)
 
 **Completion (MC-2):** Agent must reach objective POI + stay for service_time consecutive steps.
 - pharma_delivery: arrive at goal = complete (service_time=0)
-- flood_rescue: arrive at midpoint, STAY 2 steps
+- urban_rescue: arrive at midpoint, STAY 2 steps
 - fire_surveillance: arrive at midpoint, STAY 3 steps
 
 **Properties:** objective_poi, objective_reason, objective_label, deliverable_name, service_time_s, task_progress, all_tasks_completed, distance_to_task(xy), origin_name, destination_name, priority

@@ -29,13 +29,13 @@ RUNS = [
     ("osm_penteli_pharma_delivery_medium", "astar", 42),
     ("osm_penteli_pharma_delivery_medium", "aggressive_replan", 42),
     ("osm_penteli_pharma_delivery_medium", "apf", 42),
-    ("osm_piraeus_flood_rescue_medium", "periodic_replan", 42),
+    ("osm_piraeus_urban_rescue_medium", "periodic_replan", 42),
     ("osm_downtown_fire_surveillance_medium", "dstar_lite", 42),
 ]
 
 OSM_RUNS = [
     ("osm_penteli_pharma_delivery_medium", "aggressive_replan", 42),
-    ("osm_piraeus_flood_rescue_medium", "aggressive_replan", 42),
+    ("osm_piraeus_urban_rescue_medium", "aggressive_replan", 42),
     ("osm_downtown_fire_surveillance_medium", "aggressive_replan", 42),
 ]
 

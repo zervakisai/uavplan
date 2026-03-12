@@ -115,7 +115,7 @@ def compute_episode_metrics(
     if mission_type == "pharma_delivery":
         delivery_step = task_events[0]["step_idx"] if task_events else max_steps
         mission_score = medication_efficacy(delivery_step, max_steps)
-    elif mission_type == "flood_rescue":
+    elif mission_type == "urban_rescue":
         mission_score = triage_value(task_events, max_steps)
     elif mission_type == "fire_surveillance":
         mission_score = surveillance_value(task_events, max_steps=max_steps)

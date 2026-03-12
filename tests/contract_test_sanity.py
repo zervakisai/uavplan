@@ -85,7 +85,7 @@ class TestSC1_AdaptiveBeatsStatic:
     def test_non_fire_scenario_not_checked(self):
         """SC-1: flood scenario with static > adaptive → no SC-1."""
         results = _make_results(
-            "osm_piraeus_flood_rescue_medium",
+            "osm_piraeus_urban_rescue_medium",
             {
                 "astar": 0.5,
                 "periodic_replan": 0.1,

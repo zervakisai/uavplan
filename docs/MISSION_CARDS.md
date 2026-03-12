@@ -69,41 +69,41 @@ obstacles. Dynamic NFZs represent manned aircraft firefighting corridors.
 
 ---
 
-## Mission Family 2: Flood Rescue
+## Mission Family 2: Urban Rescue
 
 ### Identity
 
 | Field | Value |
 |-------|-------|
-| Mission Type | `FLOOD_RESCUE` |
-| Scenario ID | `osm_piraeus_flood_rescue_medium` |
-| Domain | `flood_rescue` |
+| Mission Type | `URBAN_RESCUE` |
+| Scenario ID | `osm_piraeus_urban_rescue_medium` |
+| Domain | `urban_rescue` |
 | OSM Tile | Piraeus port |
-| Inspired by | Thessaly/Θεσσαλία floods 2023 |
-| Building Density | 0.15 |
+| Inspired by | Rhodes/Ρόδος coastal fires 2023 |
+| Building Density | 0.29 |
 
 ### Incident Provenance
 
-**2023 Thessaly Floods (Storm Daniel)**
+**2023 Rhodes Coastal Fires**
 
-Storm Daniel caused catastrophic flooding across Thessaly in September 2023,
-stranding thousands. Road infrastructure was destroyed, and aerial platforms
-were critical for search and rescue assessment. [CITE] GSCP Storm Daniel AAR 2023;
-[CITE] Copernicus EMS Activation EMSR686
+The July 2023 Rhodes wildfires forced mass evacuations of coastal tourist
+areas, stranding thousands of residents and visitors. Road closures and
+active fire fronts complicated rescue operations, requiring aerial platforms
+for urban search and rescue assessment. [CITE] Copernicus EMS Activation EMSR680
 
 ### Mission Objective
 
-**Search and Rescue Assessment of Flood-Stranded Population**
+**Urban Search and Rescue Assessment of Fire-Stranded Casualties**
 
-The UAV must reach stranded population areas through flood-affected terrain.
-Water spread dynamics (modeled via traffic/road closures) create evolving
-obstacles. The agent must perform on-site assessment (service_time hover).
+The UAV must reach stranded casualties through fire-affected urban terrain.
+Dynamic obstacles (fire, traffic, road closures, structural collapse) create
+evolving barriers. The agent must perform on-site triage assessment (service_time hover).
 
 | Field | Value |
 |-------|-------|
-| Objective Label | "Flood Search & Rescue Assessment" |
+| Objective Label | "Urban Search & Rescue Assessment" |
 | Deliverable | `rescue_assessment` |
-| Reason String | "Search and rescue assessment of flood-stranded population" |
+| Reason String | "Urban search and rescue assessment of stranded population" |
 | Service Time | 2 steps (hover assessment) |
 
 ### Task Queue
@@ -204,7 +204,7 @@ a challenging environment requiring service_time hover at survey points.
 | Zone Type | Mission | Color | Description |
 |-----------|---------|-------|-------------|
 | `firefighting_corridor` | Fire Delivery | Orange `#FF8C00` | Manned aircraft corridor |
-| `flood_exclusion` | Flood Rescue | Blue `#1E90FF` | Flooded area / road closure |
+| `flood_exclusion` | Urban Rescue | Blue `#1E90FF` | Flooded area / road closure |
 | `aircraft_corridor` | Fire Surveillance | Purple `#9B59B6` | Active firefighting NFZ |
 
 ---

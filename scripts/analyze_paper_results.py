@@ -47,7 +47,7 @@ DIFFICULTY_ORDER = ["medium"]  # only medium difficulty in v2
 
 SCENARIO_LABELS = {
     "osm_penteli_pharma_delivery_medium": "Penteli\nPharma Delivery",
-    "osm_piraeus_flood_rescue_medium": "Piraeus\nUrban Rescue",
+    "osm_piraeus_urban_rescue_medium": "Piraeus\nUrban Rescue",
     "osm_downtown_fire_surveillance_medium": "Downtown\nFire Surveillance",
 }
 

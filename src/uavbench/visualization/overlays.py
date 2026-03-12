@@ -28,6 +28,7 @@ COLOR_NFZ = np.array([204, 121, 167], dtype=np.uint8)       # #CC79A7 — NFZ (r
 COLOR_TRAFFIC = np.array([230, 159, 0], dtype=np.uint8)     # #E69F00 — traffic closure (orange)
 COLOR_FIRE_BUFFER = np.array([255, 180, 100], dtype=np.uint8)  # light orange — fire buffer
 COLOR_DEBRIS = np.array([120, 100, 80], dtype=np.uint8)       # dark brown — structural debris
+COLOR_VEHICLE = np.array([178, 34, 34], dtype=np.uint8)       # #B22222 — dark red vehicle marker
 
 # POI icon colors (Okabe-Ito + mission-specific)
 COLOR_POI_PHARMACY = np.array([0, 158, 115], dtype=np.uint8)   # #009E73 — green pharmacy cross
@@ -463,6 +464,104 @@ def draw_traffic(
     fg = COLOR_TRAFFIC.astype(np.uint16)
     blended = ((frame.astype(np.uint16) * 154 + fg * 102) >> 8).astype(np.uint8)
     frame[:] = np.where(mask_3d, blended, frame)
+
+
+# ---------------------------------------------------------------------------
+# Vehicle icons (z=6.5) — individual vehicle markers on top of traffic zones
+# ---------------------------------------------------------------------------
+
+
+def draw_vehicle_icons(
+    frame: np.ndarray,
+    vehicle_positions: np.ndarray,
+    cell: int,
+) -> None:
+    """Draw emergency vehicle icons (top-down truck) at each vehicle position.
+
+    vehicle_positions: int[N, 2] as (y, x) from TrafficModel.
+    Each vehicle is drawn as a rectangular body with emergency light bar,
+    wheel dots, and white cross marking — recognizable as a fire truck
+    or emergency vehicle from above.
+    """
+    if vehicle_positions is None or len(vehicle_positions) == 0:
+        return
+
+    H, W = frame.shape[:2]
+    # Vehicle dimensions in pixels — prominent enough to see
+    half_h = max(8, cell * 3)      # half-height of truck body
+    half_w = max(5, cell * 2)      # half-width of truck body
+    _white = np.array([255, 255, 255], dtype=np.uint8)
+    _black = np.array([0, 0, 0], dtype=np.uint8)
+    _light_bar = np.array([30, 80, 220], dtype=np.uint8)   # blue emergency light
+    _cabin = np.array([140, 25, 25], dtype=np.uint8)        # darker cabin
+    _stripe = np.array([255, 255, 200], dtype=np.uint8)     # reflective stripe
+
+    for vy, vx in vehicle_positions:
+        cx, cy = _cell_center(int(vx), int(vy), cell)
+
+        # 1. White outline (shadow/border) — 2px larger all around
+        for dy in range(-(half_h + 2), half_h + 3):
+            for dx in range(-(half_w + 2), half_w + 3):
+                py, px = cy + dy, cx + dx
+                if 0 <= py < H and 0 <= px < W:
+                    frame[py, px] = _white
+
+        # 2. Black border — 1px larger
+        for dy in range(-(half_h + 1), half_h + 2):
+            for dx in range(-(half_w + 1), half_w + 2):
+                py, px = cy + dy, cx + dx
+                if 0 <= py < H and 0 <= px < W:
+                    frame[py, px] = _black
+
+        # 3. Main body fill (dark red)
+        for dy in range(-half_h, half_h + 1):
+            for dx in range(-half_w, half_w + 1):
+                py, px = cy + dy, cx + dx
+                if 0 <= py < H and 0 <= px < W:
+                    frame[py, px] = COLOR_VEHICLE
+
+        # 4. Cabin (front section — top 30% is darker)
+        cabin_h = max(3, half_h // 3)
+        for dy in range(-half_h, -half_h + cabin_h):
+            for dx in range(-half_w + 1, half_w):
+                py, px = cy + dy, cx + dx
+                if 0 <= py < H and 0 <= px < W:
+                    frame[py, px] = _cabin
+
+        # 5. Reflective white stripe across the middle
+        stripe_y = cy
+        stripe_w = max(1, half_w // 4)
+        for dx in range(-half_w + 1, half_w):
+            for sw in range(-stripe_w, stripe_w + 1):
+                py, px = stripe_y + sw, cx + dx
+                if 0 <= py < H and 0 <= px < W:
+                    frame[py, px] = _stripe
+
+        # 6. Emergency light bar (blue rectangle on top of cabin)
+        light_w = max(2, half_w // 2)
+        light_h = max(1, cabin_h // 2)
+        ly = cy - half_h + cabin_h // 2
+        for dy in range(-light_h, light_h + 1):
+            for dx in range(-light_w, light_w + 1):
+                py, px = ly + dy, cx + dx
+                if 0 <= py < H and 0 <= px < W:
+                    frame[py, px] = _light_bar
+
+        # 7. Wheel dots (4 corners of the body)
+        wheel_r = max(2, cell)
+        wheel_positions = [
+            (cy - half_h + wheel_r + 1, cx - half_w - 1),   # front-left
+            (cy - half_h + wheel_r + 1, cx + half_w + 1),   # front-right
+            (cy + half_h - wheel_r - 1, cx - half_w - 1),   # rear-left
+            (cy + half_h - wheel_r - 1, cx + half_w + 1),   # rear-right
+        ]
+        for wy, wx in wheel_positions:
+            for ddy in range(-wheel_r, wheel_r + 1):
+                for ddx in range(-wheel_r, wheel_r + 1):
+                    if ddy * ddy + ddx * ddx <= wheel_r * wheel_r:
+                        py, px = wy + ddy, wx + ddx
+                        if 0 <= py < H and 0 <= px < W:
+                            frame[py, px] = _black
 
 
 # ---------------------------------------------------------------------------

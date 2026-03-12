@@ -20,6 +20,11 @@ class TerminationReason(str, Enum):
     WALL_TIMEOUT = "wall_timeout"
     ENERGY_DEPLETED = "energy_depleted"
     GOAL_STALL = "goal_stall"
+    FIRE_CAUGHT = "fire_caught"
+    FIRE_PROXIMITY = "fire_proximity"
+    DEBRIS_CAUGHT = "debris_caught"
+    VEHICLE_COLLISION = "vehicle_collision"
+    SMOKE_INCAPACITATED = "smoke_incapacitated"
     IN_PROGRESS = "in_progress"
 
 

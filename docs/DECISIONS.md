@@ -28,7 +28,7 @@ at runtime. ODbL compliance via attribution in paper acknowledgments.
 | Tile ID    | Region           | Mission Type             | Building Density |
 |------------|------------------|--------------------------|------------------|
 | `penteli`  | Penteli, Attica  | pharma_delivery            | 0.18             |
-| `piraeus`  | Piraeus port     | flood_rescue             | 0.29             |
+| `piraeus`  | Piraeus port     | urban_rescue             | 0.29             |
 | `downtown` | Athens center    | fire_surveillance        | 0.50             |
 
 **Design**: UAVBench supports BOTH `osm` and `synthetic` map sources, matching v1.
@@ -278,7 +278,7 @@ The ScenarioConfig dataclass is redesigned from scratch.
 
 **Scenarios** (3 total):
 - `osm_penteli_pharma_delivery_medium` — fire delivery on Penteli, Attica tile
-- `osm_piraeus_flood_rescue_medium` — flood rescue on Piraeus port tile
+- `osm_piraeus_urban_rescue_medium` — urban rescue on Piraeus port tile
 - `osm_downtown_fire_surveillance_medium` — fire surveillance on Athens center tile
 
 **Status**: DECIDED
