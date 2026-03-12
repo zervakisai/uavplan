@@ -42,11 +42,11 @@ _MISSION_META: dict[str, dict] = {
         "default_service_time": 2,
         "task_category": "rescue_site",
         "origin_name": "Emergency Operations Center",
-        "destination_name": "Flood-Stranded Area",
+        "destination_name": "Disaster-Stranded Area",
         "briefing_objective": (
-            "Locate and assess flood-stranded population for rescue coordination"
+            "Locate and assess stranded casualties for rescue coordination"
         ),
-        "constraints": ["Avoid flooded road corridors", "Maintain safe altitude over water"],
+        "constraints": ["Avoid active fire zones", "Maintain safe altitude over debris"],
         "priority": "critical",
     },
     "fire_surveillance": {
