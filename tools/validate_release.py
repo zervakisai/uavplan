@@ -32,7 +32,7 @@ def main() -> int:
     all_scenarios = list_scenarios()
     expected_scenarios = [
         "osm_penteli_pharma_delivery_medium",
-        "osm_piraeus_flood_rescue_medium",
+        "osm_piraeus_urban_rescue_medium",
         "osm_downtown_fire_surveillance_medium",
     ]
 

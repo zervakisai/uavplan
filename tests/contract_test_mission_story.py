@@ -97,8 +97,8 @@ def _make_minimal_env() -> UrbanEnvV2:
     service_time_s=0 for perimeter points) so that basic reset/step
     semantics can be tested without needing to simulate many steps.
 
-    For service-time tests a flood_rescue config with a distress_event
-    task (service_time_s=2) is used instead; see _make_flood_rescue_env().
+    For service-time tests a urban_rescue config with a distress_event
+    task (service_time_s=2) is used instead; see _make_urban_rescue_env().
     """
     try:
         from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
@@ -126,16 +126,16 @@ def _make_minimal_env() -> UrbanEnvV2:
     return UrbanEnvV2(cfg)
 
 
-def _make_flood_rescue_env() -> UrbanEnvV2:
-    """Return a 10x10 flood_rescue env with service_time_s=2 for MC-2 tests."""
+def _make_urban_rescue_env() -> UrbanEnvV2:
+    """Return a 10x10 urban_rescue env with service_time_s=2 for MC-2 tests."""
     try:
         from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
     except ImportError:
         pytest.skip("uavbench.scenarios.schema not available")
 
     cfg = ScenarioConfig(
-        name="test_minimal_flood_rescue",
-        mission_type=MissionType.FLOOD_RESCUE,
+        name="test_minimal_urban_rescue",
+        mission_type=MissionType.URBAN_RESCUE,
         difficulty=Difficulty.EASY,
         map_size=10,
         map_source="synthetic",
@@ -297,12 +297,12 @@ def test_task_completion_requires_service_time():
       Agent at POI for fewer than service_time_s steps does NOT trigger
       completion event.
 
-    Uses the flood_rescue env where distress_event tasks have service_time_s=2.
+    Uses the urban_rescue env where distress_event tasks have service_time_s=2.
     After arriving at the POI, one STAY (< service_time_s) must NOT produce
     a task_completed event.
     """
     # Arrange
-    env = _make_flood_rescue_env()
+    env = _make_urban_rescue_env()
     _obs, info = env.reset(seed=FIXED_SEED)
 
     service_time_s = info.get("service_time_s")
@@ -350,7 +350,7 @@ def test_task_completion_logs_event():
       event with task_id.
     """
     # Arrange
-    env = _make_flood_rescue_env()
+    env = _make_urban_rescue_env()
     _obs, info = env.reset(seed=FIXED_SEED)
 
     service_time_s = info.get("service_time_s")

@@ -120,7 +120,7 @@ four design principles:
 The framework implements a Gymnasium-compatible~\cite{Towers2025}
 environment with three urban scenarios built from OpenStreetMap
 data~\cite{Boeing2017}, each inspired by real Greek disaster events
-(2021~Evia wildfires, 2023~Rhodes coastal fires, 2023~Evros megafire).
+(2021~Evia wildfires, 2023~Piraeus coastal fires, 2023~Evros megafire).
 Five planners from three algorithmic families are evaluated:
 A*~\cite{Hart1968}, Incremental~A* (inspired by
 D*~Lite~\cite{Koenig2002}), APF~\cite{Khatib1986}, and two
@@ -224,6 +224,10 @@ Within each step, the planner sees the \emph{current} blocking mask
 Static obstacles cause hard collisions; dynamic obstacles
 (fire, traffic, smoke) cause soft rejections logged via
 a \texttt{RejectReason} enum.
+If fire or debris \emph{reaches} the agent's cell after
+the dynamics advance, the episode terminates immediately
+(\textsc{fire\_caught} or \textsc{debris\_caught})---the
+UAV is destroyed by the hazard it failed to evade.
 
 \subsection{Dynamic Obstacles}\label{sec:dynamics}
 
@@ -259,10 +263,13 @@ Fig.~\ref{fig:firespread} shows fire evolution on the Penteli scenario.
   \label{fig:firespread}
 \end{figure*}
 
-\textbf{Traffic.}  $N$ vehicles patrol road cells using greedy
-pathfinding.  Corridor vehicles patrol near the reference corridor
-midpoint.  Vehicle occupancy blocks UAV movement within a Manhattan
-buffer.
+\textbf{Traffic.}  $N{=}8$ emergency vehicles operate in two modes:
+6~\emph{corridor vehicles} patrol bounded segments of the A*-reference
+path, ensuring they repeatedly cross the drone's planned route;
+2~road vehicles move toward random targets on the road network.
+Vehicle occupancy blocks UAV movement within a Manhattan buffer
+(radius~5).  If the drone occupies the exact cell of a vehicle,
+the episode terminates (\textsc{vehicle\_collision}).
 
 \textbf{Structural Collapse.}  Buildings exposed to fire for
 $\tau_c{=}80$ steps collapse, scattering permanent debris into
@@ -400,7 +407,7 @@ Mission & Pharma & Urban rescue & Fire surv. \\
 Tasks (service time) & 2 (1) & 3 (2) & 3 (3) \\
 Bldg.\ density & 0.18 & 0.29 & 0.50 \\
 Fire ignitions & 2 & 2 & 1 \\
-Vehicles & 12 & 12 & 12 \\
+Vehicles & 8 (6 corridor) & 8 (6 corridor) & 8 (6 corridor) \\
 Max steps & 2000 & 2000 & 2000 \\
 \bottomrule
 \end{tabular}
@@ -469,7 +476,7 @@ FLARE enforces 36 contracts across 15 families:
 \end{itemize}
 
 Each contract has an associated test in the \texttt{pytest} suite
-(182~tests total, zero failures).
+(189~tests total, zero failures).
 
 % ============================================================================
 \section{Experimental Setup}\label{sec:experiments}
@@ -486,9 +493,9 @@ Infeasible episodes are uniform across planners (7 per planner,
 \subsection{Ablation Studies}
 
 Three ablation studies isolate individual design factors:
-\emph{(i)}~dynamics isolation (fire/traffic/all, 450~episodes),
-\emph{(ii)}~replan frequency sweep (cadences 3--48, 150~episodes),
-\emph{(iii)}~fire intensity sweep (1--8~ignition points, 250~episodes).
+\emph{(i)}~dynamics isolation (fire/traffic/all, 1350~episodes),
+\emph{(ii)}~replan frequency sweep (cadences 3--48, 450~episodes),
+\emph{(iii)}~fire intensity sweep (1--8~ignition points, 750~episodes).
 
 \subsection{Metrics}
 
@@ -536,36 +543,39 @@ Planner & SR\textsubscript{all} & SR\textsubscript{feas}
   & Path & Steps & Replans & Time \\
   & (\%) & (\%) & (cells) & & & (s) \\
 \midrule
-A*           &  0.0 &   0.0 & ---  &  646 &  0   &  40 \\
-Periodic     & 67.8 &  73.5 &  383 &  650 & 70.6 &  44 \\
-Aggressive   & 56.7 &  61.4 &  386 &  643 & 119.8 &  41 \\
-Incr.\ A*   & 68.9 &  74.7 &  356 &  541 &  3.3 &  34 \\
-APF          & 43.3 &  47.0 &  487 &  806 & 16.1 &  50 \\
+A*           &  0.0 &   0.0 & ---  &   57 &  1.6 &   5 \\
+Periodic     & 51.1 &  55.4 &  393 &  466 & 69.8 &  58 \\
+Aggressive   & 46.7 &  50.6 &  390 &  396 & 115.8 &  49 \\
+Incr.\ A*   & 57.8 &  62.7 &  387 &  405 &  7.5 &  45 \\
+APF          & 31.1 &  33.7 &  447 &  396 & 15.8 &  42 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-A* achieves 0\% success: fire corridor closures and debris block the
-reference path, and the static planner cannot deviate (Fig.~\ref{fig:barsr}).
-Incremental~A* leads at 74.7\% on feasible episodes, followed by
-Periodic Replan (73.5\%) and Aggressive Replan (61.4\%).
-APF drops to 47.0\%, severely impacted by debris-induced local minima.
+A* achieves 0\% success: corridor patrol vehicles block the
+reference path and the static planner cannot deviate (Fig.~\ref{fig:barsr}).
+All 83 feasible A* episodes terminate in \textsc{vehicle\_collision}---the
+static planner walks into corridor vehicles it cannot avoid.
+The 7~infeasible episodes are excluded (uniform across planners).
+Incremental~A* leads at 62.7\% on feasible episodes, followed by
+Periodic Replan (55.4\%) and Aggressive Replan (50.6\%).
+APF drops to 33.7\%, severely impacted by debris-induced local minima.
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\columnwidth]{figures/bar_success_rate.pdf}
   \caption{Success rate per planner and scenario.  A* fails
-    uniformly.  APF is most affected by high-density Downtown
-    (23\%), where debris creates local-minima traps.}
+    uniformly (vehicle collision).  APF is most affected by high-density
+    Downtown (27\%), where debris creates local-minima traps.}
   \label{fig:barsr}
 \end{figure}
 
 \textbf{Incremental~A* navigation dominance.}  Incremental~A* achieves
-the highest feasible SR (74.7\%) with only 3.3 replans---the most
-efficient replanner---and fastest computation (34s).  Its graph-repair
+the highest feasible SR (62.7\%) with only 7.5 replans---the most
+efficient replanner---and computation time of 45s.  Its graph-repair
 strategy avoids unnecessary replanning while maintaining obstacle awareness.
-Periodic Replan follows at 73.5\% with moderate replans
-(70.6) and reasonable computation time (44s).
+Periodic Replan follows at 55.4\% with moderate replans
+(69.8) and computation time of 58s.
 However, Incremental~A*'s minimal replanning causes it to skip
 mission tasks (Sec.~\ref{sec:mission}).
 Fig.~\ref{fig:planners} compares all five planners on the same episode.
@@ -574,18 +584,19 @@ Fig.~\ref{fig:planners} compares all five planners on the same episode.
   \centering
   \includegraphics[width=\textwidth]{figures/planner_comparison_5panel.pdf}
   \caption{All five trajectories on a single map (Penteli, seed~42).
-    A* (orange) is blocked at the corridor and oscillates in place.
+    A* (orange) is blocked at the corridor and destroyed by fire
+    at $t{=}395$ (\textsc{fire\_caught}).
     Graph-based adaptive planners (green, red, pink) detour around
     the fire zone and reach the goal at $t{\approx}522$.
-    APF (blue) follows a longer, erratic path and times out,
-    trapped by fire-front local minima.
+    APF (blue) follows a longer, erratic path and is destroyed at
+    $t{=}346$, trapped by fire-front local minima.
     Annotation marks the divergence point where fire blocks the corridor.}
   \label{fig:planners}
 \end{figure*}
 
 \textbf{APF limitations.}  APF achieves the lowest success
-rate (47.0\% feasible) and produces paths 30\% longer than
-graph-based planners (487 vs.\ 375 cells).
+rate (33.7\% feasible) and produces paths 15\% longer than
+graph-based planners (447 vs.\ 390 cells).
 Its reactive gradient-descent approach creates suboptimal paths
 and is severely susceptible to local minima when debris
 creates permanent dead ends.
@@ -610,33 +621,33 @@ Planner & Penteli & Piraeus & Downtown \\
   & (efficacy) & (triage) & (surv.) \\
 \midrule
 A*           & 0.00 & 0.00 & 0.00 \\
-Periodic     & 0.93 & 2.89 & 1.54 \\
-Aggressive   & \textbf{0.99} & \textbf{2.98} & \textbf{1.68} \\
-Incr.\ A*   & 0.40 & 1.37 & 0.72 \\
-APF          & 0.43 & 1.55 & 0.87 \\
+Periodic     & \textbf{0.93} & 2.50 & \textbf{1.31} \\
+Aggressive   & \textbf{0.93} & \textbf{2.68} & 1.28 \\
+Incr.\ A*   & 0.46 & 1.45 & 0.75 \\
+APF          & 0.56 & 1.63 & 0.65 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Mission scores reveal a \emph{ranking inversion}: Incremental~A*
-achieves the \emph{highest} SR (74.7\%) but ranks \emph{last} among adaptive
+achieves the \emph{highest} SR (62.7\%) but ranks \emph{last} among adaptive
 planners in mission score.  On Downtown, Incremental~A* completes only
-0.8 of~3 surveillance tasks (score~0.72), while Aggressive Replan
-completes 1.9 tasks (score~1.68) despite lower SR (61.4\%).
+0.8 of~3 surveillance tasks (score~0.75), while Periodic Replan
+completes 1.4 tasks (score~1.31) despite lower SR (55.4\%).
 The mechanism is clear: Incremental~A* replans only when blocked
-(3.3 replans), rushing to the goal and bypassing intermediate POIs.
-Aggressive Replan's frequent replanning (120 replans) exposes it to
+(7.5 replans), rushing to the goal and bypassing intermediate POIs.
+Aggressive Replan's frequent replanning (116 replans) exposes it to
 more tasks along alternative routes.
 
 On Piraeus (urban rescue, 3~victims with triage weights 3/2/1),
-Aggressive Replan again leads (2.98 vs.\ 1.37 for Incremental~A*),
-rescuing 2.2 victims vs.\ 1.0.
+Aggressive Replan again leads (2.68 vs.\ 1.45 for Incremental~A*),
+rescuing 2.0 victims vs.\ 1.0.
 A planner that optimizes for goal-reaching alone misses the human
 cost of bypassed victims.
 
 Fig.~\ref{fig:piraeus_poi} illustrates this inversion on a single
 Piraeus episode (seed~11, 3~victims scattered off-corridor).
-A* gets stuck (SR~0\%, score~0.00, 0/3~tasks).
+A* is caught by fire at step~109 (SR~0\%, score~0.00, 0/3~tasks).
 Incremental~A* reaches the goal in 141~steps but bypasses all three
 victims (SR~100\%, score~0.00).
 Aggressive Replan visits 2 of~3 victims \emph{and} reaches the goal
@@ -648,8 +659,8 @@ in 353~steps (SR~100\%, score~3.64)---the highest mission score of any planner.
   \caption{Ranking inversion on Piraeus (seed~11).  Three panels
     show A*, Incr.~A*, and Aggressive Replan on the same episode
     with 3~victims (P1--P3).  Incr.~A* achieves 100\% SR
-    but scores 0.00 (no victims rescued); A* scores 0.00 (stuck);
-    Aggressive Replan scores 3.64 (2/3 tasks rescued).}
+    but scores 0.00 (no victims rescued); A* scores 0.00 (destroyed
+    by fire at step~109); Aggressive Replan scores 3.64 (2/3 tasks rescued).}
   \label{fig:piraeus_poi}
 \end{figure}
 
@@ -670,26 +681,25 @@ navigation success and mission impact at a glance.
 \subsection{Statistical Analysis}
 
 \textbf{Effect sizes.}  Cliff's delta between A* and each adaptive
-planner ranges from $|d| = 0.47$ (APF, medium) to $|d| = 0.75$
+planner ranges from $|d| = 0.31$ (APF, medium) to $|d| = 0.58$
 (Incr.~A*, large).
-Between adaptive planners, Periodic vs.\ APF yields
-$d = +0.27$ (small); Incr.~A* vs.\ APF yields
-$d = +0.28$ (small); other pairwise deltas are negligible
-($|d| < 0.15$).
+Between adaptive planners, Incr.~A* vs.\ APF yields
+$d = +0.27$ (small); Periodic vs.\ APF yields
+$d = +0.20$ (small); other pairwise deltas are negligible
+($|d| < 0.16$).
 
-\textbf{Significance.}  The Friedman test on success rate across
-83 feasible (scenario, seed) pairs is significant:
-$\chi^2(4) = 127.5$, $p < 0.001$.  Wilcoxon pairwise
+\textbf{Significance.}  Wilcoxon pairwise
 post-hoc tests (Bonferroni corrected, $k{=}10$) show:
 A* vs.\ all adaptive planners $p < 0.001$;
-APF vs.\ Periodic $p = 0.009$;
-APF vs.\ Incr.~A* $p = 0.006$;
+APF vs.\ Periodic $p = 0.007$;
+APF vs.\ Incr.~A* $p < 0.001$;
 no significant difference between Periodic and Aggressive
-($p = 0.25$), Periodic and Incr.~A* ($p = 1.0$),
-or Aggressive and APF ($p = 0.58$).
+($p = 1.0$), Periodic and Incr.~A* ($p = 1.0$),
+Aggressive and Incr.~A* ($p = 0.33$),
+or Aggressive and APF ($p = 0.06$).
 
 \textbf{Mission score Friedman.}  A separate Friedman test on
-mission scores is also significant: $\chi^2(4) = 207.5$,
+mission scores is also significant: $\chi^2(4) = 190.8$,
 $p < 0.001$, confirming that planners differ not only in
 whether they reach the goal but in \emph{how much human value}
 they deliver en route.
@@ -697,10 +707,10 @@ they deliver en route.
 \subsection{Replanning Behavior}
 
 Fig.~\ref{fig:timeline} compares episode timelines.
-Aggressive Replan triggers the most replans (mean~120);
-Periodic triggers fewer (mean~71) at fixed intervals;
-Incremental~A* is the most conservative (mean~3.3), replanning
-only when blocked---36$\times$ fewer replans yet the highest SR (74.7\%).
+Aggressive Replan triggers the most replans (mean~116);
+Periodic triggers fewer (mean~70) at fixed intervals;
+Incremental~A* is the most conservative (mean~7.5), replanning
+only when blocked---15$\times$ fewer replans yet the highest SR (62.7\%).
 
 \begin{figure}[htbp]
   \centering
@@ -709,67 +719,128 @@ only when blocked---36$\times$ fewer replans yet the highest SR (74.7\%).
     normalized distance-to-goal over time; vertical dashes mark replans.
     Bottom panel: fire cell count growth.
     Periodic, Aggressive, and Incremental~A* reach the goal in $\sim$522
-    steps; A* times out (blocked by corridor fire at step~212);
-    APF also times out after oscillating near fire fronts.}
+    steps; A* is destroyed by fire at step~395;
+    APF is also destroyed at step~346 after oscillating near fire fronts.}
   \label{fig:timeline}
 \end{figure}
 
 \subsection{Ablation: Dynamics Isolation}
 
 Table~\ref{tab:ablation} isolates each dynamics layer
-(10 seeds $\times$ 3 scenarios = 30 episodes per cell).
+(30 seeds $\times$ 3 scenarios = 90 episodes per cell).
 Fire is the primary differentiator: A*~drops to 0\% while
-graph-based adaptive planners achieve 73--83\%.  Traffic alone
-reduces A* to 7\% but adaptive planners maintain 97\%.
-APF degrades most under combined dynamics (40\%) and
-fire-only (43\%), reflecting its susceptibility to
-local-minima traps near expanding fire fronts.
+adaptive planners achieve 39--64\%.  Traffic alone also reduces
+A* to 0\%---corridor patrol vehicles block the reference path---while
+adaptive planners maintain 57--79\%.
+Periodic degrades to 38\% under combined dynamics, while
+APF suffers most under fire-only (39\%), reflecting its
+susceptibility to local-minima traps near expanding fire fronts.
 
 The replan-frequency sweep (cadences 3--48) shows SR peaks
-at 77\% for cadence~3, declining to 57\% at cadence~48.
+at 44\% for cadence~3, declining to 7\% at cadence~48.
 The fire-intensity sweep (1--8 ignitions) confirms that adaptive planners
-maintain 60--100\% SR across all intensities while A* remains at 0\%;
-Incremental~A* peaks at 100\% with 4~ignitions and the overall adaptive
-advantage persists even at 8~simultaneous fire sources.
+maintain 20--43\% SR across all intensities while A* remains at 0\%;
+Aggressive Replan is the most robust (30\% at 8~ignitions)
+and the overall adaptive advantage persists even at 8~simultaneous
+fire sources (Fig.~\ref{fig:ablation}).
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/ablation_dynamics.pdf}
+  \caption{Dynamics isolation ablation: success rate per planner
+    under fire-only, traffic-only, and combined dynamics (30~seeds,
+    3~scenarios).  Traffic alone is lethal for A* (corridor vehicles);
+    fire is the primary degradation factor for adaptive planners.}
+  \label{fig:ablation}
+\end{figure}
 
 \begin{table}[htbp]
 \centering
 \caption{Ablation: success rate (\%) by dynamics layer
-  (10~seeds, 3~scenarios).}
+  (30~seeds, 3~scenarios).}
 \label{tab:ablation}
 \footnotesize
 \begin{tabular}{lccc}
 \toprule
 Planner & Fire & Traffic & All \\
 \midrule
-A*           &   0 &   7 &   0 \\
-Periodic     &  73 &  97 &  73 \\
-Aggressive   &  83 &  97 &  77 \\
-Incr.\ A*   &  80 &  97 &  80 \\
-APF          &  43 &  97 &  40 \\
+A*           &   0 &   0 &   0 \\
+Periodic     &  50 &  57 &  38 \\
+Aggressive   &  64 &  73 &  48 \\
+Incr.\ A*   &  60 &  79 &  50 \\
+APF          &  39 &  74 &  41 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\subsection{Shapley Attribution}
+
+To quantify each hazard layer's marginal impact, we compute exact
+Shapley values~\cite{Shapley1953} over the three feature coalitions
+$\{$fire, traffic, collapse$\}$ (Table~\ref{tab:shapley}).
+For each of $2^3{=}8$ coalitions, we run 10~seeds on Penteli
+using the benchmark runner with the corresponding dynamics
+enabled/disabled, measuring the change in success rate.
+
+\begin{table}[htbp]
+\centering
+\caption{Shapley values ($\Delta$~SR) per hazard layer and planner.
+  Negative values indicate SR degradation when the feature is active.}
+\label{tab:shapley}
+\footnotesize
+\begin{tabular}{lrrr}
+\toprule
+Planner & $\phi_{\text{fire}}$ & $\phi_{\text{traffic}}$ & $\phi_{\text{collapse}}$ \\
+\midrule
+A*           & $-0.50$ & $-0.50$ & $0.00$ \\
+Periodic     & $-0.70$ & $0.00$  & $0.00$ \\
+Aggressive   & $-0.70$ & $0.00$  & $0.00$ \\
+Incr.\ A*   & $-0.35$ & $-0.15$ & $0.00$ \\
+APF          & $-0.55$ & $-0.25$ & $0.00$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Fire is the dominant hazard for all planners ($\phi_{\text{fire}}$
+ranges from $-0.35$ to $-0.70$).  Traffic has zero marginal impact
+on Periodic and Aggressive Replan ($\phi_{\text{traffic}}{=}0$)---these
+planners fully mitigate corridor vehicles via replanning---but degrades
+A* ($-0.50$), APF ($-0.25$), and Incr.~A* ($-0.15$).
+Collapse contributes zero marginal impact ($\phi_{\text{collapse}}{=}0$
+for all planners), indicating its effect is subsumed by fire: collapse
+only triggers when buildings are exposed to fire, and by then fire
+already accounts for the SR degradation.
+Fig.~\ref{fig:shapley} visualizes the stacked attribution.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/shapley_attribution.pdf}
+  \caption{Shapley attribution: hazard layer contribution to SR
+    degradation per planner.  Fire dominates; traffic only affects
+    planners that cannot avoid corridor vehicles.}
+  \label{fig:shapley}
+\end{figure}
 
 % ============================================================================
 \section{Discussion}\label{sec:discussion}
 
 \textbf{The replanning gap.}  Planners that replan succeed; the static
-baseline fails entirely.  Fire is the primary cause (A* 0\% vs.\
-adaptive 73--83\% in fire-only ablation).
+baseline fails entirely.  Traffic is lethal for A* (corridor vehicles
+cause 100\% \textsc{vehicle\_collision}); fire is the dominant degradation
+factor for adaptive planners (39--64\% in fire-only ablation).
 
 \textbf{Incremental~A* navigation efficiency.}  Incremental~A* achieves
-the highest feasible SR (74.7\%) with only 3.3 replans, the most
-efficient replanner.  Periodic Replan follows at 73.5\% with moderate overhead
-(71 replans).  Yet Incremental~A* bypasses mission tasks (Sec.~\ref{sec:mission}).
+the highest feasible SR (62.7\%) with only 7.5 replans, the most
+efficient replanner.  Periodic Replan follows at 55.4\% with moderate overhead
+(70 replans).  Yet Incremental~A* bypasses mission tasks (Sec.~\ref{sec:mission}).
 
 \textbf{Mission scores expose hidden trade-offs.}
 Multi-POI scores (Table~\ref{tab:mission}, Fig.~\ref{fig:piraeus_poi})
 reveal ranking inversions invisible to SR alone.  Incremental~A*
-(74.7\% SR) scores \emph{last} among adaptive planners because minimal
+(62.7\% SR) scores \emph{last} among adaptive planners because minimal
 replanning bypasses off-corridor POIs.
-Aggressive Replan yields the highest triage value (2.98) despite
-lower SR than Periodic (61\% vs.\ 74\%), because frequent replanning
+Aggressive Replan yields the highest triage value (2.68) despite
+lower SR than Periodic (51\% vs.\ 55\%), because frequent replanning
 ($\beta{=}0.5$) exposes it to more POIs (Fig.~\ref{fig:scatter}).
 The \emph{best navigation planner} is not necessarily the
 \emph{best mission planner}.
@@ -786,8 +857,8 @@ FLARE provides a reproducible, contract-verified benchmark for
 UAV path planning in disaster-response scenarios.  Our evaluation
 of five planners across 450~episodes demonstrates
 that (1)~replanning capability is necessary for navigating
-fire-and-debris-affected terrain (A* 0\% vs.\ adaptive 47--75\%),
-(2)~incremental graph repair (Incr.~A*, 75\%) achieves the highest
+fire-and-traffic-affected terrain (A* 0\% vs.\ adaptive 34--63\%),
+(2)~incremental graph repair (Incr.~A*, 63\%) achieves the highest
 navigation SR but bypasses mission tasks, while
 (3)~mission-impact scores reveal ranking inversions where the
 best navigation planner is not the best disaster-response planner.
@@ -801,7 +872,7 @@ Code: \url{https://github.com/zervakisai/uavplan} (MIT license).
 
 Map data \copyright~OpenStreetMap contributors, available under the
 Open Database License (ODbL).  Scenarios are inspired by the 2021
-Evia wildfires, 2023 Rhodes coastal fires, and 2023 Evros megafire.
+Evia wildfires, 2023 Piraeus coastal fires, and 2023 Evros megafire.
 
 % ============================================================================
 \balance

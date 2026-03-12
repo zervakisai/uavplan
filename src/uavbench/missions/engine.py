@@ -33,10 +33,10 @@ _MISSION_META: dict[str, dict] = {
         "constraints": ["Avoid active fire zones", "Respect firefighting NFZs"],
         "priority": "critical",
     },
-    "flood_rescue": {
-        "objective_label": "Flood Search & Rescue Assessment",
+    "urban_rescue": {
+        "objective_label": "Urban Search & Rescue Assessment",
         "objective_reason": (
-            "Search and rescue assessment of flood-stranded population"
+            "Search and rescue assessment of stranded casualties"
         ),
         "deliverable_name": "rescue_assessment",
         "default_service_time": 2,
@@ -98,7 +98,7 @@ class MissionEngine:
         mx = (start_xy[0] + goal_xy[0]) // 2
         my = (start_xy[1] + goal_xy[1]) // 2
 
-        if mission_type.value == "flood_rescue":
+        if mission_type.value == "urban_rescue":
             # Multi-POI: 3 casualties with decreasing severity
             weights = [3.0, 2.0, 1.0]  # CRITICAL, SERIOUS, MINOR
             for i, w in enumerate(weights):

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Shapley attribution analysis — which hazard features matter most per planner.
+"""Shapley attribution analysis — which hazard layers matter most per planner.
 
 Computes exact Shapley values for N=3 hazard features:
-  1. wind        (wind_speed > 0)
-  2. fire_risk   (risk cost map from fire proximity)
-  3. task_urgency (triage mission with survival decay)
+  1. fire      (enable_fire: wildfire spread + fire buffer)
+  2. traffic   (enable_traffic: corridor patrol vehicles)
+  3. collapse  (enable_collapse: structural collapse → debris)
 
 For each planner, runs episodes with all 2^3=8 feature coalitions.
+Baseline = all hazards disabled (static grid only).
 Shapley value = marginal contribution of each feature averaged over
 all coalition orderings.
 
@@ -38,17 +39,16 @@ import numpy as np
 # Configuration
 # ---------------------------------------------------------------------------
 
-OUTPUT_DIR = "outputs/shapley"
+OUTPUT_DIR = "outputs/paper_figures"
 
-FEATURES = ["wind", "fire_risk", "task_urgency"]
+FEATURES = ["fire", "traffic", "collapse"]
 N_FEATURES = len(FEATURES)
 
-# Feature configurations: each feature maps to scenario config overrides
-# that ENABLE the feature. Baseline = all disabled (vanilla benchmark).
-_FEATURE_CONFIGS = {
-    "wind": {"wind_speed": 2.0, "wind_direction_deg": 45.0},
-    "fire_risk": {},  # risk cost map is always computed; this is a no-op marker
-    "task_urgency": {},  # triage mission marker (handled at mission level)
+# Feature → scenario config field name
+_FEATURE_CONFIG_KEYS = {
+    "fire": "enable_fire",
+    "traffic": "enable_traffic",
+    "collapse": "enable_collapse",
 }
 
 PLANNERS = ["astar", "periodic_replan", "aggressive_replan", "incremental_astar", "apf"]
@@ -82,21 +82,33 @@ def _evaluate_coalition(
 ) -> float:
     """Run episodes for a planner with a given feature coalition.
 
-    Returns mean success rate across seeds.
+    Uses the real run_episode runner with config_override to ensure
+    full mission handling (POI visits, goal stall, energy, etc.).
     """
     from uavbench.benchmark.runner import run_episode
+    from uavbench.scenarios.loader import load_scenario
+
+    # Build config with coalition overrides (frozen dataclass)
+    config = load_scenario(scenario_id)
+    for i, feat in enumerate(FEATURES):
+        key = _FEATURE_CONFIG_KEYS[feat]
+        object.__setattr__(config, key, coalition[i])
 
     successes = 0
     total = 0
 
     for seed in seeds:
         try:
-            result = run_episode(scenario_id, planner_id, seed)
-            if result.metrics.get("success", False):
+            result = run_episode(
+                scenario_id, planner_id, seed, config_override=config
+            )
+            term = result.metrics.get("termination_reason", "timeout")
+            if term == "success":
                 successes += 1
             total += 1
-        except Exception:
-            total += 1  # count as failure
+        except Exception as e:
+            print(f"        [ERROR seed={seed}] {e}")
+            total += 1
 
     return successes / max(total, 1)
 
@@ -108,7 +120,7 @@ def compute_shapley_values(
 ) -> dict[str, float]:
     """Compute exact Shapley values for one planner.
 
-    For N=4 features, iterates over all 2^4=16 coalitions.
+    For N=3 features, iterates over all 2^3=8 coalitions.
     Shapley value for feature i = average marginal contribution across
     all coalitions S ⊆ N\\{i}:
         φ_i = Σ_{S} [|S|!(N-|S|-1)!/N!] * [v(S∪{i}) - v(S)]
@@ -130,25 +142,20 @@ def compute_shapley_values(
 
     for i, feat in enumerate(FEATURES):
         phi = 0.0
-        # Iterate over all subsets S of N\{i}
         others = [j for j in range(n) if j != i]
         for r in range(len(others) + 1):
             for subset in itertools.combinations(others, r):
-                # Coalition without feature i
                 s_without = [False] * n
                 for j in subset:
                     s_without[j] = True
                 s_without_tuple = tuple(s_without)
 
-                # Coalition with feature i
                 s_with = list(s_without)
                 s_with[i] = True
                 s_with_tuple = tuple(s_with)
 
-                # Marginal contribution
                 marginal = coalition_cache[s_with_tuple] - coalition_cache[s_without_tuple]
 
-                # Shapley weight: |S|!(n-|S|-1)!/n!
                 s_size = sum(s_without)
                 weight = (
                     math.factorial(s_size) * math.factorial(n - s_size - 1)
@@ -177,16 +184,14 @@ def plot_shapley_bar_chart(
     n_planners = len(planners)
     x = np.arange(n_planners)
 
-    # Colors for each feature
-    colors = ["#e74c3c", "#f39c12", "#3498db", "#2ecc71"]
-    feature_labels = ["Wind", "Fire Risk", "Limited Visibility", "Task Urgency"]
+    colors = ["#e74c3c", "#f39c12", "#8e44ad"]
+    feature_labels = ["Fire", "Traffic", "Collapse"]
 
     bottoms_pos = np.zeros(n_planners)
     bottoms_neg = np.zeros(n_planners)
 
     for i, feat in enumerate(FEATURES):
         values = [results[p][feat] for p in planners]
-        # Separate positive and negative contributions
         pos_vals = [max(v, 0) for v in values]
         neg_vals = [min(v, 0) for v in values]
 
@@ -200,14 +205,13 @@ def plot_shapley_bar_chart(
 
     ax.set_xticks(x)
     ax.set_xticklabels([PLANNER_LABELS.get(p, p) for p in planners], fontsize=10)
-    ax.set_ylabel("Shapley Value (Δ Success Rate)", fontsize=11)
-    ax.set_title("Hazard Feature Attribution per Planner", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Shapley Value ($\\Delta$ Success Rate)", fontsize=11)
+    ax.set_title("Hazard Layer Attribution per Planner", fontsize=13, fontweight="bold")
     ax.legend(loc="upper right", fontsize=9)
     ax.axhline(y=0, color="gray", linewidth=0.5, linestyle="--")
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
 
-    # Save
     png_path = os.path.join(output_dir, "shapley_attribution.png")
     pdf_path = os.path.join(output_dir, "shapley_attribution.pdf")
     fig.savefig(png_path, dpi=300, bbox_inches="tight")
@@ -266,9 +270,7 @@ def main() -> None:
             writer.writerow(row)
     print(f"  CSV: {csv_path}")
 
-    # Plot
     plot_shapley_bar_chart(results, args.output)
-
     print("\nDone.")
 
 

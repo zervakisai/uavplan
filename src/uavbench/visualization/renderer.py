@@ -31,6 +31,7 @@ from uavbench.visualization.overlays import (
     COLOR_START,
     COLOR_TRAFFIC,
     COLOR_TRAJ_BLUE,
+    COLOR_VEHICLE,
     draw_agent,
     draw_debris,
     draw_fire,
@@ -44,6 +45,7 @@ from uavbench.visualization.overlays import (
     draw_task_pois,
     draw_traffic,
     draw_trajectory,
+    draw_vehicle_icons,
 )
 
 # Target max image dimension (~1200px).  Auto-scale replaces old fixed
@@ -150,7 +152,7 @@ class Renderer:
             if nfz_mask is not None:
                 draw_nfz(frame, nfz_mask, cell)
 
-        # Z=6: Traffic closures
+        # Z=6: Traffic closures + occupancy buffer
         if dynamic_state is not None:
             traffic_mask = dynamic_state.get("traffic_closure_mask")
             if traffic_mask is not None:
@@ -158,6 +160,10 @@ class Renderer:
             traffic_occ = dynamic_state.get("traffic_occupancy_mask")
             if traffic_occ is not None:
                 draw_traffic(frame, traffic_occ, cell)
+            # Z=6.5: Vehicle body markers (dark red diamonds)
+            vehicle_pos = dynamic_state.get("traffic_positions")
+            if vehicle_pos is not None and len(vehicle_pos) > 0:
+                draw_vehicle_icons(frame, vehicle_pos, cell)
 
         # Z=9: Trajectory + planned path
         trajectory = state.get("trajectory", [])
@@ -269,6 +275,7 @@ class Renderer:
             (COLOR_SMOKE, "SMOKE"),
             (COLOR_DEBRIS, "DEBRIS"),
             (COLOR_TRAFFIC, "TRAFFIC"),
+            (COLOR_VEHICLE, "VEHICLE"),
         ]
         x = 4
         swatch_size = 8

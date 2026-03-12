@@ -34,7 +34,7 @@ MAX_WORKERS = 6
 MEDIUM_SCENARIO_IDS = [
     "osm_penteli_pharma_delivery_medium",
     "osm_downtown_fire_surveillance_medium",
-    "osm_piraeus_flood_rescue_medium",
+    "osm_piraeus_urban_rescue_medium",
 ]
 
 ALL_PLANNERS = ["astar", "periodic_replan", "aggressive_replan", "incremental_astar", "apf"]

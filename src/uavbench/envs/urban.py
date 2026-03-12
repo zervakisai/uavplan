@@ -368,6 +368,60 @@ class UrbanEnvV2(gym.Env):
         # Fire state was frozen during planner computation and move validation.
         self._step_dynamics()
 
+        # ══════════════════════════════════════════════════════════════
+        # SURVIVAL CHECK — has any dynamic hazard reached the drone?
+        # Checked every step AFTER dynamics advance.
+        # First matching hazard terminates the episode.
+        # Hierarchy: fire > debris > vehicle > fire_buffer > smoke
+        # ══════════════════════════════════════════════════════════════
+        if not self._terminated:
+            ax, ay = self._agent_xy
+            destruction_reason = None
+            destruction_type = None
+
+            # 1. FIRE — active burning cell (thermal destruction)
+            fire_mask = self._fire.fire_mask if self._fire is not None else None
+            if fire_mask is not None and fire_mask[ay, ax]:
+                destruction_reason = TerminationReason.FIRE_CAUGHT
+                destruction_type = "fire_caught"
+
+            # 2. DEBRIS — permanent collapse debris (crushed)
+            if destruction_reason is None:
+                if (
+                    self._collapse is not None
+                    and self._collapse.debris_mask[ay, ax]
+                ):
+                    destruction_reason = TerminationReason.DEBRIS_CAUGHT
+                    destruction_type = "debris_caught"
+
+            # 3. VEHICLE BODY — exact cell match (physical collision)
+            if destruction_reason is None and self._traffic is not None:
+                positions = self._traffic.vehicle_positions  # int[N,2] as (y,x)
+                for vy, vx in positions:
+                    if int(vy) == ay and int(vx) == ax:
+                        destruction_reason = TerminationReason.VEHICLE_COLLISION
+                        destruction_type = "vehicle_collision"
+                        break
+
+            # NOTE: Fire proximity (1-cell buffer) and smoke incapacitation
+            # are defined in TerminationReason but NOT checked here.
+            # Calibration showed these are too aggressive — the blocking mask
+            # already prevents movement into buffer/smoke zones, so the only
+            # realistic scenario is fire/smoke spreading TO the agent, which
+            # is handled by check #1 (direct fire). Proximity and smoke
+            # termination can be enabled in future work with grace periods.
+
+            # Apply termination if any hazard matched
+            if destruction_reason is not None:
+                self._terminated = True
+                self._termination_reason = destruction_reason
+                reward += -25.0  # terminal penalty
+                self._events.append({
+                    "type": destruction_type,
+                    "step_idx": self._step_idx,
+                    "cell": (ax, ay),
+                })
+
         # Progress shaping (EN-8)
         if accepted and action != ACTION_STAY:
             dist_before = abs(

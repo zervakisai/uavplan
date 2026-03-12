@@ -42,7 +42,7 @@ SEED = 42
 # One representative scenario per family
 FAMILY_SCENARIOS = {
     "pharma_delivery": "osm_penteli_pharma_delivery_medium",
-    "flood_rescue": "osm_piraeus_flood_rescue_medium",
+    "urban_rescue": "osm_piraeus_urban_rescue_medium",
     "fire_surveillance": "osm_downtown_fire_surveillance_medium",
 }
 
@@ -252,7 +252,7 @@ def generate_scenario_overview() -> None:
         ax.imshow(frame)
         FAMILY_LABELS = {
             "pharma_delivery": "Pharma Delivery",
-            "flood_rescue": "Urban Rescue",
+            "urban_rescue": "Urban Rescue",
             "fire_surveillance": "Fire Surveillance",
         }
         label = FAMILY_LABELS.get(family, family.replace("_", " ").title())

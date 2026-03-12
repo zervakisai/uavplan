@@ -28,7 +28,7 @@ from uavbench.visualization.renderer import Renderer
 # Config
 # ---------------------------------------------------------------------------
 
-SCENARIO_ID = "osm_piraeus_flood_rescue_medium"
+SCENARIO_ID = "osm_piraeus_urban_rescue_medium"
 SEED = 11
 PLANNERS = ["astar", "incremental_astar", "aggressive_replan"]
 PLANNER_LABELS = {

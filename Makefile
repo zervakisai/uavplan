@@ -49,7 +49,7 @@ run-single:  ## Run single-scenario benchmark (quick check)
 
 run-all:  ## Run all scenarios × all planners (1 trial)
 	$(VENV)/bin/python -m uavbench run \
-		--scenarios osm_penteli_pharma_delivery_medium,osm_piraeus_flood_rescue_medium,osm_downtown_fire_surveillance_medium \
+		--scenarios osm_penteli_pharma_delivery_medium,osm_piraeus_urban_rescue_medium,osm_downtown_fire_surveillance_medium \
 		--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
 		--trials 1 \
 		--seed-base 42

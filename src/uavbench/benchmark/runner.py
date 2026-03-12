@@ -41,6 +41,7 @@ def run_episode(
     seed: int,
     render: bool = False,
     frame_callback: "Callable | None" = None,
+    config_override: "ScenarioConfig | None" = None,
 ) -> EpisodeResult:
     """Run a single deterministic episode (RU-3).
 
@@ -53,12 +54,14 @@ def run_episode(
             (heightmap, state_dict, dynamic_state_dict, config) for rendering.
             Does NOT affect determinism — callback must be side-effect-free
             on the simulation state.
+        config_override: optional pre-built config (skips load_scenario).
+            Used by ablation/Shapley scripts that modify feature toggles.
 
     Returns:
         EpisodeResult with events, trajectory, metrics, frame_hashes.
     """
     # Load scenario
-    config = load_scenario(scenario_id)
+    config = config_override if config_override is not None else load_scenario(scenario_id)
 
     # Create environment
     env = UrbanEnvV2(config)
@@ -163,7 +166,11 @@ def run_episode(
     # Goal stall detector: terminate if no progress toward goal for N steps
     _goal_stall_counter = 0
     _goal_best_dist = abs(start_xy[0] - goal_xy[0]) + abs(start_xy[1] - goal_xy[1])
-    _GOAL_STALL_LIMIT = 500  # steps without progress → terminate
+    _GOAL_STALL_LIMIT = 200  # steps without progress → terminate
+
+    # Consecutive rejection counter → emergency replan after 3 rejections
+    _consecutive_rejections = 0
+    _REJECTION_REPLAN_THRESHOLD = 3
 
     # Wall-clock timeout safety net
     _wall_start = _time.perf_counter()
@@ -311,7 +318,37 @@ def run_episode(
                     _last_plan_step = step_idx
                 else:
                     # Back off after failed plan to avoid futile retries
-                    _failed_plan_cooldown = 15
+                    _failed_plan_cooldown = 5
+
+        # Consecutive rejection detection → emergency replan
+        was_rejected = (
+            action != 4
+            and len(trajectory) >= 2
+            and env.agent_xy == trajectory[-2]
+        )
+        if was_rejected:
+            _consecutive_rejections += 1
+        else:
+            _consecutive_rejections = 0
+
+        if (
+            _consecutive_rejections >= _REJECTION_REPLAN_THRESHOLD
+            and not should  # planner didn't already replan
+            and _failed_plan_cooldown <= 0
+        ):
+            plan_result_new = planner.plan(
+                env.agent_xy, current_target, cost_map=risk_map
+            )
+            if plan_result_new.success:
+                path = plan_result_new.path
+                path_idx = 0
+                replan_count += 1
+                planned_waypoints_total += len(plan_result_new.path)
+                _last_plan_step = step_idx
+                _consecutive_rejections = 0
+            else:
+                _failed_plan_cooldown = 5
+                _consecutive_rejections = 0
 
         # Frame callback for visualization (read-only, no sim effect)
         if frame_callback is not None:

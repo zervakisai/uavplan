@@ -44,7 +44,7 @@ class TestCC1_FeasibilityPreCheck:
 
     def test_feasible_has_no_infeasible_step(self):
         """If feasible, first_infeasible_step is None."""
-        config = load_scenario("osm_piraeus_flood_rescue_medium")
+        config = load_scenario("osm_piraeus_urban_rescue_medium")
         result = feasibility_pre_check(config, seed=42, horizon=10)
         if result.feasible:
             assert result.first_infeasible_step is None
@@ -98,7 +98,7 @@ class TestCC2_DifficultyThresholds:
     def test_per_seed_results_populated(self):
         """per_seed list has one entry per seed."""
         result = calibrate_difficulty(
-            "osm_piraeus_flood_rescue_medium", n_seeds=3, horizon=10,
+            "osm_piraeus_urban_rescue_medium", n_seeds=3, horizon=10,
         )
         assert len(result.per_seed) == 3
         for r in result.per_seed:

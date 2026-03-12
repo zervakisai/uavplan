@@ -45,7 +45,7 @@ print('planners', sorted(PLANNERS.keys()))
 | Scenario ID                              | Mission Type       | OSM Tile        | Track   |
 |------------------------------------------|--------------------|-----------------|---------|
 | `osm_penteli_pharma_delivery_medium`       | pharma_delivery      | Penteli, Attica | dynamic |
-| `osm_piraeus_flood_rescue_medium`        | flood_rescue       | Piraeus port    | dynamic |
+| `osm_piraeus_urban_rescue_medium`        | urban_rescue       | Piraeus port    | dynamic |
 | `osm_downtown_fire_surveillance_medium`  | fire_surveillance  | Athens center   | dynamic |
 
 ## Demo Commands
