@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from uavbench.benchmark.sanity_check import (
+from flare.benchmark.sanity_check import (
     SanityReport,
     SanityViolation,
     Severity,

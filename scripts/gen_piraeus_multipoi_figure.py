@@ -19,10 +19,10 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 import numpy as np
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.envs.urban import UrbanEnvV2
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.renderer import Renderer
+from flare.benchmark.runner import run_episode
+from flare.envs.urban import UrbanEnvV2
+from flare.scenarios.loader import load_scenario
+from flare.visualization.renderer import Renderer
 
 # ---------------------------------------------------------------------------
 # Config

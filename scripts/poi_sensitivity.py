@@ -21,7 +21,7 @@ PLANNERS_TO_TEST = ["astar", "aggressive_replan"]
 
 
 def main() -> int:
-    import uavbench.benchmark.runner as runner_mod
+    import flare.benchmark.runner as runner_mod
 
     src_path = Path(runner_mod.__file__)
     original_src = src_path.read_text()

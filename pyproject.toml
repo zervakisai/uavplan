@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "uavbench"
+name = "flare"
 version = "1.0.0"
-description = "UAVBench: a reproducible UAV planning benchmark framework"
+description = "FLARE: a reproducible UAV planning benchmark for wildfire emergency response (formerly UAVBench)"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -28,9 +28,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/uavbench/uavbench"
-Repository = "https://github.com/uavbench/uavbench"
-Documentation = "https://github.com/uavbench/uavbench#documentation"
+Homepage = "https://github.com/zervakisai/uavplan"
+Repository = "https://github.com/zervakisai/uavplan"
+Documentation = "https://github.com/zervakisai/uavplan#documentation"
 
 [project.optional-dependencies]
 viz = [
@@ -51,7 +51,7 @@ analysis = [
   "pandas>=2.0",
 ]
 all = [
-  "uavbench[viz,dev,pipeline,analysis]",
+  "flare[viz,dev,pipeline,analysis]",
 ]
 
 [tool.pytest.ini_options]
@@ -64,4 +64,5 @@ python_functions = ["test_*"]
 where = ["src"]
 
 [project.scripts]
-uavbench = "uavbench.cli.benchmark:main"
+flare = "flare.cli.benchmark:main"
+uavbench = "flare.cli.benchmark:main"

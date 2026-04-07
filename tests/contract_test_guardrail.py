@@ -11,8 +11,8 @@ from collections import deque
 import numpy as np
 import pytest
 
-from uavbench.blocking import compute_blocking_mask
-from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+from flare.blocking import compute_blocking_mask
+from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ class TestGC1_MultiDepthRelaxation:
     def test_guardrail_logs_depth_and_relaxations(self):
         """After a topology-changing event, info dict includes guardrail_depth
         (int 0-3) and relaxations (list of dicts)."""
-        from uavbench.guardrail.feasibility import FeasibilityGuardrail
+        from flare.guardrail.feasibility import FeasibilityGuardrail
 
         # Create a small grid where agent is blocked by traffic
         heightmap = np.zeros((10, 10), dtype=np.float32)
@@ -106,8 +106,8 @@ class TestGC1_MultiDepthRelaxation:
 
     def test_depth1_clears_roadblocks(self):
         """D1: guardrail clears roadblock vehicles to restore reachability."""
-        from uavbench.dynamics.traffic import TrafficModel
-        from uavbench.guardrail.feasibility import FeasibilityGuardrail
+        from flare.dynamics.traffic import TrafficModel
+        from flare.guardrail.feasibility import FeasibilityGuardrail
 
         heightmap = np.zeros((10, 10), dtype=np.float32)
         no_fly = np.zeros((10, 10), dtype=bool)
@@ -169,8 +169,8 @@ class TestGC1_MultiDepthRelaxation:
 
     def test_depth2_shrinks_nfz(self):
         """D2: after D1 fails (no roadblocks), guardrail shrinks NFZ zones."""
-        from uavbench.dynamics.restriction_zones import RestrictionZoneModel
-        from uavbench.guardrail.feasibility import FeasibilityGuardrail
+        from flare.dynamics.restriction_zones import RestrictionZoneModel
+        from flare.guardrail.feasibility import FeasibilityGuardrail
 
         heightmap = np.zeros((10, 10), dtype=np.float32)
         no_fly = np.zeros((10, 10), dtype=bool)
@@ -229,7 +229,7 @@ class TestGC1_MultiDepthRelaxation:
 
     def test_depth3_emergency_corridor(self):
         """D3: after D1+D2 fail, guardrail removes traffic blocking."""
-        from uavbench.guardrail.feasibility import FeasibilityGuardrail
+        from flare.guardrail.feasibility import FeasibilityGuardrail
 
         heightmap = np.zeros((10, 10), dtype=np.float32)
         no_fly = np.zeros((10, 10), dtype=bool)
@@ -284,7 +284,7 @@ class TestGC2_InfeasibleFlagging:
 
     def test_infeasible_flagged(self):
         """When all depths fail, feasible_after_guardrail=False."""
-        from uavbench.guardrail.feasibility import FeasibilityGuardrail
+        from flare.guardrail.feasibility import FeasibilityGuardrail
 
         heightmap = np.zeros((10, 10), dtype=np.float32)
         no_fly = np.zeros((10, 10), dtype=bool)
@@ -328,7 +328,7 @@ class TestGC2_InfeasibleFlagging:
 
     def test_infeasible_rate_in_metrics(self):
         """Aggregate metrics contain infeasible_rate as float [0,1]."""
-        from uavbench.metrics.compute import compute_episode_metrics
+        from flare.metrics.compute import compute_episode_metrics
 
         metrics = compute_episode_metrics(
             scenario_id="test",

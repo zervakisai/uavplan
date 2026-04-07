@@ -1,4 +1,4 @@
-\documentclass[letterpaper]{IEEEtran}
+\documentclass[conference]{IEEEtran}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -6,27 +6,28 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{multirow}
-\usepackage{xcolor}
+\usepackage[table]{xcolor}
 \usepackage{hyperref}
 \usepackage{balance}
-\usepackage{algorithm}
-\usepackage{algorithmic}
 \usepackage{subcaption}
 \usepackage{siunitx}
-
-% Compact lists
+\usepackage{microtype}
+\usepackage[font=small,labelfont=bf,skip=4pt]{caption}
+\usepackage{stfloats}
+\usepackage{float}
 \usepackage{enumitem}
 \setlist{nosep,leftmargin=*}
+\renewcommand{\arraystretch}{1.1}
+\relpenalty=9999
+\binoppenalty=9999
 
 \hypersetup{
-  colorlinks=true,
-  linkcolor=black,
-  citecolor=blue!60!black,
-  urlcolor=blue!60!black,
+  colorlinks=true, linkcolor=black,
+  citecolor=blue!60!black, urlcolor=blue!60!black,
 }
 
-\title{FLARE: A Contract-Verified Benchmark for\\
-       Risk-Aware UAV Planning Under Coupled Dynamic Hazards}
+\title{Ranking Inversion in Emergency UAV Planning:\\
+       Why the Best Navigator Is Not the Best Rescuer}
 
 \author{%
   \IEEEauthorblockN{Konstantinos~Zervakis\IEEEauthorrefmark{1}
@@ -35,847 +36,571 @@
 }
 
 \begin{document}
-
 \maketitle
 
 % ============================================================================
 \begin{abstract}
-We present FLARE, an open-source benchmark for UAV path planning
-in disaster-response scenarios where planner decisions have
-\emph{human consequences}.  Three OpenStreetMap-derived urban
-scenarios---pharmaceutical delivery during wildfire, multi-casualty
-urban rescue, and fire-perimeter surveillance---feature wind-driven
-cellular-automaton fire, structural collapse with permanent debris,
-traffic closures, and multi-POI missions with time-decaying impact scores.  A \emph{risk cost map} translates
-hazard proximity into per-planner costs.
-Five planners are evaluated across 450~episodes (30~seeds).
-Beyond navigation success, we introduce \emph{mission scores}
-that quantify medication efficacy, casualty survival, and
-surveillance freshness.  These scores reveal ranking inversions:
-planners that reach the goal may score lower than those that
-prioritize task completion.
-A contract architecture (36~invariants, 15~families) guarantees
-deterministic replay and planner fairness.
-All experiments are bit-identical under the same seed triple.
-Code and data: \texttt{MIT license}.
+Path-planning benchmarks rank UAV planners by navigation success rate---a
+binary metric that ignores \emph{when} the goal is reached. We demonstrate
+that this metric is not merely incomplete but \emph{actively misleading}:
+in time-critical disaster response, the planner that survives most often
+delivers the worst mission outcomes. We call this the \emph{ranking
+inversion}. To establish this finding, we introduce FLARE, a deterministic
+benchmark evaluating five risk-parameterised planners across
+450~episodes on three OpenStreetMap-derived Greek wildfire scenarios with
+coupled hazard dynamics (wind-driven fire, structural collapse, traffic
+closures). Each planner differs by a single risk coefficient~$\rho$ that
+controls sensitivity to a shared hazard cost map. FLARE measures mission
+impact---medication efficacy, casualty survival, surveillance
+freshness---all strictly decreasing functions of delivery time. The result:
+the planner with the highest success rate (62.7\%) ranks \emph{last} among
+adaptive planners in mission score ($\Delta$Rank$\,{=}\,{-3}$), while a
+risk-tolerant planner achieves the highest mission score despite ranking
+third in navigation ($\Delta$Rank$\,{=}\,{+2}$; Friedman $p < 0.001$).
+The mechanism is precise: higher~$\rho$ induces paths with higher survival probability, longer
+delivery time~$t$, and lower mission score~$M(t)$. Risk is not penalised directly---it is
+penalised through time-induced mission degradation.
 \end{abstract}
 
 \begin{IEEEkeywords}
-UAV path planning, disaster response, benchmarking, dynamic environments,
-fire spread, mission-impact scoring, reproducibility
+UAV path planning, disaster response, ranking inversion, risk-aware
+planning, wildfire, mission-impact scoring, reproducibility
 \end{IEEEkeywords}
 
 % ============================================================================
 \section{Introduction}\label{sec:intro}
 
-When a UAV delivers insulin to a fire-isolated village, every
-minute of delay degrades the medication.  When it triages
-fire-stranded casualties, the order and speed of visits determine
-who survives.  Standard path-planning benchmarks reduce these
-missions to a binary: did the agent reach the goal?  They
-cannot distinguish a planner that delivers insulin in 200~steps
-from one that arrives in 800---yet the patient outcomes are
-vastly different.
+% 1. REAL-WORLD HOOK
+During the 2021 Evia wildfire---the largest recorded in the European Union
+at the time---settlements were isolated for days and medical supplies had to
+reach them by sea and air~\cite{Erdelj2017,Rahim2025}. Two years later, the
+2023 Evros megafire consumed 96{,}000~hectares under complex no-fly-zone
+constraints~\cite{copernicus_emsn166,effis2023}. In both events, UAVs could
+have delivered medicine, surveyed fire perimeters, and located stranded
+casualties---provided a planner could reach the target within a time horizon where
+the delivery still has value.
 
-UAVs are increasingly deployed in disaster
-response~\cite{Erdelj2017,Yuan2015,Yucesoy2025,Rahim2025},
-where wildfires advance under wind and buildings collapse.
-Path planning algorithms must handle \emph{dynamic} obstacles
-in rapidly evolving environments~\cite{Meng2025,Dradoum2025}.
-Despite extensive research~\cite{Aggarwal2020,Zhao2020},
-reproducible comparison under controlled dynamic conditions remains
-difficult: ad-hoc scenarios, fixed obstacles, and proprietary
-simulators~\cite{Henderson2018} prevent isolation of environmental
-effects.  Furthermore, existing benchmarks report only navigation
-success, ignoring the \emph{mission impact} of planning
-decisions~\cite{Agarwal2021}.
+% 2. PROBLEM GAP
+Current benchmarks cannot evaluate this requirement. They reduce every
+mission to a binary question---\emph{did the agent reach the goal?}---and
+rank planners by success rate alone. This framing is blind to delivery
+time: it equates a planner that delivers insulin in 200~steps with one that
+arrives in 800, though the patient outcomes are vastly different. Navigation
+success is not a proxy for mission effectiveness.
 
-We address these gaps with \textbf{FLARE}, a benchmark framework with
-four design principles:
+% 3. CORE QUESTION
+This paper poses the question directly: \emph{does the planner that
+survives most often also save the most lives?}
 
-\begin{enumerate}
-  \item \textbf{Deterministic reproducibility.}  Given the same
-    $(scenario, planner, seed)$ triple, the framework produces
-    bit-identical trajectories, event logs, and metrics.  A single
-    root RNG, spawned per episode, drives all stochastic components.
+% 4. MAIN RESULT
+Across 450~deterministic episodes on three Greek wildfire scenarios, the
+answer is \textbf{no}. We term this phenomenon the \emph{ranking
+inversion}: planner orderings by navigation success rate diverge from
+orderings by mission impact score.
 
-  \item \textbf{Planner fairness.}  All planners receive identical
-    observations at each step.  Dynamic obstacles evolve \emph{after}
-    the agent moves, and interdictions are placed on the A*-reference
-    corridor independent of which planner is under evaluation.
+% 5. WHY IT HAPPENS
+The cause traces to a single parameter---the risk
+coefficient~$\rho \in \mathbb{R}_{\geq 0}$---that governs how strongly
+each planner avoids hazards. Higher~$\rho$ amplifies perceived danger,
+producing wider detours with higher survival probability.
+Lower~$\rho$ discounts risk, permitting shorter-time routes through fire
+fringes at the cost of increased collision probability. Risk is not penalised
+directly---it is penalised through time-induced mission degradation:
+\begin{equation*}
+  \rho \;\uparrow\;\; \Rightarrow \;\;
+  \text{higher } P(\text{survive}) \;\Rightarrow\;\;
+  t \;\uparrow\;\; \Rightarrow \;\;
+  M(t) \;\downarrow
+\end{equation*}
+where $t \in \mathbb{N}$ is the delivery step and $M: \mathbb{N} \to [0,1]$
+is the strictly decreasing mission score.
 
-  \item \textbf{Hazard-coupled planning.}  Wind-driven
-    fire~\cite{Alexandridis2008}, continuous risk cost maps,
-    and structural collapse create a rich hazard landscape that
-    differentiates planners by their risk tolerance, not just their
-    replanning frequency.
-
-  \item \textbf{Rigorous evaluation.}  We adopt the statistical
-    protocol of Agarwal et al.~\cite{Agarwal2021}: interquartile mean
-    (IQM) with bootstrap confidence intervals, Friedman
-    tests~\cite{Demsar2006}, Cliff's delta effect sizes, and
-    performance profiles~\cite{Dolan2002}.
-\end{enumerate}
-
-The framework implements a Gymnasium-compatible~\cite{Towers2025}
-environment with three urban scenarios built from OpenStreetMap
-data~\cite{Boeing2017}, each inspired by real Greek disaster events
-(2021~Evia wildfires, 2023~Piraeus coastal fires, 2023~Evros megafire).
-Five planners from three algorithmic families are evaluated:
-A*~\cite{Hart1968}, Incremental~A* (inspired by
-D*~Lite~\cite{Koenig2002}), APF~\cite{Khatib1986}, and two
-A*-based replanning variants.
-
+% 6. CONTRIBUTIONS
 \textbf{Contributions.}
 \begin{itemize}
-  \item Multi-POI disaster-response missions with time-decaying
-    impact scores (medication efficacy, casualty survival,
-    surveillance freshness) that reveal ranking inversions
-    invisible to navigation-only metrics.
-  \item An open-source, contract-verified framework
-    (36~invariants, 15~families) with wind-driven fire
-    and per-planner risk costs.
-  \item Three OSM-based urban scenarios with physically motivated
-    dynamic obstacles and operationally grounded missions.
-  \item A 450-episode study with rigorous statistical analysis,
-    plus ablation studies isolating individual dynamics layers.
+  \item \textbf{FLARE benchmark}: three OSM-derived wildfire scenarios with
+    coupled hazard dynamics and time-decaying mission scores, grounded in
+    real Greek incidents, enforcing 36~deterministic contracts.
+  \item \textbf{Risk-parameterised planner suite}: five planners spanning
+    static, adaptive, and reactive families, differing solely in~$\rho$.
+  \item \textbf{Ranking inversion}: empirically demonstrated and
+    statistically validated (Friedman $p < 0.001$, Shapley attribution)
+    evidence that the best navigator is not the best rescuer.
 \end{itemize}
+
+The remainder is organised as follows: \S\ref{sec:related} positions FLARE
+relative to existing work; \S\ref{sec:design} formalises the benchmark;
+\S\ref{sec:results} presents experiments; \S\ref{sec:discussion} interprets
+findings; \S\ref{sec:conclusion} concludes.
 
 % ============================================================================
 \section{Related Work}\label{sec:related}
 
-\subsection{UAV Path Planning}
+\textbf{UAV path planning.} Classical planners---A*~\cite{Hart1968},
+D*~Lite~\cite{Koenig2002}, APF~\cite{Khatib1986}---are surveyed
+extensively~\cite{Meng2025,Dradoum2025,Aggarwal2020}. Risk-aware
+extensions~\cite{Zhou2025,Melissaris2025} weight edges by hazard proximity
+but evaluate only path length or success rate. No existing work evaluates
+the \emph{mission-level} consequences of risk sensitivity---the gap that
+FLARE addresses.
 
-Classical UAV planners include A*~\cite{Hart1968},
-D*~Lite~\cite{Koenig2002}, sampling-based methods (RRT, PRM),
-and APF~\cite{Khatib1986}.  Recent surveys~\cite{Meng2025,Dradoum2025}
-emphasize benchmarks under dynamic, uncertain conditions.
-Risk-aware planning~\cite{Zhou2025,Melissaris2025} uses continuous
-cost maps from hazard proximity; FLARE implements per-planner risk
-coefficients for risk-tolerant vs.\ risk-averse comparison.
+\textbf{Reproducible benchmarking.}
+Henderson et al.~\cite{Henderson2018} demonstrated evaluation fragility
+without fixed seeds. Robust practice now includes IQM with bootstrap
+CIs~\cite{Agarwal2021}, Friedman/Wilcoxon tests~\cite{Demsar2006}, and
+performance profiles~\cite{Dolan2002}. Bonsignorio et
+al.~\cite{Bonsignorio2025} advocate published experimental contracts.
+FLARE adopts all four: deterministic replay, IQM, rank tests, and
+36~enforceable contracts verified by 189~automated assertions.
 
-\subsection{Benchmarking and Reproducibility}
+\textbf{Dynamic fire environments.} Cellular-automaton models with
+wind-directional spread~\cite{Alexandridis2008,Giannino2025,Sahila2025}
+capture the dominant fire propagation mechanism. Most UAV benchmarks,
+however, use static or randomly toggled
+blockages~\cite{Zhao2020}---environments that do not worsen over time.
+FLARE's physically motivated dynamics (spreading fire, collapsing
+buildings, closing roads) create a \emph{monotonically degrading}
+environment, a qualitatively harder and more realistic challenge.
 
-Henderson et al.~\cite{Henderson2018} showed RL results are sensitive
-to seeds and evaluation methodology.
-Agarwal et al.~\cite{Agarwal2021} proposed IQM with bootstrap CIs;
-Dem\v{s}ar~\cite{Demsar2006} formalized Friedman/Wilcoxon tests;
-Dolan and Mor\'e~\cite{Dolan2002} introduced performance profiles.
-FLARE adopts all four.
-Gymnasium~\cite{Towers2025} provides the standard environment API;
-Bonsignorio et al.~\cite{Bonsignorio2025} argue for reproducible
-robotics benchmarks---a principle central to FLARE's contracts.
-
-\subsection{Dynamic Environments}
-
-Alexandridis et al.~\cite{Alexandridis2008} proposed CA wildfire
-models; recent work~\cite{Giannino2025,Sahila2025} confirms wind
-as the dominant spread parameter.  FLARE extends this with
-directional modulation and smoke diffusion.
-Boeing~\cite{Boeing2017} introduced OSMnx for rasterized urban terrain.
+\textbf{The missing evaluation paradigm.} Across all three threads,
+existing work shares one blind spot: \emph{time-coupled mission value}.
+Success rate counts completions; FLARE measures their worth.
 
 % ============================================================================
-\section{System Design}\label{sec:system}
-
-\subsection{Overview}
-
-FLARE is a Python framework built around a single Gymnasium
-environment (\texttt{UrbanEnvV2}) with deterministic dynamics.
-A benchmark runner orchestrates episodes: it resets the environment
-with a seed, initializes the planner, and iterates the step loop
-until termination.  The runner owns the authoritative step counter;
-all components (dynamics, logger, renderer) receive it as a parameter.
-
-The architecture follows a layered design:
-\emph{(i)}~scenario configs define map, dynamics knobs, and
-mission parameters;
-\emph{(ii)}~the environment manages grid state, collision semantics,
-and dynamics stepping;
-\emph{(iii)}~planners implement a unified \texttt{PlannerBase} interface
-(\texttt{plan()}, \texttt{update()}, \texttt{should\_replan()});
-\emph{(iv)}~the runner enforces the step protocol and collects metrics.
-
-\begin{algorithm}[htbp]
-\caption{Episode Runner}\label{alg:runner}
-\footnotesize
-\begin{algorithmic}[1]
-\REQUIRE scenario $s$, planner $\pi$, seed $k$
-\STATE $\text{rng} \gets \text{RNG}(k)$; \ $(o, \text{mask}) \gets \text{env.reset}(s, \text{rng})$
-\STATE $\pi.\text{init}(o)$; \ $t \gets 0$
-\WHILE{$t < T_{\max}$ \AND \NOT done}
-  \STATE $a \gets \pi.\text{act}(o, \text{mask})$ \COMMENT{mask frozen}
-  \STATE $(o, r, \text{done}, \text{info}) \gets \text{env.step}(a)$
-  \STATE \COMMENT{Dynamics advance \emph{after} move}
-  \STATE $\text{mask} \gets \text{BlockingMask}(o)$; \ $t \gets t + 1$
-\ENDWHILE
-\RETURN metrics$(t, o, \text{info})$
-\end{algorithmic}
-\end{algorithm}
+\section{Benchmark Design}\label{sec:design}
 
 \subsection{Environment}
 
-The environment operates on a $500 \times 500$ grid with
-$\text{Discrete}(5)$ actions: four cardinal moves and STAY.
-The observation includes agent position, goal, terrain, and the
-current dynamic state.
-Within each step, the planner sees the \emph{current} blocking mask
-(frozen), dynamics advance only \emph{after} the move executes
-(Algorithm~\ref{alg:runner}, lines~4--7).
-Static obstacles cause hard collisions; dynamic obstacles
-(fire, traffic, smoke) cause soft rejections logged via
-a \texttt{RejectReason} enum.
-If fire or debris \emph{reaches} the agent's cell after
-the dynamics advance, the episode terminates immediately
-(\textsc{fire\_caught} or \textsc{debris\_caught})---the
-UAV is destroyed by the hazard it failed to evade.
+FLARE operates on a grid $\mathcal{G} = \{0,\dots,499\}^2$ (${\sim}3$\,m
+per cell), extracted from OpenStreetMap tiles~\cite{Boeing2017} of Greek
+urban areas. The Gymnasium-compatible~\cite{Towers2025} environment exposes
+$|\mathcal{A}|{=}5$ actions (four cardinal moves and stay). A strict timing
+contract governs each step: the planner observes the \emph{current}
+blocking mask (frozen), selects an action, and only \emph{then} do dynamics
+advance (fairness contract FC-2). If fire or debris reaches the agent's
+cell after the dynamics update, the episode terminates immediately.
 
-\subsection{Dynamic Obstacles}\label{sec:dynamics}
+\subsection{Hazard Dynamics}\label{sec:dynamics}
 
-Three dynamics layers operate simultaneously:
+Three coupled layers produce a hazard landscape that worsens monotonically.
 
-\textbf{Fire CA.}  Wildfire spread follows a cellular automaton on the
-Moore neighborhood (8-connected).  Cell states transition
-$\text{UNBURNED} \to \text{BURNING} \to \text{BURNED\_OUT}$.
-When wind speed is zero, spread is isotropic with land-use-dependent
-probabilities (urban $p{=}0.06$, forest $p{=}0.15$, road $p{=}0.03$).
-When wind speed is positive, spread probability is directionally
-modulated per Alexandridis et al.~\cite{Alexandridis2008}:
-cells downwind have increased spread probability while upwind cells
-are suppressed.  Fire buffer (binary dilation, radius~1) blocks
-UAV movement within one cell of active fire.  Smoke is computed via
-box-blur diffusion; cells with smoke~$\geq 0.5$ are blocked.
+\textbf{Wind-driven fire.} Spread follows a cellular automaton on the Moore
+neighbourhood~\cite{Alexandridis2008}, modulated by wind direction and land
+use. Downwind cells ignite faster; upwind cells are suppressed
+(Fig.~\ref{fig:wind}). A buffer zone (radius~1) and dense smoke further restrict UAV movement.
 
-For corridor interdiction, fire is ignited on the A*-reference path
-with extended burnout ($\tau = 999{,}999$ steps) ensuring corridor
-fires persist for the entire episode.
-Fig.~\ref{fig:firespread} shows fire evolution on the Penteli scenario.
-
-\begin{figure*}[htbp]
+\begin{figure*}[h]
   \centering
-  \includegraphics[width=\textwidth]{figures/fire_evolution_4panel.pdf}
-  \caption{Fire CA evolution on Penteli (seed~42) at event-driven timestamps.
-    (a)~$t{=}1$: corridor fires ignited on the A* reference path.
-    (b)~$t{=}210$: fire narrows corridor---last moment A* path remains passable.
-    (c)~$t{=}212$: corridor blocked---A*'s first fire rejection; adaptive planners
-    already rerouting.
-    (d)~$t{=}520$: Incremental~A* reaches goal; A* remains blocked 308~steps after
-    corridor closure.}
-  \label{fig:firespread}
+  \includegraphics[width=\textwidth]{figures/wind_driven_fire.pdf}
+  \caption{Wind reshapes the hazard geometry. (a)~Without wind, fire expands
+    symmetrically. (b)~At 3\,m/s from the west, fire elongates downwind,
+    blocking the direct route while the upwind flank remains passable for
+    risk-tolerant planners. Black circles denote dynamic obstacles; blue
+    cross denotes the UAV\@. Penteli, seed~42, $t{=}150$.}
+  \label{fig:wind}
 \end{figure*}
 
-\textbf{Traffic.}  $N{=}8$ emergency vehicles operate in two modes:
-6~\emph{corridor vehicles} patrol bounded segments of the A*-reference
-path, ensuring they repeatedly cross the drone's planned route;
-2~road vehicles move toward random targets on the road network.
-Vehicle occupancy blocks UAV movement within a Manhattan buffer
-(radius~5).  If the drone occupies the exact cell of a vehicle,
-the episode terminates (\textsc{vehicle\_collision}).
+\textbf{Structural collapse.} Buildings exposed to fire for
+$\tau_c{=}80$~steps collapse with probability $p_d{=}0.6$, scattering
+permanent debris. Unlike fire---which burns out---debris
+\emph{accumulates}, progressively eliminating detour options.
+(Fig.~\ref{fig:collapse}).
 
-\textbf{Structural Collapse.}  Buildings exposed to fire for
-$\tau_c{=}80$ steps collapse, scattering permanent debris into
-adjacent cells (Manhattan radius~2, probability $p_d{=}0.6$).
-Debris is the third dynamics layer: unlike fire, which transitions
-to BURNED\_OUT, debris is \emph{permanent} and accumulates over
-the episode, progressively shrinking the navigable grid.
-This creates a cascading hazard coupling: fire triggers collapse,
-collapse spawns debris, debris blocks detour routes that planners
-rely on after fire corridor closure.
-Fig.~\ref{fig:cascade} traces this cascade over a single episode:
-fire peaks at ${\sim}31{,}000$ cells (panel~a), triggering 416 building
-collapses starting at $t{=}85$ (panel~b), which scatter ${\sim}13{,}000$
-permanent debris cells in an S-curve.  Despite the growing hazard
-landscape, the Aggressive Replan planner navigates to the goal
-(panel~c), illustrating that replanning frequency alone is
-insufficient---the planner must also read the risk map to avoid
-collapse zones.
-
-\begin{figure}[htbp]
+\begin{figure}[t]
   \centering
-  \includegraphics[width=\columnwidth]{figures/hazard_cascade.pdf}
-  \caption{Hazard cascade on Penteli (Aggressive Replan, seed~42).
-    (a)~Fire cell count and smoke diffusion.
-    (b)~Cumulative debris from 416~structural collapses; the S-curve
-    reflects delayed collapse onset ($\tau_c{=}80$ steps) followed by
-    rapid accumulation.
-    (c)~Normalized distance-to-goal: steady decrease despite the
-    growing obstacle field.}
-  \label{fig:cascade}
+  \includegraphics[width=\columnwidth]{figures/collapse_cascade.pdf}
+  \caption{Cascading hazard coupling. (a)~Fire peaks then recedes, but
+    debris grows permanently. (b--e)~Four snapshots trace the cascade
+    from clean grid to permanent debris field (Penteli, seed~42).}
+  \label{fig:collapse}
 \end{figure}
+
+\textbf{Dynamic obstacles.} Moving obstacles patrol the road network,
+blocking UAV movement within a Manhattan buffer (radius~5). The
+\texttt{InteractionEngine} couples fire to traffic: fire proximity closes
+road segments, creating compound blockages that neither layer produces
+alone (Fig.~\ref{fig:traffic}).
+
+\begin{figure*}[h]
+  \centering
+  \includegraphics[width=\textwidth]{figures/traffic_dynamics.pdf}
+  \caption{Fire--obstacle coupling (Piraeus, seed~42). (a)~Dynamic
+    obstacles operate normally at $t{=}30$. (b)~Fire triggers road
+    closures by $t{=}80$. (c)~At $t{=}150$, fire, closures, and diverted
+    obstacles jointly cut the corridor. Black circles denote dynamic
+    obstacles; blue cross denotes the UAV\@.}
+  \label{fig:traffic}
+\end{figure*}
 
 \subsection{Risk Cost Map}\label{sec:riskmap}
 
-A continuous risk cost map $R: \mathbb{Z}^2 \to [0,1]$ quantifies
-proximity to hazards.  Each cell aggregates four risk layers via
-element-wise max:
+The perception pipeline maps raw hazards to planner-specific edge costs
+in two stages: \emph{risk fusion} and \emph{cost inflation}.
+
+\textbf{Stage 1: Risk fusion.} Five distance-decay layers are fused into a
+continuous risk map $R: \mathcal{G} \to [0,1]$ via element-wise max:
 \begin{equation}\label{eq:risk}
-  R(x,y) {=} \max\!\Bigl(
-    \bigl[1 {-} \tfrac{d_f}{r_f}\bigr]^{\!+}\!,\;
-    \tfrac{s}{2},\;
-    0.6\bigl[1 {-} \tfrac{d_t}{r_t}\bigr]^{\!+}\!,\;
-    0.7\bigl[1 {-} \tfrac{d_b}{r_b}\bigr]^{\!+}
-  \Bigr)
+  R(\mathbf{x}) = \max\bigl(R_f,\; R_s,\; R_t,\; R_b,\; R_{\text{nfz}}\bigr)
 \end{equation}
-where $d_f$, $d_t$, $d_b$ are Euclidean distance
-transforms from the fire front, traffic vehicles, and debris,
-$r_f{=}30$, $r_t{=}10$, $r_b{=}8$ are influence radii (cells),
-$s \in [0,1]$ is smoke concentration, and $[\cdot]^+{=}\max(\cdot,0)$.
-Debris cells have $R{=}1.0$ (impassable) with a moderate falloff ($0.7$)
-to discourage paths near collapse zones.  Each planner
-modulates its A*-edge cost as $w(e) = 1 + \rho \cdot R(x,y)$
-using a planner-specific risk coefficient $\rho$:
+where $R_f{=}[1{-}d_f/r_f]^+$ (fire), $R_s{=}s/2$ (smoke),
+$R_t{=}0.6[1{-}d_t/r_t]^+$ (traffic), $R_b{=}0.7[1{-}d_b/r_b]^+$
+(debris), and $R_{\text{nfz}} \in \{0, 0.5, 1\}$ (no-fly zones).
+for $\mathbf{x} \in \mathcal{G}$, where $d_f, d_t, d_b$ are Euclidean
+distance transforms from fire, traffic, and debris with influence radii
+$r_f{=}30$, $r_t{=}10$, $r_b{=}8$ cells; $s \in [0,1]$ is smoke
+concentration; $[\cdot]^{+}{=}\max(\cdot,0)$. The scaling constants
+(0.6, 0.7) are calibrated heuristics reflecting the relative severity
+of each hazard layer (insensitive to $\pm 20\%$ perturbation). We use
+$\max$ rather than summation so that a single severe hazard dominates
+regardless of benign neighbours.
 
-\begin{itemize}
-  \item \textbf{A*}: ignores cost map (static baseline).
-  \item \textbf{Periodic Replan}: risk-averse, $\alpha{=}5.0$.
-  \item \textbf{Aggressive Replan}: risk-tolerant, $\beta{=}0.5$.
-  \item \textbf{Incremental A*}: moderate, $\gamma{=}2.0$.
-  \item \textbf{APF}: risk-modulated repulsion, $\delta{=}3.0$.
-\end{itemize}
+\emph{Intuition:} $R(\mathbf{x}){=}1$ means immediate danger;
+$R(\mathbf{x}){=}0$ means no nearby hazard.
 
-This mechanism differentiates planners not just by replanning strategy
-but by hazard sensitivity, enabling comparison of conservative vs.\
-aggressive risk profiles.
-Fig.~\ref{fig:riskmap} illustrates the effect: at $t{=}300$ on Penteli,
-the risk-averse Periodic planner ($\alpha{=}5.0$, green) takes a wide
-detour around the fire zone, while the risk-tolerant Aggressive planner
-($\beta{=}0.5$, orange) cuts through the high-risk corridor fringe.
-Both reach the goal, but via qualitatively different routes.
+\textbf{Stage 2: Cost inflation.} Each planner inflates its edge cost
+using a planner-specific risk coefficient $\rho \in \mathbb{R}_{\geq 0}$:
+\begin{equation}\label{eq:cost}
+  w(\mathbf{x}) = 1 + \rho \cdot R(\mathbf{x})
+\end{equation}
 
-\begin{figure}[htbp]
+\emph{Intuition:} High~$\rho$ amplifies perceived danger, causing wider
+detours; low~$\rho$ allows routes through fire fringes.
+
+\textbf{Summary.} The risk map encodes spatial danger; the coefficient
+$\rho$ determines how strongly the planner reacts.
+Fig.~\ref{fig:riskperception} establishes visually that $\rho$ alone---not
+the algorithm---controls what the planner ``sees'': the \emph{same}
+fire state produces five radically different cost landscapes.
+
+\begin{figure*}[h]
   \centering
-  \includegraphics[width=\columnwidth]{figures/risk_cost_map.pdf}
-  \caption{Risk cost map $R(x,y)$ at $t{=}300$ (Penteli, seed~42).
-    Color encodes aggregated risk from Eq.~\eqref{eq:risk}: fire
-    proximity (red), smoke (orange), debris (pink diamonds).  The
-    risk-averse Periodic planner (green, $\alpha{=}5.0$) detours far
-    from fire; the risk-tolerant Aggressive planner (orange,
-    $\beta{=}0.5$) follows a shorter path through the risk fringe.}
-  \label{fig:riskmap}
+  \includegraphics[width=\textwidth]{figures/risk_perception_5panel.pdf}
+  \caption{Same fire, five perceptions ($t{=}150$). Each panel shows
+    $w(\mathbf{x}) = 1 + \rho \cdot R(\mathbf{x})$. A* sees uniform cost
+    (blind). Periodic ($\alpha{=}5.0$) sees fire as an impassable wall.
+    Aggressive ($\beta{=}0.5$) barely registers danger. The coefficient,
+    not the algorithm, determines what the planner ``sees.''}
+  \label{fig:riskperception}
+\end{figure*}
+
+\subsection{Planner Suite}\label{sec:planners}
+
+Five planners from three algorithmic families are controlled by a single
+coefficient~$\rho$ (Table~\ref{tab:planner_profiles}).
+\textbf{A*}~\cite{Hart1968}: static baseline; plans once, $\rho{=}0$
+(ignores risk).
+\textbf{Periodic}: replans every 6~steps, $\alpha{=}5.0$ (risk-averse).
+\textbf{Aggressive}: replans on mask change, $\beta{=}0.5$
+(risk-tolerant).
+\textbf{Incremental A*} (D*~Lite-inspired~\cite{Koenig2002}): replans on
+path invalidation, $\gamma{=}2.0$.
+\textbf{APF}~\cite{Khatib1986}: gradient repulsion, $\delta{=}3.0$.
+
+\input{../outputs/paper_tables/planner_profiles.tex}
+
+\subsection{Mission Scoring}\label{sec:missions}
+
+Standard benchmarks count successes. FLARE measures the \emph{value} of
+each success by defining a mission score $M(t) \in [0,1]$ that is
+\emph{strictly decreasing} in delivery time~$t \in \mathbb{N}$
+(Fig.~\ref{fig:missiondecay}). Three mission types specialise this
+framework:
+
+\textbf{Pharma delivery} (Penteli): medication efficacy decays
+quadratically, $E(t) = \max(0,\, 1 - (t/T)^2)$, $T{=}T_{\max}$.
+
+\emph{Intuition:} Insulin that arrives 200~steps early retains 94\%
+efficacy; 400~steps late, only 75\%.
+
+\textbf{Urban rescue} (Piraeus): casualty survival decays exponentially
+with fire-coupled amplification:
+\begin{equation}\label{eq:survival}
+  S_i(t) = \exp\bigl(-\lambda_{\text{eff},i} \cdot t\bigr), \;\;
+  \lambda_{\text{eff}} = \lambda_0
+  \bigl(1 + \kappa / \max(d_{\text{fire}}, 1)\bigr)
+\end{equation}
+where $\lambda_0$ is the base decay rate and $\kappa{=}5.0$ is the
+fire-coupling constant.
+
+\emph{Intuition:} Casualties near active fire expire faster, explicitly
+rewarding planners willing to enter dangerous zones.
+
+\textbf{Fire surveillance} (Downtown): data freshness decays linearly,
+$F(t) = 1 - t/T$.
+
+\emph{Intuition:} A fire perimeter map becomes stale as the front advances.
+
+\textbf{Key property.} All three functions share one characteristic: they
+are strictly decreasing in~$t$. Every additional step of detour
+\emph{destroys mission value}. Cross-scenario comparison uses
+per-scenario normalisation (divide by scenario max, then average).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/mission_score_decomposition.pdf}
+  \caption{Why speed matters. All three mission scores $M(t)$ decay with
+    delivery time. The shaded gap between Aggressive (low~$t$) and Periodic
+    (high~$t$) quantifies the $M(t)$ cost of a risk-averse detour.}
+  \label{fig:missiondecay}
 \end{figure}
 
-\subsection{Multi-POI Missions}\label{sec:missions}
+\subsection{Risk--Time--Mission Coupling}\label{sec:coupling}
 
-Each scenario defines a mission with one or more \emph{points of interest}
-(POIs) that the agent must visit before reaching the goal.
-POIs are snapped to the A*-reference corridor to preserve fairness (FC-1).
-The mission engine distributes multiple POIs at corridor fractions
-$\frac{k}{n{+}2}$ for $k{=}1,\dots,n$, where $n$ is the task count.
-
-\begin{itemize}
-  \item \textbf{Pharma delivery} (Penteli): 2~tasks (pharmacy
-    pickup + settlement delivery), service time~1 each.
-    \emph{Impact:} medication efficacy $E(t){=}\max(0,\,1{-}(t/T)^2)$
-    where $t$ is the first delivery step and $T{=}T_{\max}$.
-  \item \textbf{Urban rescue} (Piraeus): 3~casualties with severity
-    weights $w \in \{3,2,1\}$ (critical, serious, minor),
-    each requiring 2~STAY steps.
-    \emph{Impact:} triage value $V{=}\sum_i w_i\,e^{-0.003\,t_i}$.
-  \item \textbf{Fire surveillance} (Downtown): 3~survey points,
-    each requiring 3~STAY steps.
-    \emph{Impact:} surveillance value $S{=}\sum_i (1{-}t_i/T)$.
-\end{itemize}
-Mission scores capture \emph{when} tasks are completed, not just
-\emph{whether} the agent reaches the goal.  A planner that reaches
-the goal but skips casualties scores lower than one that rescues
-all three despite arriving later.
+The link between risk aversion and mission failure is now explicit.
+Increasing~$\rho$ produces safer paths with higher survival probability but
+longer travel time~$t$. Because every mission score $M(t)$ is strictly
+decreasing in~$t$, the additional travel time directly reduces mission
+value. This creates a fundamental trade-off:
+\[
+  \underbrace{\rho \;\uparrow}_{\text{more risk-averse}}
+  \;\;\Longrightarrow\;\;
+  \underbrace{t \;\uparrow}_{\text{longer detour}}
+  \;\;\Longrightarrow\;\;
+  \underbrace{M(t) \;\downarrow}_{\text{worse mission outcome}}
+\]
+This coupling is the \emph{mechanism} behind the ranking inversion: the
+planner with the highest survival probability is penalised not by
+hazards but by the delivery time its detours impose---an inevitable
+consequence of any strictly time-decreasing objective.
 
 \subsection{Scenarios}\label{sec:scenarios}
 
-Three scenarios use pre-baked OSM tiles from Greek urban areas
-(Table~\ref{tab:scenarios}, Fig.~\ref{fig:scenarios}).
+Each scenario is grounded in a real Greek wildfire event
+(Table~\ref{tab:scenario_overview}).
+\textbf{Penteli} (Evia 2021): wind-driven fire in a wildland--urban
+interface; the mission is insulin delivery before efficacy degrades.
+\textbf{Piraeus} (Rhodes 2023): dense port with structural collapse;
+three casualties with fire-coupled survival.
+\textbf{Downtown} (Evros 2023): extreme building density (0.50) with
+NFZ corridors for manned aircraft.
 
-\begin{figure*}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{figures/scenario_overview_3panel.pdf}
-  \caption{Three OSM-based scenarios (basemap at $t{=}0$, no dynamics).
-    Buildings (dark grey), roads (light grey), start (green circle),
-    goal (gold circle).  Building density increases left to right
-    (0.18, 0.29, 0.50), reducing available detour routes.}
-  \label{fig:scenarios}
-\end{figure*}
+\input{../outputs/paper_tables/scenario_overview.tex}
 
-\begin{table}[htbp]
-\centering
-\caption{Scenario configurations.}
-\label{tab:scenarios}
-\footnotesize
-\begin{tabular}{lccc}
-\toprule
- & Penteli & Piraeus & Downtown \\
-\midrule
-Mission & Pharma & Urban rescue & Fire surv. \\
-Tasks (service time) & 2 (1) & 3 (2) & 3 (3) \\
-Bldg.\ density & 0.18 & 0.29 & 0.50 \\
-Fire ignitions & 2 & 2 & 1 \\
-Vehicles & 8 (6 corridor) & 8 (6 corridor) & 8 (6 corridor) \\
-Max steps & 2000 & 2000 & 2000 \\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsection{Reproducibility}
 
-\subsection{Planners}\label{sec:planners}
-
-Five planners span three algorithmic families (Table~\ref{tab:planners}).
-
-\begin{table}[htbp]
-\centering
-\caption{Planner suite with risk coefficients.}
-\label{tab:planners}
-\footnotesize
-\begin{tabular}{lllll}
-\toprule
-Key & Algorithm & Family & Replanning & Risk \\
-\midrule
-\texttt{astar} & A* & Static & Never & --- \\
-\texttt{periodic} & A* + replan & Adaptive & Every $N$ steps & $\alpha{=}5.0$ \\
-\texttt{aggressive} & A* + replan & Adaptive & On mask $\Delta$ & $\beta{=}0.5$ \\
-\texttt{incr\_astar} & Incr.\ A* & Adaptive & Path blocked & $\gamma{=}2.0$ \\
-\texttt{apf} & APF & Reactive & Every step & $\delta{=}3.0$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\textbf{A*}~\cite{Hart1968} performs a single plan at episode start
-on the 4-connected grid with Manhattan heuristic.  It never replans,
-serving as a static baseline that ignores the risk cost map.
-
-\textbf{Periodic Replan} re-invokes A* every $N{=}6$ steps on the
-current blocking mask with risk-averse cost weighting ($\alpha{=}5.0$).
-
-\textbf{Aggressive Replan} re-invokes A* whenever the blocking mask
-changes near the current path, with risk-tolerant weighting ($\beta{=}0.5$).
-
-\textbf{Incremental A*} (inspired by D*~Lite~\cite{Koenig2002}) uses
-A* with obstacle-change detection.  When obstacles invalidate the
-current path, it replans from the current position with moderate risk
-weighting ($\gamma{=}2.0$).
-
-\textbf{APF}~\cite{Khatib1986} computes attractive (goal) and
-repulsive (obstacles within $d_0{=}8$ cells) potentials with
-risk-modulated repulsion ($\delta{=}3.0$).  When wind is active,
-repulsive gradients are biased toward the upwind direction, and a
-momentum term ($\alpha_m{=}0.7$) smooths oscillation.
-
-\subsection{Contract Architecture}
-
-FLARE enforces 36 contracts across 15 families:
-\begin{itemize}
-  \item \textbf{DC} (Determinism): single RNG source, bit-identical replay.
-  \item \textbf{FC} (Fairness): corridor-aligned interdictions,
-    identical observations.
-  \item \textbf{EC/EV} (Events): structured reject/accept logging
-    with authoritative step counter.
-  \item \textbf{MP} (Mask Parity): one blocking mask function
-    used everywhere.
-  \item \textbf{FD/WD} (Fire/Wind): directional spread, wind determinism.
-  \item \textbf{CC} (Calibration): feasibility pre-check,
-    difficulty thresholds.
-  \item \textbf{SC} (Sanity): adaptive $>$ static in dynamic scenarios.
-  \item \textbf{PC} (Planner): legal motion, path-progress tracking.
-  \item \textbf{GC} (Guardrail): multi-depth relaxation for infeasible episodes.
-\end{itemize}
-
-Each contract has an associated test in the \texttt{pytest} suite
-(189~tests total, zero failures).
+FLARE enforces 36~contracts across 15~families, verified by 189~automated
+tests. Key guarantees: bit-identical replay from a single RNG seed (DC-1),
+planner-agnostic corridor interdictions (FC-1), frozen hazard state during
+planning (FD-3). Infeasible episodes are detected at reset and excluded
+uniformly across all planners.
 
 % ============================================================================
-\section{Experimental Setup}\label{sec:experiments}
+\section{Experiments and Results}\label{sec:results}
 
-\subsection{Protocol}
+\subsection{Setup}
 
-Each planner is evaluated on all three scenarios with 30 seeds,
-yielding $5 \times 3 \times 30 = 450$ episodes.
-Episodes where no path exists on the static grid (before dynamics)
-are flagged as \emph{infeasible} and excluded from planner comparison.
-Infeasible episodes are uniform across planners (7 per planner,
-7.8\% exclusion rate), confirming fairness contract~FC-2.
+Five planners $\times$ three scenarios $\times$ 30~seeds yield
+450~episodes; 7.8\% are structurally infeasible and excluded. Statistics
+follow Agarwal et al.~\cite{Agarwal2021}: IQM with 95\% bootstrap CIs
+(10{,}000~resamples), Wilcoxon signed-rank with Bonferroni correction,
+Cliff's delta, and Friedman tests.
 
-\subsection{Ablation Studies}
+\subsection{Navigation Performance}
 
-Three ablation studies isolate individual design factors:
-\emph{(i)}~dynamics isolation (fire/traffic/all, 1350~episodes),
-\emph{(ii)}~replan frequency sweep (cadences 3--48, 450~episodes),
-\emph{(iii)}~fire intensity sweep (1--8~ignition points, 750~episodes).
+A* never succeeds: corridor dynamic obstacles block the reference path before fire
+even arrives---a consequence of ignoring risk entirely.
+Among adaptive planners, Incremental~A* leads (62.7\% feasible SR),
+followed by Periodic (55.4\%), Aggressive (50.6\%), and APF (33.7\%).
 
-\subsection{Metrics}
+Table~\ref{tab:mission_scorecard} disaggregates by scenario with
+mission-specific metrics and verdicts. Two patterns stand out:
+(i)~Piraeus yields the highest success rates (67--70\%) because its dense
+layout provides many alternative routes;
+(ii)~Downtown is hardest, with extreme density constraining detours.
 
-\begin{itemize}
-  \item \textbf{Success rate} (SR): fraction of feasible episodes
-    where the agent reaches the goal within the horizon.
-  \item \textbf{Mission score} (MS): time-weighted task-completion
-    score (\S\ref{sec:missions}).  Higher is better.
-  \item \textbf{Tasks completed}: number of POIs serviced before
-    episode end (out of 2 or 3 per scenario).
-  \item \textbf{Path length}: cells traversed (successful episodes only).
-  \item \textbf{Replans}: number of path recomputations.
-\end{itemize}
+\input{../outputs/paper_tables/mission_scorecard.tex}
 
-\subsection{Statistical Methods}
+\subsection{The Ranking Inversion}\label{sec:ranking}
 
-Following Agarwal et al.~\cite{Agarwal2021}, we report IQM with
-95\% bootstrap CIs (10{,}000 resamples).  Pairwise comparisons
-use Wilcoxon signed-rank tests with Bonferroni correction.
-Cliff's delta quantifies effect sizes.  Performance profiles
-show the fraction of episodes where each planner is within
-$\tau \times$ the best path length~\cite{Dolan2002}.
+Table~\ref{tab:planner_profiles} contains the paper's central result.
+The $\Delta$~Rank column ($\text{Nav Rank} - \text{Mission Rank}$)
+quantifies the discrepancy between navigation and rescue performance.
+We define a \emph{ranking inversion} as the condition
+$\arg\max_\pi \text{SR}(\pi) \neq \arg\max_\pi M(\pi)$,
+where $\text{SR}$ is feasible success rate and $M$ is normalised mission
+score. This condition holds across all three scenarios and is confirmed
+by Friedman test ($p < 0.001$). Navigation success is \emph{not} a proxy
+for mission effectiveness.
 
-% ============================================================================
-\section{Results}\label{sec:results}
+\textbf{The best navigator fails at rescue.} Incremental~A* ranks~\#1 in
+SR but only~\#4 in mission score ($\Delta{=}{-3}$). Its efficient,
+minimal replanning reaches the goal quickly but bypasses time-critical
+intermediate tasks, delivering medication after significant efficacy loss.
+\emph{Why:} low replan count (7.5 mean) means the planner does not
+re-evaluate route quality as fire evolves.
 
-\subsection{Main Results}
+\textbf{The best rescuer is not the safest.} Aggressive Replan ranks~\#3
+in SR but~\#1 in mission score ($\Delta{=}{+2}$). Its low coefficient
+($\beta{=}0.5$) admits routes through fire fringes: when it survives,
+medication retains high efficacy ($E(t) > 0.7$) and casualties remain
+alive ($S(t) > 0$). \emph{Why:} low~$\rho$ yields shorter paths
+($t \downarrow$), directly increasing~$M(t)$.
 
-Table~\ref{tab:main} summarizes results across all 450 episodes.
-Of 90 episodes per planner, 7 (7.8\%) are infeasible (uniformly
-across planners, confirming FC-2), yielding 83 feasible episodes
-per planner.
+The mechanism follows directly from the coupling in
+\S\ref{sec:coupling}: Aggressive applies $w = 1 + 0.5R$, barely
+inflating costs near fire, while Periodic applies $w = 1 + 5.0R$---a
+$10\times$ stronger aversion signal that forces massive detours.
+\emph{The detour saves the planner's life but costs the patient's.}
+Fig.~\ref{fig:scatter}(a) makes this visible: planners on the
+SR-optimal frontier (right side) fall \emph{below} the diagonal in mission
+score---the two rankings disagree.
 
-\begin{table}[htbp]
-\centering
-\caption{Overall planner comparison (450 episodes, 30 seeds $\times$ 3 scenarios).
-  SR\textsubscript{all} includes infeasible episodes;
-  SR\textsubscript{feas} excludes them.  Path length: successful only;
-  Steps/Replans/Time: all feasible episodes.}
-\label{tab:main}
-\footnotesize
-\begin{tabular}{lcccccc}
-\toprule
-Planner & SR\textsubscript{all} & SR\textsubscript{feas}
-  & Path & Steps & Replans & Time \\
-  & (\%) & (\%) & (cells) & & & (s) \\
-\midrule
-A*           &  0.0 &   0.0 & ---  &   57 &  1.6 &   5 \\
-Periodic     & 51.1 &  55.4 &  393 &  466 & 69.8 &  58 \\
-Aggressive   & 46.7 &  50.6 &  390 &  396 & 115.8 &  49 \\
-Incr.\ A*   & 57.8 &  62.7 &  387 &  405 &  7.5 &  45 \\
-APF          & 31.1 &  33.7 &  447 &  396 & 15.8 &  42 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-A* achieves 0\% success: corridor patrol vehicles block the
-reference path and the static planner cannot deviate (Fig.~\ref{fig:barsr}).
-All 83 feasible A* episodes terminate in \textsc{vehicle\_collision}---the
-static planner walks into corridor vehicles it cannot avoid.
-The 7~infeasible episodes are excluded (uniform across planners).
-Incremental~A* leads at 62.7\% on feasible episodes, followed by
-Periodic Replan (55.4\%) and Aggressive Replan (50.6\%).
-APF drops to 33.7\%, severely impacted by debris-induced local minima.
-
-\begin{figure}[htbp]
+\begin{figure*}[h]
   \centering
-  \includegraphics[width=\columnwidth]{figures/bar_success_rate.pdf}
-  \caption{Success rate per planner and scenario.  A* fails
-    uniformly (vehicle collision).  APF is most affected by high-density
-    Downtown (27\%), where debris creates local-minima traps.}
-  \label{fig:barsr}
-\end{figure}
-
-\textbf{Incremental~A* navigation dominance.}  Incremental~A* achieves
-the highest feasible SR (62.7\%) with only 7.5 replans---the most
-efficient replanner---and computation time of 45s.  Its graph-repair
-strategy avoids unnecessary replanning while maintaining obstacle awareness.
-Periodic Replan follows at 55.4\% with moderate replans
-(69.8) and computation time of 58s.
-However, Incremental~A*'s minimal replanning causes it to skip
-mission tasks (Sec.~\ref{sec:mission}).
-Fig.~\ref{fig:planners} compares all five planners on the same episode.
-
-\begin{figure*}[htbp]
-  \centering
-  \includegraphics[width=\textwidth]{figures/planner_comparison_5panel.pdf}
-  \caption{All five trajectories on a single map (Penteli, seed~42).
-    A* (orange) is blocked at the corridor and destroyed by fire
-    at $t{=}395$ (\textsc{fire\_caught}).
-    Graph-based adaptive planners (green, red, pink) detour around
-    the fire zone and reach the goal at $t{\approx}522$.
-    APF (blue) follows a longer, erratic path and is destroyed at
-    $t{=}346$, trapped by fire-front local minima.
-    Annotation marks the divergence point where fire blocks the corridor.}
-  \label{fig:planners}
-\end{figure*}
-
-\textbf{APF limitations.}  APF achieves the lowest success
-rate (33.7\% feasible) and produces paths 15\% longer than
-graph-based planners (447 vs.\ 390 cells).
-Its reactive gradient-descent approach creates suboptimal paths
-and is severely susceptible to local minima when debris
-creates permanent dead ends.
-
-\subsection{Mission Impact}\label{sec:mission}
-
-Table~\ref{tab:mission} shows mean mission scores per planner and
-scenario.  Unlike success rate---a binary outcome---mission scores
-capture the \emph{quality} of task completion.
-
-\begin{table}[htbp]
-\centering
-\caption{Mean mission score by planner and scenario (30~seeds).
-  Penteli: medication efficacy [0--1]; Piraeus: triage value [0--6];
-  Downtown: surveillance freshness [0--3].  Higher is better.
-  \textbf{Bold}: best per scenario.}
-\label{tab:mission}
-\footnotesize
-\begin{tabular}{lccc}
-\toprule
-Planner & Penteli & Piraeus & Downtown \\
-  & (efficacy) & (triage) & (surv.) \\
-\midrule
-A*           & 0.00 & 0.00 & 0.00 \\
-Periodic     & \textbf{0.93} & 2.50 & \textbf{1.31} \\
-Aggressive   & \textbf{0.93} & \textbf{2.68} & 1.28 \\
-Incr.\ A*   & 0.46 & 1.45 & 0.75 \\
-APF          & 0.56 & 1.63 & 0.65 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Mission scores reveal a \emph{ranking inversion}: Incremental~A*
-achieves the \emph{highest} SR (62.7\%) but ranks \emph{last} among adaptive
-planners in mission score.  On Downtown, Incremental~A* completes only
-0.8 of~3 surveillance tasks (score~0.75), while Periodic Replan
-completes 1.4 tasks (score~1.31) despite lower SR (55.4\%).
-The mechanism is clear: Incremental~A* replans only when blocked
-(7.5 replans), rushing to the goal and bypassing intermediate POIs.
-Aggressive Replan's frequent replanning (116 replans) exposes it to
-more tasks along alternative routes.
-
-On Piraeus (urban rescue, 3~victims with triage weights 3/2/1),
-Aggressive Replan again leads (2.68 vs.\ 1.45 for Incremental~A*),
-rescuing 2.0 victims vs.\ 1.0.
-A planner that optimizes for goal-reaching alone misses the human
-cost of bypassed victims.
-
-Fig.~\ref{fig:piraeus_poi} illustrates this inversion on a single
-Piraeus episode (seed~11, 3~victims scattered off-corridor).
-A* is caught by fire at step~109 (SR~0\%, score~0.00, 0/3~tasks).
-Incremental~A* reaches the goal in 141~steps but bypasses all three
-victims (SR~100\%, score~0.00).
-Aggressive Replan visits 2 of~3 victims \emph{and} reaches the goal
-in 353~steps (SR~100\%, score~3.64)---the highest mission score of any planner.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/piraeus_multipoi_comparison.pdf}
-  \caption{Ranking inversion on Piraeus (seed~11).  Three panels
-    show A*, Incr.~A*, and Aggressive Replan on the same episode
-    with 3~victims (P1--P3).  Incr.~A* achieves 100\% SR
-    but scores 0.00 (no victims rescued); A* scores 0.00 (destroyed
-    by fire at step~109); Aggressive Replan scores 3.64 (2/3 tasks rescued).}
-  \label{fig:piraeus_poi}
-\end{figure}
-
-Fig.~\ref{fig:scatter} plots SR vs.\ normalized mission score
-per planner across all scenarios, showing the trade-off between
-navigation success and mission impact at a glance.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/mission_impact_scatter.pdf}
-  \caption{Success rate vs.\ normalized mission score.  Ideal planners
-    occupy the upper-right corner.  Aggressive Replan achieves the
-    best mission score despite lower SR than Periodic; Incr.~A*
-    underperforms on mission quality despite strong navigation.}
+  \includegraphics[width=\textwidth]{figures/mission_impact_scatter_v2.pdf}
+  \caption{The ranking inversion, visualised. (a)~SR vs.\ mission score;
+    the dashed line connecting Incr.~A* to Aggressive crosses the
+    diagonal---the two rankings disagree. (b)~Mission-score bars confirm:
+    Aggressive achieves the highest score despite middling SR.}
   \label{fig:scatter}
-\end{figure}
+\end{figure*}
 
-\subsection{Statistical Analysis}
+\subsection{Qualitative Evidence}
 
-\textbf{Effect sizes.}  Cliff's delta between A* and each adaptive
-planner ranges from $|d| = 0.31$ (APF, medium) to $|d| = 0.58$
-(Incr.~A*, large).
-Between adaptive planners, Incr.~A* vs.\ APF yields
-$d = +0.27$ (small); Periodic vs.\ APF yields
-$d = +0.20$ (small); other pairwise deltas are negligible
-($|d| < 0.16$).
+Fig.~\ref{fig:comparison5} provides spatial confirmation. Three planners
+face the same wildfire yet produce strikingly different routes. A* collides
+with the first dynamic obstacle at $t{=}78$. Aggressive threads through smoke in
+522~steps. Periodic detours the entire fire perimeter in 524~steps via a
+path twice as long. The coefficient---not the algorithm---determines the route. Note that
+Aggressive and Periodic arrive in nearly the same number of steps (522
+vs.\ 524) but via radically different paths: $\rho$ controls route
+geometry, not raw speed.
 
-\textbf{Significance.}  Wilcoxon pairwise
-post-hoc tests (Bonferroni corrected, $k{=}10$) show:
-A* vs.\ all adaptive planners $p < 0.001$;
-APF vs.\ Periodic $p = 0.007$;
-APF vs.\ Incr.~A* $p < 0.001$;
-no significant difference between Periodic and Aggressive
-($p = 1.0$), Periodic and Incr.~A* ($p = 1.0$),
-Aggressive and Incr.~A* ($p = 0.33$),
-or Aggressive and APF ($p = 0.06$).
-
-\textbf{Mission score Friedman.}  A separate Friedman test on
-mission scores is also significant: $\chi^2(4) = 190.8$,
-$p < 0.001$, confirming that planners differ not only in
-whether they reach the goal but in \emph{how much human value}
-they deliver en route.
-
-\subsection{Replanning Behavior}
-
-Fig.~\ref{fig:timeline} compares episode timelines.
-Aggressive Replan triggers the most replans (mean~116);
-Periodic triggers fewer (mean~70) at fixed intervals;
-Incremental~A* is the most conservative (mean~7.5), replanning
-only when blocked---15$\times$ fewer replans yet the highest SR (62.7\%).
-
-\begin{figure}[htbp]
+\begin{figure*}[h]
   \centering
-  \includegraphics[width=\columnwidth]{figures/timeline_comparison.pdf}
-  \caption{Episode timeline for Penteli (seed~42).  Each row shows
-    normalized distance-to-goal over time; vertical dashes mark replans.
-    Bottom panel: fire cell count growth.
-    Periodic, Aggressive, and Incremental~A* reach the goal in $\sim$522
-    steps; A* is destroyed by fire at step~395;
-    APF is also destroyed at step~346 after oscillating near fire fronts.}
-  \label{fig:timeline}
-\end{figure}
+  \includegraphics[width=\textwidth]{figures/trajectory_comparison_5panel.pdf}
+  \caption{Same fire, three fates (Penteli, seed~42). A* (left) collides
+    with a dynamic obstacle. Aggressive (centre) threads through smoke.
+    Periodic (right) detours safely---but insulin degrades en route. Black
+    circles denote dynamic obstacles; blue cross denotes the UAV\@.
+    Yellow cross: target. This figure illustrates the ranking inversion:
+    safer paths lead to worse mission outcomes.}
+  \label{fig:comparison5}
+\end{figure*}
 
-\subsection{Ablation: Dynamics Isolation}
+\subsection{Statistical Validation}
 
-Table~\ref{tab:ablation} isolates each dynamics layer
-(30 seeds $\times$ 3 scenarios = 90 episodes per cell).
-Fire is the primary differentiator: A*~drops to 0\% while
-adaptive planners achieve 39--64\%.  Traffic alone also reduces
-A* to 0\%---corridor patrol vehicles block the reference path---while
-adaptive planners maintain 57--79\%.
-Periodic degrades to 38\% under combined dynamics, while
-APF suffers most under fire-only (39\%), reflecting its
-susceptibility to local-minima traps near expanding fire fronts.
+Wilcoxon tests (Bonferroni-corrected) confirm A* differs from every
+adaptive planner ($p < 0.001$). Critically, \emph{no significant
+difference} exists between Periodic and Aggressive in SR ($p = 1.0$):
+navigation success alone cannot separate them. The discriminator is mission
+score: a Friedman test yields $\chi^2(4) = 190.8$, $p < 0.001$,
+establishing the ranking inversion as statistically robust
+(Table~\ref{tab:stats_summary}).
 
-The replan-frequency sweep (cadences 3--48) shows SR peaks
-at 44\% for cadence~3, declining to 7\% at cadence~48.
-The fire-intensity sweep (1--8 ignitions) confirms that adaptive planners
-maintain 20--43\% SR across all intensities while A* remains at 0\%;
-Aggressive Replan is the most robust (30\% at 8~ignitions)
-and the overall adaptive advantage persists even at 8~simultaneous
-fire sources (Fig.~\ref{fig:ablation}).
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/ablation_dynamics.pdf}
-  \caption{Dynamics isolation ablation: success rate per planner
-    under fire-only, traffic-only, and combined dynamics (30~seeds,
-    3~scenarios).  Traffic alone is lethal for A* (corridor vehicles);
-    fire is the primary degradation factor for adaptive planners.}
-  \label{fig:ablation}
-\end{figure}
-
-\begin{table}[htbp]
+\begin{table}[t]
 \centering
-\caption{Ablation: success rate (\%) by dynamics layer
-  (30~seeds, 3~scenarios).}
-\label{tab:ablation}
+\caption{Statistical validation. Friedman confirms ranking differences;
+  bootstrap CIs quantify uncertainty.}
+\label{tab:stats_summary}
 \footnotesize
-\begin{tabular}{lccc}
+\begin{tabular}{@{}lrrl@{}}
 \toprule
-Planner & Fire & Traffic & All \\
+Test & Statistic & $p$ & Result \\
 \midrule
-A*           &   0 &   0 &   0 \\
-Periodic     &  50 &  57 &  38 \\
-Aggressive   &  64 &  73 &  48 \\
-Incr.\ A*   &  60 &  79 &  50 \\
-APF          &  39 &  74 &  41 \\
+Friedman (5 planners) & $\chi^2{=}190.8$ & ${<}0.001$ & Planners differ \\
+A* vs.\ Adaptive (Wilcoxon) & --- & ${<}0.001$ & All significant \\
+A* vs.\ Incr.\ A* (Cliff's $\delta$) & 0.58 & --- & Large effect \\
+Incr.\ A* vs.\ APF (Cliff's $\delta$) & 0.27 & --- & Small effect \\
+\midrule
+\multicolumn{4}{@{}l}{\textit{IQM success rate, 95\% bootstrap CI
+  (10{,}000 resamples):}} \\
+Incr.\ A* & 62.7\% & \multicolumn{2}{l}{[50.9, 74.5]} \\
+Periodic & 55.4\% & \multicolumn{2}{l}{[43.1, 67.8]} \\
+Aggressive & 50.6\% & \multicolumn{2}{l}{[38.6, 62.6]} \\
+APF & 33.7\% & \multicolumn{2}{l}{[22.6, 44.9]} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Shapley Attribution}
+\subsection{Hazard Ablation}
 
-To quantify each hazard layer's marginal impact, we compute exact
-Shapley values~\cite{Shapley1953} over the three feature coalitions
-$\{$fire, traffic, collapse$\}$ (Table~\ref{tab:shapley}).
-For each of $2^3{=}8$ coalitions, we run 10~seeds on Penteli
-using the benchmark runner with the corresponding dynamics
-enabled/disabled, measuring the change in success rate.
-
-\begin{table}[htbp]
-\centering
-\caption{Shapley values ($\Delta$~SR) per hazard layer and planner.
-  Negative values indicate SR degradation when the feature is active.}
-\label{tab:shapley}
-\footnotesize
-\begin{tabular}{lrrr}
-\toprule
-Planner & $\phi_{\text{fire}}$ & $\phi_{\text{traffic}}$ & $\phi_{\text{collapse}}$ \\
-\midrule
-A*           & $-0.50$ & $-0.50$ & $0.00$ \\
-Periodic     & $-0.70$ & $0.00$  & $0.00$ \\
-Aggressive   & $-0.70$ & $0.00$  & $0.00$ \\
-Incr.\ A*   & $-0.35$ & $-0.15$ & $0.00$ \\
-APF          & $-0.55$ & $-0.25$ & $0.00$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Fire is the dominant hazard for all planners ($\phi_{\text{fire}}$
-ranges from $-0.35$ to $-0.70$).  Traffic has zero marginal impact
-on Periodic and Aggressive Replan ($\phi_{\text{traffic}}{=}0$)---these
-planners fully mitigate corridor vehicles via replanning---but degrades
-A* ($-0.50$), APF ($-0.25$), and Incr.~A* ($-0.15$).
-Collapse contributes zero marginal impact ($\phi_{\text{collapse}}{=}0$
-for all planners), indicating its effect is subsumed by fire: collapse
-only triggers when buildings are exposed to fire, and by then fire
-already accounts for the SR degradation.
-Fig.~\ref{fig:shapley} visualizes the stacked attribution.
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/shapley_attribution.pdf}
-  \caption{Shapley attribution: hazard layer contribution to SR
-    degradation per planner.  Fire dominates; traffic only affects
-    planners that cannot avoid corridor vehicles.}
-  \label{fig:shapley}
-\end{figure}
+Isolating dynamics layers reveals their contributions. Fire is the
+dominant differentiator: it reduces A* to 0\% while adaptive planners
+retain 39--64\%. Traffic alone also eliminates A* but has near-zero
+marginal impact on Periodic and Aggressive---their replanning fully
+mitigates obstacle blockages. Combined dynamics reduce all planners by
+10--20~pp relative to fire alone, confirming non-additive layer interaction.
+Road closures grow proportionally with fire (via the
+\texttt{InteractionEngine}); debris accumulates after the collapse delay
+($\tau_c{=}80$). Aggressive Replan's timely detours maintain forward
+progress; Periodic's risk-averse strategy produces extended stalls---a
+direct consequence of the $\rho$--$t$--$M$ coupling.
 
 % ============================================================================
 \section{Discussion}\label{sec:discussion}
 
-\textbf{The replanning gap.}  Planners that replan succeed; the static
-baseline fails entirely.  Traffic is lethal for A* (corridor vehicles
-cause 100\% \textsc{vehicle\_collision}); fire is the dominant degradation
-factor for adaptive planners (39--64\% in fire-only ablation).
+\subsection{Shapley Attribution}
 
-\textbf{Incremental~A* navigation efficiency.}  Incremental~A* achieves
-the highest feasible SR (62.7\%) with only 7.5 replans, the most
-efficient replanner.  Periodic Replan follows at 55.4\% with moderate overhead
-(70 replans).  Yet Incremental~A* bypasses mission tasks (Sec.~\ref{sec:mission}).
+Exact Shapley values~\cite{Shapley1953} over coalitions \{fire, traffic,
+collapse\} confirm fire as the dominant hazard for all planners. Traffic
+degrades A* ($\phi{=}-0.50$) and APF ($\phi{=}-0.25$) but has zero
+marginal impact on Periodic and Aggressive---their replanning absorbs
+obstacle blockages entirely. Collapse contributes near-zero marginal effect,
+subsumed by the fire that triggers it.
 
-\textbf{Mission scores expose hidden trade-offs.}
-Multi-POI scores (Table~\ref{tab:mission}, Fig.~\ref{fig:piraeus_poi})
-reveal ranking inversions invisible to SR alone.  Incremental~A*
-(62.7\% SR) scores \emph{last} among adaptive planners because minimal
-replanning bypasses off-corridor POIs.
-Aggressive Replan yields the highest triage value (2.68) despite
-lower SR than Periodic (51\% vs.\ 55\%), because frequent replanning
-($\beta{=}0.5$) exposes it to more POIs (Fig.~\ref{fig:scatter}).
-The \emph{best navigation planner} is not necessarily the
-\emph{best mission planner}.
+\emph{Practical insight:} in fire-dominated scenarios, the risk coefficient
+$\rho$ matters more than replanning frequency; in traffic-heavy
+environments, any adaptive planner suffices.
 
-\textbf{Limitations.}  FLARE operates on 2D grids without altitude
-or terrain slope~\cite{Giannino2025}.  Risk coefficients are not
-optimized per-scenario.  Future directions include altitude,
-multi-agent coordination, and Bayesian risk-coefficient tuning.
+\subsection{$\rho$ as a Deployment Knob}
+
+The ranking inversion establishes that no universal ``best planner''
+exists. Instead, $\rho$ provides a principled deployment knob:
+
+\begin{itemize}
+  \item \textbf{Rescue / medication}: $\rho \leq 0.5$. Minimise~$t$ to
+    maximise~$M(t)$; accept higher collision probability.
+  \item \textbf{Surveillance}: $\rho \geq 5.0$. Late data retains value;
+    collision yields $M{=}0$.
+\end{itemize}
+This reframes planner selection from ``which algorithm wins?'' to ``what
+risk level does this mission warrant?''---a question FLARE makes
+empirically answerable.
+
+\subsection{Limitations}
+
+FLARE uses 2D grids without altitude or aerodynamics. The planners are
+classical; the CA fire model is approximate. Three Athens scenarios provide
+focused but not exhaustive coverage. Risk coefficients are fixed, not
+adapted online. The inversion is not obvious \emph{a priori}: no prior benchmark includes
+time-coupled scoring, and $|\Delta\text{Rank}|{=}3$ is not predictable
+without experiments. Nor is it parameter tuning: $\rho$ is a structural
+property of each planner's cost function. The inversion persists across all
+three geographically distinct scenarios. These simplifications are deliberate:
+the contribution is the \emph{evaluation paradigm} and the
+\emph{ranking-inversion finding}, not the planners themselves.
 
 % ============================================================================
 \section{Conclusion}\label{sec:conclusion}
 
-FLARE provides a reproducible, contract-verified benchmark for
-UAV path planning in disaster-response scenarios.  Our evaluation
-of five planners across 450~episodes demonstrates
-that (1)~replanning capability is necessary for navigating
-fire-and-traffic-affected terrain (A* 0\% vs.\ adaptive 34--63\%),
-(2)~incremental graph repair (Incr.~A*, 63\%) achieves the highest
-navigation SR but bypasses mission tasks, while
-(3)~mission-impact scores reveal ranking inversions where the
-best navigation planner is not the best disaster-response planner.
-The framework's 36 contracts, multi-POI missions, and time-decaying
-scores provide a substrate for evaluating planners with human
-consequences in mind.
-Code: \url{https://github.com/zervakisai/uavplan} (MIT license).
+We presented FLARE, a benchmark that answers a question conventional
+evaluations cannot pose: does the best navigator also rescue most
+effectively? Across 450~episodes on three Greek wildfire scenarios, the
+answer is no. The planner with the highest survival probability ranks last in
+$M(t)$ because its detours increase~$t$ beyond the point where
+delivery retains value. A risk-tolerant planner achieves the highest
+mission score despite ranking third in navigation (Friedman $p < 0.001$).
+
+This finding---the ranking inversion---demonstrates that navigation success
+rate is not merely incomplete but actively misleading for time-critical
+operations: it rewards the wrong planner. The implication is a paradigm shift: from
+evaluating \emph{whether} planners succeed to evaluating \emph{when} they
+deliver. The risk coefficient provides the deployment knob; FLARE provides
+the evaluation platform. Both are open-source.
+
+Code and data: \url{https://github.com/zervakisai/uavplan}.
 
 % ============================================================================
 \section*{Acknowledgments}
 
-Map data \copyright~OpenStreetMap contributors, available under the
-Open Database License (ODbL).  Scenarios are inspired by the 2021
-Evia wildfires, 2023 Piraeus coastal fires, and 2023 Evros megafire.
+Map data \copyright~OpenStreetMap contributors (ODbL). Scenarios inspired
+by the 2021 Evia wildfire~\cite{effis2021,copernicus_evia2021}, 2023
+Rhodes fires~\cite{copernicus_emsr675}, and 2023 Evros
+megafire~\cite{copernicus_emsn166,effis2023}. Data from
+EFFIS~\cite{effis2021,effis2023} and Copernicus
+EMS~\cite{copernicus_evia2021,copernicus_emsr675,copernicus_emsn166}.
 
-% ============================================================================
-\balance
 \bibliographystyle{IEEEtran}
 \bibliography{references}
 

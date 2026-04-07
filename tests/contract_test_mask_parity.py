@@ -13,9 +13,9 @@ import textwrap
 import numpy as np
 import pytest
 
-from uavbench.blocking import compute_blocking_mask
-from uavbench.envs.urban import UrbanEnvV2
-from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+from flare.blocking import compute_blocking_mask
+from flare.envs.urban import UrbanEnvV2
+from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 # ---------------------------------------------------------------------------
@@ -55,11 +55,11 @@ class TestMP1_SingleDefinition:
     """MP-1: There is exactly ONE compute_blocking_mask definition."""
 
     def test_single_definition(self):
-        """grep finds exactly 1 `def compute_blocking_mask` in src/uavbench/."""
+        """grep finds exactly 1 `def compute_blocking_mask` in src/flare/."""
         import subprocess
 
         result = subprocess.run(
-            ["grep", "-r", "def compute_blocking_mask", "src/uavbench/"],
+            ["grep", "-r", "def compute_blocking_mask", "src/flare/"],
             capture_output=True,
             text=True,
         )
@@ -77,10 +77,10 @@ class TestMP1_SingleDefinition:
         )
 
     def test_blocking_mask_importable_from_canonical_location(self):
-        """compute_blocking_mask is importable from uavbench.blocking."""
-        mod = importlib.import_module("uavbench.blocking")
+        """compute_blocking_mask is importable from flare.blocking."""
+        mod = importlib.import_module("flare.blocking")
         assert hasattr(mod, "compute_blocking_mask"), (
-            "MP-1: compute_blocking_mask must be in uavbench.blocking"
+            "MP-1: compute_blocking_mask must be in flare.blocking"
         )
 
 

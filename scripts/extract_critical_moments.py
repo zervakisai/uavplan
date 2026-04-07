@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract critical moment timestamps from UAVBench episodes.
+"""Extract critical moment timestamps from FLARE episodes.
 
 For each planner on the Penteli pharma_delivery scenario (seed=42):
 - Records per-step telemetry: position, distance to goal, fire area,
@@ -26,9 +26,9 @@ import numpy as np
 # Ensure project root on path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.labels import PLANNER_ORDER
+from flare.benchmark.runner import run_episode
+from flare.scenarios.loader import load_scenario
+from flare.visualization.labels import PLANNER_ORDER
 
 
 SCENARIO_ID = "osm_penteli_pharma_delivery_medium"

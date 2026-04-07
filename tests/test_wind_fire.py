@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from uavbench.dynamics.fire_ca import FireSpreadModel, BURNING, UNBURNED
+from flare.dynamics.fire_ca import FireSpreadModel, BURNING, UNBURNED
 
 
 class TestWindSpread:

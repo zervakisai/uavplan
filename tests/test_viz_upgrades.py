@@ -7,7 +7,7 @@ import pytest
 
 def test_draw_risk_heatmap_no_risk():
     """Risk heatmap with zero cost map does nothing."""
-    from uavbench.visualization.overlays import draw_risk_heatmap
+    from flare.visualization.overlays import draw_risk_heatmap
     frame = np.full((20, 20, 3), 200, dtype=np.uint8)
     original = frame.copy()
     cost_map = np.zeros((10, 10), dtype=np.float32)
@@ -17,7 +17,7 @@ def test_draw_risk_heatmap_no_risk():
 
 def test_draw_risk_heatmap_with_risk():
     """Risk heatmap modifies frame where cost > 0."""
-    from uavbench.visualization.overlays import draw_risk_heatmap
+    from flare.visualization.overlays import draw_risk_heatmap
     frame = np.full((20, 20, 3), 200, dtype=np.uint8)
     original = frame.copy()
     cost_map = np.zeros((10, 10), dtype=np.float32)
@@ -29,7 +29,7 @@ def test_draw_risk_heatmap_with_risk():
 
 def test_draw_risk_heatmap_color_gradient():
     """Low risk = green-ish, high risk = red-ish."""
-    from uavbench.visualization.overlays import draw_risk_heatmap
+    from flare.visualization.overlays import draw_risk_heatmap
     # Low risk
     frame_low = np.full((4, 4, 3), 200, dtype=np.uint8)
     cost_low = np.full((2, 2), 0.1, dtype=np.float32)

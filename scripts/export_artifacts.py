@@ -23,11 +23,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from uavbench.benchmark.runner import run_episode  # noqa: E402
-from uavbench.scenarios.registry import list_scenarios  # noqa: E402
-from uavbench.planners import PLANNERS  # noqa: E402
-from uavbench.visualization.renderer import Renderer  # noqa: E402
-from uavbench.scenarios.loader import load_scenario  # noqa: E402
+from flare.benchmark.runner import run_episode  # noqa: E402
+from flare.scenarios.registry import list_scenarios  # noqa: E402
+from flare.planners import PLANNERS  # noqa: E402
+from flare.visualization.renderer import Renderer  # noqa: E402
+from flare.scenarios.loader import load_scenario  # noqa: E402
 
 OUT_DIR = ROOT / "outputs"
 
@@ -87,7 +87,7 @@ def export_determinism_hashes() -> dict:
 def export_viz_artifacts() -> None:
     """Generate viz_manifest.csv and viz_frame_checks.json."""
     import numpy as np
-    from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+    from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
     config = ScenarioConfig(
         name="repro_viz_test",
@@ -213,7 +213,7 @@ def export_repro_manifest() -> None:
 
 def main() -> None:
     """Export all v2 evidence artifacts."""
-    print("=== UAVBench v2 Artifact Export ===")
+    print("=== FLARE v2 Artifact Export ===")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     t0 = time.perf_counter()

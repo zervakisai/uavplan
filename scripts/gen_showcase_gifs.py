@@ -27,9 +27,9 @@ from pathlib import Path
 import imageio.v3 as iio
 import numpy as np
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.renderer import Renderer
+from flare.benchmark.runner import run_episode
+from flare.scenarios.loader import load_scenario
+from flare.visualization.renderer import Renderer
 
 # ── Try PIL for text overlays ──────────────────────────────────────────────
 _pil_ok = False

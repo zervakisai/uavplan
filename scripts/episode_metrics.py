@@ -1,6 +1,6 @@
 """Extract full metrics for a single episode."""
 
-from uavbench.benchmark.runner import run_episode
+from flare.benchmark.runner import run_episode
 
 result = run_episode(
     "osm_penteli_pharma_delivery_medium",

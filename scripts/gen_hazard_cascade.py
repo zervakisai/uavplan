@@ -22,8 +22,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.scenarios.loader import load_scenario
+from flare.benchmark.runner import run_episode
+from flare.scenarios.loader import load_scenario
 
 OUTPUT_DIR = "paper/figures"
 DEFAULT_SCENARIO = "osm_penteli_pharma_delivery_medium"

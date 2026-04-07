@@ -13,9 +13,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from uavbench.envs.base import TerminationReason
-from uavbench.envs.urban import ACTION_STAY, UrbanEnvV2
-from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+from flare.envs.base import TerminationReason
+from flare.envs.urban import ACTION_STAY, UrbanEnvV2
+from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 def _make_config(**overrides) -> ScenarioConfig:

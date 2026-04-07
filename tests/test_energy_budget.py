@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
+from flare.scenarios.schema import ScenarioConfig, MissionType, Difficulty
 
 
 def test_energy_budget_default_zero():
@@ -27,6 +27,6 @@ def test_energy_budget_field_exists():
 
 def test_energy_depleted_termination_reason():
     """ENERGY_DEPLETED is a valid termination reason."""
-    from uavbench.envs.base import TerminationReason
+    from flare.envs.base import TerminationReason
     assert TerminationReason.ENERGY_DEPLETED == "energy_depleted"
     assert TerminationReason.ENERGY_DEPLETED.value == "energy_depleted"

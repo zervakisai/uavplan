@@ -21,9 +21,9 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.renderer import Renderer
+from flare.benchmark.runner import run_episode
+from flare.scenarios.loader import load_scenario
+from flare.visualization.renderer import Renderer
 
 OUTPUT_DIR = "outputs/trajectory_heatmaps"
 DEFAULT_SCENARIO = "osm_penteli_pharma_delivery_medium"
@@ -89,7 +89,7 @@ def _render_basemap(scenario_id: str) -> np.ndarray:
     config = load_scenario(scenario_id)
     renderer = Renderer(config, mode="paper_min")
     # Need a dummy heightmap — get from env
-    from uavbench.envs.urban import UrbanEnvV2
+    from flare.envs.urban import UrbanEnvV2
     env = UrbanEnvV2(config)
     env.reset(seed=0)
     heightmap, _, start_xy, goal_xy = env.export_planner_inputs()

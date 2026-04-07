@@ -1,5 +1,5 @@
 """
-UAVBench v2 — Mission Story Contract Tests
+FLARE v2 — Mission Story Contract Tests
 ==========================================
 
 Contracts verified: MC-1, MC-2, MC-3, MC-4
@@ -16,17 +16,17 @@ Test IDs map to V2_TEST_PLAN.md Section 2.7.
 
 Architecture notes
 ------------------
-- Package: src/uavbench/
-- UrbanEnvV2 at src/uavbench/envs/urban.py
+- Package: src/flare/
+- UrbanEnvV2 at src/flare/envs/urban.py
 - Action space: Discrete(5) — UP(0) DOWN(1) LEFT(2) RIGHT(3) STAY(4)
 - env.events returns list of event dicts, each with ``step_idx``
 - Info dict contains all HUD fields on every step
-- TerminationReason enum at src/uavbench/envs/base.py
+- TerminationReason enum at src/flare/envs/base.py
 - service_time_s: consecutive STAY steps at POI to complete a task
 
 Design intent
 -------------
-Tests are written spec-first (TDD).  They FAIL today because src/uavbench
+Tests are written spec-first (TDD).  They FAIL today because src/flare
 does not yet exist.  They PASS once the scaffold implements the contracts.
 Use ``pytest tests/v2/contract_test_mission_story.py`` to track progress.
 """
@@ -38,28 +38,28 @@ import math
 import pytest
 
 # ---------------------------------------------------------------------------
-# Optional import: skip gracefully when uavbench is not yet installed.
+# Optional import: skip gracefully when flare is not yet installed.
 # All tests in this module are decorated with @pytest.mark.usefixtures or
 # collected only when the imports succeed.
 # ---------------------------------------------------------------------------
 
-uavbench = pytest.importorskip(
-    "uavbench",
-    reason="uavbench is not installed — scaffold not yet implemented",
+flare = pytest.importorskip(
+    "flare",
+    reason="flare is not installed — scaffold not yet implemented",
 )
 
 # Individual submodule imports, each skipped individually so a partial
 # scaffold can still run the tests whose dependencies are available.
 
 try:
-    from uavbench.envs.urban import UrbanEnvV2
+    from flare.envs.urban import UrbanEnvV2
 except ImportError as exc:  # pragma: no cover
-    pytest.skip(f"uavbench.envs.urban not available: {exc}", allow_module_level=True)
+    pytest.skip(f"flare.envs.urban not available: {exc}", allow_module_level=True)
 
 try:
-    from uavbench.envs.base import TerminationReason
+    from flare.envs.base import TerminationReason
 except ImportError as exc:  # pragma: no cover
-    pytest.skip(f"uavbench.envs.base not available: {exc}", allow_module_level=True)
+    pytest.skip(f"flare.envs.base not available: {exc}", allow_module_level=True)
 
 # ---------------------------------------------------------------------------
 # Shared constants — keep tests fast by using a tiny synthetic 10x10 grid.
@@ -101,9 +101,9 @@ def _make_minimal_env() -> UrbanEnvV2:
     task (service_time_s=2) is used instead; see _make_urban_rescue_env().
     """
     try:
-        from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
+        from flare.scenarios.schema import ScenarioConfig, MissionType, Difficulty
     except ImportError:
-        pytest.skip("uavbench.scenarios.schema not available")
+        pytest.skip("flare.scenarios.schema not available")
 
     cfg = ScenarioConfig(
         name="test_minimal_pharma_delivery",
@@ -129,9 +129,9 @@ def _make_minimal_env() -> UrbanEnvV2:
 def _make_urban_rescue_env() -> UrbanEnvV2:
     """Return a 10x10 urban_rescue env with service_time_s=2 for MC-2 tests."""
     try:
-        from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
+        from flare.scenarios.schema import ScenarioConfig, MissionType, Difficulty
     except ImportError:
-        pytest.skip("uavbench.scenarios.schema not available")
+        pytest.skip("flare.scenarios.schema not available")
 
     cfg = ScenarioConfig(
         name="test_minimal_urban_rescue",
@@ -475,9 +475,9 @@ def test_termination_reason_in_final_info():
     """
     # Arrange — use a very short time budget so the episode times out fast
     try:
-        from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
+        from flare.scenarios.schema import ScenarioConfig, MissionType, Difficulty
     except ImportError:
-        pytest.skip("uavbench.scenarios.schema not available")
+        pytest.skip("flare.scenarios.schema not available")
 
     cfg = ScenarioConfig(
         name="test_timeout_pharma_delivery",
@@ -546,9 +546,9 @@ def test_successful_episode_objective_completed():
     """
     # Arrange
     try:
-        from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
+        from flare.scenarios.schema import ScenarioConfig, MissionType, Difficulty
     except ImportError:
-        pytest.skip("uavbench.scenarios.schema not available")
+        pytest.skip("flare.scenarios.schema not available")
 
     cfg = ScenarioConfig(
         name="test_success_pharma_delivery",

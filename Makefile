@@ -1,4 +1,4 @@
-# UAVBench — Reproducibility Makefile
+# FLARE — Reproducibility Makefile
 # Usage: make reproduce
 # Requires: Python >=3.10, pip, git
 
@@ -41,14 +41,14 @@ lint:  ## Type-check with mypy
 # ─── Benchmark Runs ────────────────────────────────────────────
 
 run-single:  ## Run single-scenario benchmark (quick check)
-	$(VENV)/bin/python -m uavbench run \
+	$(VENV)/bin/python -m flare run \
 		--scenarios osm_penteli_pharma_delivery_medium \
 		--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
 		--trials 1 \
 		--seed-base 42
 
 run-all:  ## Run all scenarios × all planners (1 trial)
-	$(VENV)/bin/python -m uavbench run \
+	$(VENV)/bin/python -m flare run \
 		--scenarios osm_penteli_pharma_delivery_medium,osm_piraeus_urban_rescue_medium,osm_downtown_fire_surveillance_medium \
 		--planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
 		--trials 1 \

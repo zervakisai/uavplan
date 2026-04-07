@@ -20,7 +20,7 @@ def _make_fire_model(
     n_ignition: int = 2,
 ):
     """Create a FireSpreadModel for testing (no wind — FD-5)."""
-    from uavbench.dynamics.fire_ca import FireSpreadModel
+    from flare.dynamics.fire_ca import FireSpreadModel
 
     rng = np.random.default_rng(seed)
     return FireSpreadModel(
@@ -102,7 +102,7 @@ class TestFireSpreadRules:
 
     def test_water_does_not_burn(self):
         """If a landuse map is provided, water cells (4) never catch fire."""
-        from uavbench.dynamics.fire_ca import FireSpreadModel
+        from flare.dynamics.fire_ca import FireSpreadModel
 
         rng = np.random.default_rng(42)
         # Create landuse with left half = water (4), right half = forest (1)
@@ -199,7 +199,7 @@ class TestForceState:
 
     def test_force_burning(self):
         """force_cell_state(x, y, BURNING) sets a cell to burning."""
-        from uavbench.dynamics.fire_ca import BURNING, UNBURNED, FireSpreadModel
+        from flare.dynamics.fire_ca import BURNING, UNBURNED, FireSpreadModel
 
         rng = np.random.default_rng(42)
         model = FireSpreadModel(
@@ -214,7 +214,7 @@ class TestForceState:
 
     def test_force_does_not_affect_others(self):
         """Forcing one cell does not affect adjacent cells."""
-        from uavbench.dynamics.fire_ca import BURNING, FireSpreadModel
+        from flare.dynamics.fire_ca import BURNING, FireSpreadModel
 
         rng = np.random.default_rng(42)
         model = FireSpreadModel(

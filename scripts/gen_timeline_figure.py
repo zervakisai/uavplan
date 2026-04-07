@@ -34,10 +34,10 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch
 import matplotlib.patches as mpatches
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.renderer import Renderer
-from uavbench.visualization.labels import (
+from flare.benchmark.runner import run_episode
+from flare.scenarios.loader import load_scenario
+from flare.visualization.renderer import Renderer
+from flare.visualization.labels import (
     PLANNER_ORDER, PLANNER_SHORT as PLANNER_LABELS, PLANNER_COLORS,
 )
 

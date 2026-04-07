@@ -248,7 +248,7 @@ def fetch_tile(tile: TileConfig, output_dir: Path) -> dict[str, Path]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Fetch OSM data for UAVBench Athens tiles.",
+        description="Fetch OSM data for FLARE Athens tiles.",
     )
     parser.add_argument(
         "--tile",

@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from uavbench.visualization.labels import (
+from flare.visualization.labels import (
     PLANNER_ORDER, PLANNER_SHORT, PLANNER_COLORS,
 )
 

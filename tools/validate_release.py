@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""validate_release.py — Pre-release validation for UAVBench.
+"""validate_release.py — Pre-release validation for FLARE.
 
 Run this script before tagging a release to verify structural integrity:
   python tools/validate_release.py
@@ -26,8 +26,8 @@ def main() -> int:
 
     # -- 1. Scenario YAMLs --
     print("Checking scenario YAMLs...")
-    from uavbench.scenarios.loader import load_scenario
-    from uavbench.scenarios.registry import list_scenarios
+    from flare.scenarios.loader import load_scenario
+    from flare.scenarios.registry import list_scenarios
 
     all_scenarios = list_scenarios()
     expected_scenarios = [
@@ -52,7 +52,7 @@ def main() -> int:
 
     # -- 2. Planner registry --
     print("Checking planner registry...")
-    from uavbench.planners import PLANNERS
+    from flare.planners import PLANNERS
 
     expected_planners = {"astar", "periodic_replan", "aggressive_replan", "dstar_lite", "apf"}
 

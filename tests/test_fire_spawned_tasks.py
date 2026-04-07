@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from uavbench.dynamics.fire_ca import FireSpreadModel, BURNING, UNBURNED
+from flare.dynamics.fire_ca import FireSpreadModel, BURNING, UNBURNED
 
 
 def test_pop_events_empty_initially():
@@ -66,7 +66,7 @@ def test_no_event_for_non_building():
 
 def test_inject_casualty():
     """TriageMission.inject_casualty adds a new casualty."""
-    from uavbench.missions.triage import TriageMission, Severity
+    from flare.missions.triage import TriageMission, Severity
     rng = np.random.default_rng(42)
     mission = TriageMission((20, 20), rng, n_casualties=0)
     assert len(mission.casualties) == 0

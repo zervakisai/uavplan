@@ -35,9 +35,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.renderer import Renderer
+from flare.benchmark.runner import run_episode
+from flare.scenarios.loader import load_scenario
+from flare.visualization.renderer import Renderer
 
 # ---------------------------------------------------------------------------
 # Configuration

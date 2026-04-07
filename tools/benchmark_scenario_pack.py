@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the full UAVBench scenario pack and produce comparison tables.
+"""Run the full FLARE scenario pack and produce comparison tables.
 
 Runs all 20 OSM Athens scenarios with specified planners, aggregates
 metrics, prints a comparison table, and optionally saves CSV results.
@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from uavbench.cli.benchmark import run_planner_once, scenario_path, aggregate
+from flare.cli.benchmark import run_planner_once, scenario_path, aggregate
 
 # All 20 OSM scenarios in the pack
 SCENARIO_PACK = [
@@ -170,7 +170,7 @@ def save_csv(rows: list[dict[str, Any]], output_path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run the full UAVBench scenario pack.",
+        description="Run the full FLARE scenario pack.",
     )
     parser.add_argument(
         "--planners", type=str, default="astar",
@@ -193,7 +193,7 @@ def main() -> None:
 
     planner_ids = [p.strip() for p in args.planners.split(",") if p.strip()]
 
-    print("[UAVBench Scenario Pack]")
+    print("[FLARE Scenario Pack]")
     print(f"  Scenarios: {len(SCENARIO_PACK)}")
     print(f"  Planners: {planner_ids}")
     print(f"  Trials: {args.trials}")

@@ -15,10 +15,10 @@ import hashlib
 import numpy as np
 import pytest
 
-from uavbench.benchmark.runner import _path_to_action
-from uavbench.blocking import compute_blocking_mask
-from uavbench.envs.base import RejectReason
-from uavbench.envs.urban import (
+from flare.benchmark.runner import _path_to_action
+from flare.blocking import compute_blocking_mask
+from flare.envs.base import RejectReason
+from flare.envs.urban import (
     ACTION_DOWN,
     ACTION_LEFT,
     ACTION_RIGHT,
@@ -26,8 +26,8 @@ from uavbench.envs.urban import (
     ACTION_UP,
     UrbanEnvV2,
 )
-from uavbench.planners import PLANNERS
-from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+from flare.planners import PLANNERS
+from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 # ---------------------------------------------------------------------------

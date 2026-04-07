@@ -4,16 +4,16 @@
 import time
 import sys
 
-from uavbench.planners import PLANNERS
-from uavbench.scenarios.registry import list_scenarios
-from uavbench.benchmark.runner import run_episode
+from flare.planners import PLANNERS
+from flare.scenarios.registry import list_scenarios
+from flare.benchmark.runner import run_episode
 
 CANONICAL = ["astar", "periodic_replan", "aggressive_replan", "dstar_lite", "apf"]
 scenarios = list_scenarios()
 n_seeds_main = 30
 workers = 6
 
-print("=== UAVBench ETA Estimator ===\n")
+print("=== FLARE ETA Estimator ===\n")
 print(f"Planners:  {len(CANONICAL)}")
 print(f"Scenarios: {len(scenarios)} — {', '.join(s.replace('osm_','') for s in scenarios)}")
 print(f"Seed:      0 (single sample)\n")

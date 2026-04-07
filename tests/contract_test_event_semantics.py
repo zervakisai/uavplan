@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.envs.urban import ACTION_RIGHT, ACTION_STAY, UrbanEnvV2
-from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+from flare.benchmark.runner import run_episode
+from flare.envs.urban import ACTION_RIGHT, ACTION_STAY, UrbanEnvV2
+from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 # ---------------------------------------------------------------------------

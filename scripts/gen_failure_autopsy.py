@@ -18,10 +18,10 @@ import time
 import imageio.v3 as iio
 import numpy as np
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.renderer import Renderer
-from uavbench.visualization.hud import _render_text
+from flare.benchmark.runner import run_episode
+from flare.scenarios.loader import load_scenario
+from flare.visualization.renderer import Renderer
+from flare.visualization.hud import _render_text
 
 OUTPUT_DIR = "outputs/failure_autopsy"
 DEFAULT_SCENARIO = "osm_penteli_pharma_delivery_medium"

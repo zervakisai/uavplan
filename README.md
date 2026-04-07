@@ -1,4 +1,4 @@
-# UAVBench
+# FLARE
 
 Operationally-realistic 2D UAV navigation benchmark with deterministic tracks for static control vs dynamic replanning stress.
 
@@ -21,8 +21,8 @@ pytest tests/ -q
 
 ```bash
 python -c "
-from uavbench.scenarios.registry import list_scenarios, list_scenarios_by_track
-from uavbench.planners import PLANNERS
+from flare.scenarios.registry import list_scenarios, list_scenarios_by_track
+from flare.planners import PLANNERS
 print('scenarios', len(list_scenarios()))
 print('static', len(list_scenarios_by_track('static')))
 print('dynamic', len(list_scenarios_by_track('dynamic')))
@@ -53,13 +53,13 @@ print('planners', sorted(PLANNERS.keys()))
 Single run:
 
 ```bash
-python -m uavbench run --seed-base 42
+python -m flare run --seed-base 42
 ```
 
 All planners on one scenario:
 
 ```bash
-python -m uavbench run \
+python -m flare run \
   --scenarios osm_penteli_pharma_delivery_medium \
   --planners astar,periodic_replan,aggressive_replan,dstar_lite,apf \
   --trials 1 \
@@ -123,13 +123,13 @@ episode twice and asserts SHA-256 hash equality of events, trajectory, and metri
 
 ## Citation
 
-If you use UAVBench in your research, please cite:
+If you use FLARE in your research, please cite:
 
 ```bibtex
-@software{uavbench2026,
-  title  = {UAVBench: A Reproducible UAV Planning Benchmark},
+@software{flare2026,
+  title  = {FLARE: A Reproducible UAV Planning Benchmark},
   year   = {2026},
-  url    = {https://github.com/uavbench/uavbench}
+  url    = {https://github.com/flare/flare}
 }
 ```
 

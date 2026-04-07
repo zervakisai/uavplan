@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ class TestVC1_PathVisibility:
 
     def test_path_visible_when_plan_exists(self):
         """When plan_len > 1, rendered frame contains cyan-family pixels."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="paper_min")
@@ -117,7 +117,7 @@ class TestVC1_PathVisibility:
 
     def test_no_silent_path_absence(self):
         """When plan_len == 0, NO path pixels, and meta says path not rendered."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="paper_min")
@@ -140,7 +140,7 @@ class TestVC2_PlanStatusBadges:
 
     def test_no_plan_badge(self):
         """When plan_len <= 1, meta has plan_badge == 'NO PLAN'."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="ops_full")
@@ -153,7 +153,7 @@ class TestVC2_PlanStatusBadges:
 
     def test_stale_badge(self):
         """When plan_age > 2 * replan_every, meta has STALE badge."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config(replan_every_steps=6)
         renderer = Renderer(config, mode="ops_full")
@@ -172,7 +172,7 @@ class TestVC2_PlanStatusBadges:
 
     def test_plan_reason_shown(self):
         """Fresh plan shows 'PLAN: Nwp' badge."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="ops_full")
@@ -195,7 +195,7 @@ class TestSmokeThresholdViz:
 
     def test_smoke_below_threshold_not_rendered(self):
         """Smoke at 0.4 (below 0.5 threshold) should NOT alter frame pixels."""
-        from uavbench.visualization.overlays import draw_smoke
+        from flare.visualization.overlays import draw_smoke
 
         cell = 2
         frame_clean = np.full((20, 20, 3), 200, dtype=np.uint8)
@@ -211,7 +211,7 @@ class TestSmokeThresholdViz:
 
     def test_smoke_at_threshold_is_rendered(self):
         """Smoke at 0.5 (at threshold) SHOULD alter frame pixels."""
-        from uavbench.visualization.overlays import draw_smoke
+        from flare.visualization.overlays import draw_smoke
 
         cell = 2
         frame_clean = np.full((20, 20, 3), 200, dtype=np.uint8)
@@ -234,7 +234,7 @@ class TestZOrderConsistency:
 
     def test_fire_over_smoke(self):
         """Fire (z=4) must be rendered on top of smoke (z=3.5)."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="ops_full")
@@ -263,7 +263,7 @@ class TestZOrderConsistency:
 
     def test_buffer_over_smoke(self):
         """Fire buffer (z=3.8) must be rendered on top of smoke (z=3.5)."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="ops_full")
@@ -305,7 +305,7 @@ class TestVZ1_RendererModes:
     """VZ-1: paper_min and ops_full modes produce valid frames."""
 
     def test_paper_min_produces_frame(self):
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="paper_min")
@@ -320,7 +320,7 @@ class TestVZ1_RendererModes:
         assert meta["mode"] == "paper_min"
 
     def test_ops_full_produces_frame(self):
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="ops_full")
@@ -345,7 +345,7 @@ class TestVZ3_DeterministicRendering:
 
     def test_identical_inputs_identical_frames(self):
         """Two render passes with identical inputs must produce identical frames."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
 
@@ -382,7 +382,7 @@ class TestVizArtifacts:
 
     def test_generate_evidence(self, tmp_path):
         """Generate evidence artifacts for Gate 8."""
-        from uavbench.visualization.renderer import Renderer
+        from flare.visualization.renderer import Renderer
 
         config = _make_config()
         renderer = Renderer(config, mode="ops_full")

@@ -141,8 +141,8 @@ def _run_scenario_planner_block(args: tuple) -> list[dict]:
     import time
     import traceback
 
-    from uavbench.benchmark.runner import run_episode
-    from uavbench.scenarios.loader import load_scenario
+    from flare.benchmark.runner import run_episode
+    from flare.scenarios.loader import load_scenario
 
     config = load_scenario(scenario_id)
     results = []
@@ -172,7 +172,7 @@ def _run_scenario_planner_block(args: tuple) -> list[dict]:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Run UAVBench v2 paper experiments.")
+    p = argparse.ArgumentParser(description="Run FLARE v2 paper experiments.")
     p.add_argument(
         "--scenarios", type=str, default=None,
         help="Comma-separated scenario IDs (default: all 3 OSM)",
@@ -203,9 +203,9 @@ def main() -> None:
     # Required for macOS/M1 — spawn instead of fork
     multiprocessing.set_start_method("spawn", force=True)
 
-    from uavbench.planners import PLANNERS
-    from uavbench.scenarios.loader import load_scenario
-    from uavbench.scenarios.registry import list_scenarios
+    from flare.planners import PLANNERS
+    from flare.scenarios.loader import load_scenario
+    from flare.scenarios.registry import list_scenarios
 
     args = _parse_args()
 
@@ -224,7 +224,7 @@ def main() -> None:
     output_file = args.output
     total = len(scenarios) * len(planners) * n_seeds
 
-    print(f"UAVBench v2 Paper Experiments")
+    print(f"FLARE v2 Paper Experiments")
     print(f"  Scenarios:  {len(scenarios)}")
     print(f"  Planners:   {len(planners)} — {', '.join(planners)}")
     print(f"  Seeds:      {n_seeds}")

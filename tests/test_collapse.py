@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from uavbench.dynamics.collapse import CollapseModel
+from flare.dynamics.collapse import CollapseModel
 
 
 @pytest.fixture

@@ -1,5 +1,5 @@
 """
-UAVBench v2 — Determinism Contract Tests
+FLARE v2 — Determinism Contract Tests
 =========================================
 
 Contracts tested:
@@ -16,7 +16,7 @@ Test cases (from V2_TEST_PLAN.md Section 2.1):
     test_different_seed_different_output DC-2
 
 All tests are deterministic (fixed seed=42 / seed=43).
-Tests are designed TDD-style: they will FAIL until src/uavbench/ is implemented.
+Tests are designed TDD-style: they will FAIL until src/flare/ is implemented.
 If the package is not yet installed they skip gracefully via pytest.importorskip().
 
 Evidence artifacts (written by runner, read here):
@@ -38,20 +38,20 @@ import pytest
 # ---------------------------------------------------------------------------
 # Package-level import guard
 # ---------------------------------------------------------------------------
-# All runtime tests skip cleanly when src/uavbench/ has not been implemented yet.
+# All runtime tests skip cleanly when src/flare/ has not been implemented yet.
 # Static / grep tests do not need the package and are always collected.
 
-uavbench = pytest.importorskip(
-    "uavbench",
-    reason="uavbench package not yet installed — skipping runtime determinism tests",
+flare = pytest.importorskip(
+    "flare",
+    reason="flare package not yet installed — skipping runtime determinism tests",
 )
 
 # ---------------------------------------------------------------------------
 # Lazy imports (only reached if importorskip did not skip the module)
 # ---------------------------------------------------------------------------
 
-from uavbench.benchmark.runner import run_episode  # noqa: E402
-from uavbench.benchmark.determinism import hash_episode  # noqa: E402
+from flare.benchmark.runner import run_episode  # noqa: E402
+from flare.benchmark.determinism import hash_episode  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -62,10 +62,10 @@ PLANNER_ID = "astar"
 SEED_A = 42
 SEED_B = 43
 
-# Absolute path to the uavbench source tree.
+# Absolute path to the flare source tree.
 # We derive it from the installed package location rather than a hard-coded path
 # so that the test works in any Python environment.
-_SRC_ROOT = Path(uavbench.__file__).resolve().parent  # .../src/uavbench/
+_SRC_ROOT = Path(flare.__file__).resolve().parent  # .../src/flare/
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ class TestSingleRNGSource:
         """Verifies DC-1: grep finds zero np.random.default_rng calls outside reset().
 
         Acceptance criterion: every occurrence of ``np.random.default_rng`` in
-        src/uavbench/ is inside a function or method named exactly ``reset``.
+        src/flare/ is inside a function or method named exactly ``reset``.
         Child generators spawned via ``root_rng.spawn()`` are the only permitted
         way to propagate randomness to subsystems.
 
@@ -175,7 +175,7 @@ class TestSingleRNGSource:
         """Verifies DC-1: no RandomState, random.Random, or bare np.random.seed in src/.
 
         Acceptance criterion: none of the following forbidden patterns appear in
-        any .py file under src/uavbench/:
+        any .py file under src/flare/:
 
           * np.random.RandomState(
           * numpy.random.RandomState(
@@ -224,7 +224,7 @@ class TestSingleRNGSource:
 
         # Assert
         assert not violations, (
-            "DC-1 violated: independent RNG constructors found in src/uavbench/:\n"
+            "DC-1 violated: independent RNG constructors found in src/flare/:\n"
             + "\n".join(f"  {v}" for v in violations)
         )
 

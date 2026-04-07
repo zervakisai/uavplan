@@ -34,7 +34,7 @@ DEFAULT_INPUT_CSV = "outputs/paper_results/all_episodes.csv"
 DEFAULT_TABLE_DIR = "outputs/paper_tables"
 DEFAULT_FIG_DIR = "outputs/paper_figures"
 
-from uavbench.visualization.labels import (
+from flare.visualization.labels import (
     PLANNER_ORDER, PLANNER_SHORT as PLANNER_LABELS, PLANNER_COLORS,
 )
 DIFFICULTY_ORDER = ["medium"]  # only medium difficulty in v2
@@ -637,7 +637,7 @@ def fig_bootstrap_ci_bars(df: pd.DataFrame) -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Analyze UAVBench v2 paper results.")
+    p = argparse.ArgumentParser(description="Analyze FLARE v2 paper results.")
     p.add_argument(
         "--input", type=str, default=DEFAULT_INPUT_CSV,
         help=f"Input CSV path (default: {DEFAULT_INPUT_CSV})",
@@ -673,7 +673,7 @@ def main() -> None:
     n_planners = df["planner_id"].nunique()
     n_seeds = df["seed"].nunique()
 
-    print(f"UAVBench v2 Paper Analysis")
+    print(f"FLARE v2 Paper Analysis")
     print(f"  Episodes:  {n_episodes}")
     print(f"  Scenarios: {n_scenarios}")
     print(f"  Planners:  {n_planners}")

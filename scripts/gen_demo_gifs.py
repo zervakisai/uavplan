@@ -18,9 +18,9 @@ from pathlib import Path
 import imageio.v3 as iio
 import numpy as np
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.renderer import Renderer
+from flare.benchmark.runner import run_episode
+from flare.scenarios.loader import load_scenario
+from flare.visualization.renderer import Renderer
 
 OUT = Path("outputs/demo_gifs")
 
@@ -124,7 +124,7 @@ def main() -> None:
         runs = RUNS
     OUT.mkdir(parents=True, exist_ok=True)
 
-    print(f"=== UAVBench Demo GIF Generation ===")
+    print(f"=== FLARE Demo GIF Generation ===")
     print(f"  Output: {OUT}")
     print(f"  FPS: {args.fps}")
     print(f"  Skip frames: {args.skip_frames}")

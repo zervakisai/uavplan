@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-from uavbench.scenarios.calibration import (
+from flare.scenarios.calibration import (
     CalibrationResult,
     FeasibilityResult,
     calibrate_difficulty,
     feasibility_pre_check,
 )
-from uavbench.scenarios.loader import load_scenario
+from flare.scenarios.loader import load_scenario
 
 
 # ===========================================================================

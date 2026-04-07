@@ -24,11 +24,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from uavbench.benchmark.runner import run_episode
-from uavbench.planners import PLANNERS
-from uavbench.scenarios.loader import load_scenario
-from uavbench.visualization.renderer import Renderer
-from uavbench.visualization.labels import (
+from flare.benchmark.runner import run_episode
+from flare.planners import PLANNERS
+from flare.scenarios.loader import load_scenario
+from flare.visualization.renderer import Renderer
+from flare.visualization.labels import (
     PLANNER_ORDER, PLANNER_LABELS, PLANNER_COLORS,
 )
 
@@ -164,7 +164,7 @@ def generate_scenario_overview() -> None:
     Shows basemap + dynamics (fire, smoke, traffic, debris) + POI icons +
     start/goal markers at t=OVERVIEW_T.  No trajectory, agent, or HUD.
     """
-    from uavbench.visualization.overlays import (
+    from flare.visualization.overlays import (
         draw_start, draw_goal, draw_task_pois,
         draw_fire, draw_smoke, draw_debris, draw_traffic, draw_nfz,
     )
@@ -306,7 +306,7 @@ def generate_planner_comparison() -> None:
     dynamics rendered at t=212 (corridor blockage moment)."""
     import matplotlib.patheffects as pe
     from matplotlib.lines import Line2D
-    from uavbench.visualization.overlays import (
+    from flare.visualization.overlays import (
         draw_fire, draw_smoke, draw_debris, draw_traffic, draw_nfz,
     )
 
@@ -460,7 +460,7 @@ def _save_fig(fig: plt.Figure, name: str) -> None:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Generate UAVBench v2 paper snapshots.")
+    p = argparse.ArgumentParser(description="Generate FLARE v2 paper snapshots.")
     p.add_argument(
         "--scenario", type=str, default=None,
         help="Single scenario ID for a quick snapshot (skips full family/comparison)",
@@ -498,7 +498,7 @@ def main() -> None:
         SEED = args.seed
 
     os.makedirs(FIG_DIR, exist_ok=True)
-    print("UAVBench v2 Paper Snapshots")
+    print("FLARE v2 Paper Snapshots")
     print(f"  Output: {FIG_DIR}/")
     print()
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from uavbench.planners.base import PlannerBase, PlanResult
+from flare.planners.base import PlannerBase, PlanResult
 
 
 # ---------------------------------------------------------------------------
@@ -44,13 +44,13 @@ class TestDStarLiteAPI:
 
     def test_is_planner_base(self):
         """DStarLitePlanner is a subclass of PlannerBase."""
-        from uavbench.planners.dstar_lite import DStarLitePlanner
+        from flare.planners.dstar_lite import DStarLitePlanner
 
         assert issubclass(DStarLitePlanner, PlannerBase)
 
     def test_plan_returns_plan_result(self):
         """plan() returns a PlanResult with path."""
-        from uavbench.planners.dstar_lite import DStarLitePlanner
+        from flare.planners.dstar_lite import DStarLitePlanner
 
         heightmap, no_fly = _make_grid(size=10, density=0.0)
         planner = DStarLitePlanner(heightmap, no_fly)
@@ -64,7 +64,7 @@ class TestDStarLiteAPI:
 
     def test_path_is_valid(self):
         """Path contains only 4-connected moves on free cells."""
-        from uavbench.planners.dstar_lite import DStarLitePlanner
+        from flare.planners.dstar_lite import DStarLitePlanner
 
         heightmap, no_fly = _make_grid(size=10, density=0.05)
         planner = DStarLitePlanner(heightmap, no_fly)
@@ -86,7 +86,7 @@ class TestDStarLiteAPI:
 
     def test_update_accepts_dynamic_state(self):
         """update() accepts a dynamic state dict without error."""
-        from uavbench.planners.dstar_lite import DStarLitePlanner
+        from flare.planners.dstar_lite import DStarLitePlanner
 
         heightmap, no_fly = _make_grid(size=10, density=0.0)
         planner = DStarLitePlanner(heightmap, no_fly)
@@ -106,7 +106,7 @@ class TestDStarLiteAPI:
 
     def test_obstacle_change_triggers_replan(self):
         """When obstacles change, should_replan returns True."""
-        from uavbench.planners.dstar_lite import DStarLitePlanner
+        from flare.planners.dstar_lite import DStarLitePlanner
 
         heightmap, no_fly = _make_grid(size=10, density=0.0)
         planner = DStarLitePlanner(heightmap, no_fly)
@@ -147,7 +147,7 @@ class TestDStarLiteAPI:
 
     def test_no_path_returns_failure(self):
         """When no path exists, plan() returns success=False."""
-        from uavbench.planners.dstar_lite import DStarLitePlanner
+        from flare.planners.dstar_lite import DStarLitePlanner
 
         # Create grid with wall separating start and goal
         heightmap = np.zeros((10, 10), dtype=np.float32)

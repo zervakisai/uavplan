@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from uavbench.blocking import compute_risk_cost_map
-from uavbench.scenarios.schema import (
+from flare.blocking import compute_risk_cost_map
+from flare.scenarios.schema import (
     Difficulty, MissionType, ScenarioConfig,
 )
 

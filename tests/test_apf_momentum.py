@@ -5,8 +5,8 @@ import math
 import numpy as np
 import pytest
 
-from uavbench.planners.apf import APFPlanner
-from uavbench.scenarios.schema import ScenarioConfig, MissionType, Difficulty
+from flare.planners.apf import APFPlanner
+from flare.scenarios.schema import ScenarioConfig, MissionType, Difficulty
 
 
 def _make_config(wind_speed=0.0, wind_dir_deg=0.0):

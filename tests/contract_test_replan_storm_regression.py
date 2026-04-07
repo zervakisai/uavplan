@@ -10,11 +10,11 @@ import hashlib
 import numpy as np
 import pytest
 
-from uavbench.blocking import compute_blocking_mask
-from uavbench.envs.urban import UrbanEnvV2
-from uavbench.planners import PLANNERS
-from uavbench.planners.base import PlannerBase
-from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+from flare.blocking import compute_blocking_mask
+from flare.envs.urban import UrbanEnvV2
+from flare.planners import PLANNERS
+from flare.planners.base import PlannerBase
+from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ def _run_replan_episode(
         step_idx += 1
 
         # Action from path
-        from uavbench.benchmark.runner import _path_to_action
+        from flare.benchmark.runner import _path_to_action
         action = _path_to_action(env.agent_xy, path, path_idx)
         obs, reward, terminated, truncated, info = env.step(action)
 

@@ -14,8 +14,8 @@ from collections import deque
 import numpy as np
 import pytest
 
-from uavbench.envs.urban import ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_UP, UrbanEnvV2
-from uavbench.scenarios.schema import Difficulty, MissionType, ScenarioConfig
+from flare.envs.urban import ACTION_DOWN, ACTION_LEFT, ACTION_RIGHT, ACTION_UP, UrbanEnvV2
+from flare.scenarios.schema import Difficulty, MissionType, ScenarioConfig
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +121,7 @@ class TestFC1_BFSCorridor:
         env.reset(seed=42)
 
         heightmap, no_fly, start, goal = env.export_planner_inputs()
-        from uavbench.planners.astar import AStarPlanner
+        from flare.planners.astar import AStarPlanner
         ref_planner = AStarPlanner(heightmap, no_fly)
         ref_result = ref_planner.plan(start, goal)
 

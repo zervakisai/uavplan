@@ -1,1 +1,1 @@
-# UAVBench v2 test package
+# FLARE v2 test package

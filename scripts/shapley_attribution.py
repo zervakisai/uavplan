@@ -85,8 +85,8 @@ def _evaluate_coalition(
     Uses the real run_episode runner with config_override to ensure
     full mission handling (POI visits, goal stall, energy, etc.).
     """
-    from uavbench.benchmark.runner import run_episode
-    from uavbench.scenarios.loader import load_scenario
+    from flare.benchmark.runner import run_episode
+    from flare.scenarios.loader import load_scenario
 
     # Build config with coalition overrides (frozen dataclass)
     config = load_scenario(scenario_id)

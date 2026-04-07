@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from uavbench.missions.triage import (
+from flare.missions.triage import (
     Casualty, Severity, TriageMission, _SEVERITY_PARAMS,
 )
 

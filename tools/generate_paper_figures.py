@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate all publication-quality figures for the UAVBench paper.
+"""Generate all publication-quality figures for the FLARE paper.
 
 Produces:
   outputs/figure_1_tile_comparison.png  — 3 Athens tiles side-by-side
@@ -18,11 +18,11 @@ from pathlib import Path
 
 import numpy as np
 
-from uavbench.envs.urban import UrbanEnv
-from uavbench.planners import PLANNERS
-from uavbench.scenarios.loader import load_scenario
-from uavbench.viz.dynamics_sim import simulate_dynamics_along_path
-from uavbench.viz.figures import (
+from flare.envs.urban import UrbanEnv
+from flare.planners import PLANNERS
+from flare.scenarios.loader import load_scenario
+from flare.viz.dynamics_sim import simulate_dynamics_along_path
+from flare.viz.figures import (
     plot_fire_evolution,
     plot_event_timeline,
     plot_tile_comparison,
@@ -30,7 +30,7 @@ from uavbench.viz.figures import (
 )
 
 OUTPUT_DIR = Path("outputs")
-CONFIGS_DIR = Path("src/uavbench/scenarios/configs")
+CONFIGS_DIR = Path("src/flare/scenarios/configs")
 TILES_DIR = Path("data/maps")
 
 

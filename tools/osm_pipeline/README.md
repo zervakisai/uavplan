@@ -1,7 +1,7 @@
 # tools/osm_pipeline/
 
 Offline preprocessing scripts that convert OpenStreetMap data into
-numpy tile files (.npz) for UAVBench realistic urban scenarios.
+numpy tile files (.npz) for FLARE realistic urban scenarios.
 
 ## Dependencies
 

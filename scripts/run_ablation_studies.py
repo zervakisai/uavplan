@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ablation study runner for UAVBench paper — multiprocessing version.
+"""Ablation study runner for FLARE paper — multiprocessing version.
 
 Runs three ablation studies with ProcessPoolExecutor (6 workers):
 
@@ -68,11 +68,11 @@ def _run_block(args: tuple) -> list[dict]:
     config_dict, planner_id, n_seeds, ablation_name, variant_label, scenario_id = args
 
     # Local imports for clean subprocess
-    from uavbench.benchmark.runner import EpisodeResult
-    from uavbench.envs.urban import UrbanEnvV2
-    from uavbench.metrics.compute import compute_episode_metrics
-    from uavbench.planners import PLANNERS
-    from uavbench.scenarios.schema import ScenarioConfig
+    from flare.benchmark.runner import EpisodeResult
+    from flare.envs.urban import UrbanEnvV2
+    from flare.metrics.compute import compute_episode_metrics
+    from flare.planners import PLANNERS
+    from flare.scenarios.schema import ScenarioConfig
 
     # Reconstruct config from dict
     valid_fields = {f.name for f in fields(ScenarioConfig)}
@@ -212,7 +212,7 @@ def _config_to_dict(config) -> dict:
 
 
 def _build_dynamics_ablation_configs():
-    from uavbench.scenarios.loader import load_scenario
+    from flare.scenarios.loader import load_scenario
     variants = []
     for sid in MEDIUM_SCENARIO_IDS:
         base = load_scenario(sid)
@@ -236,7 +236,7 @@ def _build_dynamics_ablation_configs():
 
 
 def _build_replan_frequency_configs():
-    from uavbench.scenarios.loader import load_scenario
+    from flare.scenarios.loader import load_scenario
     cadences = [3, 6, 12, 24, 48]
     variants = []
     for sid in MEDIUM_SCENARIO_IDS:
@@ -248,7 +248,7 @@ def _build_replan_frequency_configs():
 
 
 def _build_fire_intensity_configs():
-    from uavbench.scenarios.loader import load_scenario
+    from flare.scenarios.loader import load_scenario
     ignition_counts = [1, 2, 4, 6, 8]
     sid = "osm_penteli_pharma_delivery_medium"
     base = load_scenario(sid)
@@ -419,7 +419,7 @@ def main() -> None:
     multiprocessing.set_start_method("spawn", force=True)
 
     global OUTPUT_DIR
-    p = argparse.ArgumentParser(description="Run UAVBench ablation studies (parallel).")
+    p = argparse.ArgumentParser(description="Run FLARE ablation studies (parallel).")
     p.add_argument("--seeds", type=int, default=10)
     p.add_argument("--ablation", type=int, default=None, choices=[1, 2, 3])
     p.add_argument("--output-dir", type=str, default=OUTPUT_DIR)
@@ -433,7 +433,7 @@ def main() -> None:
     wall_start = time.perf_counter()
     csv_paths = {}
 
-    print(f"UAVBench Ablation Studies (parallel, {MAX_WORKERS} workers)")
+    print(f"FLARE Ablation Studies (parallel, {MAX_WORKERS} workers)")
     print(f"  Seeds: {n_seeds}")
 
     if run_all or args.ablation == 1:

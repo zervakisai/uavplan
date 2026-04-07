@@ -1,7 +1,7 @@
 """Rasterize OSM GeoJSON layers into numpy arrays.
 
 Converts the vector .geojson files produced by fetch.py into fixed-size
-numpy grids suitable for UAVBench environments.
+numpy grids suitable for FLARE environments.
 
 Usage:
     python -m tools.osm_pipeline.rasterize --tile downtown --input data/maps/ --output data/maps/
