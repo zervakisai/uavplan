@@ -1,26 +1,33 @@
 """Generate demo GIFs: dynamic planners on representative scenarios.
 
-Produces animated GIF files showing the UAV navigating through dynamic
-obstacles. Each frame shows the mission HUD, planned path, dynamic
-obstacles (fire, NFZ, traffic), and agent trajectory.
+Produces animated GIF files in the paper-figure style (see
+`gen_trajectory_comparison_5panel.py`). Each frame uses the cached
+`paper_min` basemap with figure-style overlays, markers and matplotlib
+typography so the GIFs match the static figures in the paper.
 
 Usage:
-    python scripts/gen_demo_gifs.py [--easy] [--fps 10]
+    python scripts/gen_demo_gifs.py [--osm] [--fps 10]
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 import time
 from pathlib import Path
 
 import imageio.v3 as iio
-import numpy as np
 
 from flare.benchmark.runner import run_episode
 from flare.scenarios.loader import load_scenario
-from flare.visualization.renderer import Renderer
+from flare.visualization.paper_frame import (
+    Annotation,
+    EpisodeCapture,
+    PanelSpec,
+    PaperFrameRenderer,
+    growing_trajectory,
+    make_capture_callback,
+    pick_dyn_snapshot,
+)
 
 OUT = Path("outputs/demo_gifs")
 
@@ -44,8 +51,8 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate demo GIFs.")
     p.add_argument("--osm", action="store_true", help="Use OSM-only adaptive runs")
     p.add_argument("--fps", type=int, default=10, help="GIF frame rate")
-    p.add_argument("--skip-frames", type=int, default=1,
-                   help="Render every Nth frame (1=all, 5=every 5th)")
+    p.add_argument("--skip-frames", type=int, default=3,
+                   help="Render every Nth step (1=all, 3=every 3rd)")
     return p.parse_args()
 
 
@@ -55,43 +62,68 @@ def generate_gif(
     seed: int,
     gif_path: Path,
     fps: int = 10,
-    skip_frames: int = 1,
-    briefing_duration_s: float = 3.0,
+    skip_frames: int = 3,
+    briefing_duration_s: float = 2.0,
 ) -> dict:
-    """Run episode and write animated GIF with mission briefing title card."""
+    """Run episode and write a paper-figure-style animated GIF."""
     config = load_scenario(scenario_id)
-    renderer = Renderer(config, mode="ops_full")
 
-    frames: list[np.ndarray] = []
-    frame_count = 0
-    briefing_state: dict | None = None
-
-    def frame_callback(
-        heightmap: np.ndarray,
-        state: dict,
-        dyn_state: dict,
-        cfg: object,
-    ) -> None:
-        nonlocal frame_count, briefing_state
-        frame_count += 1
-
-        # Capture briefing state from first frame
-        if briefing_state is None:
-            briefing_state = dict(state)
-            # Add briefing title card frames (shown for briefing_duration_s)
-            n_briefing_frames = max(1, int(briefing_duration_s * fps))
-            card = renderer.render_briefing_card(heightmap, state)
-            for _ in range(n_briefing_frames):
-                frames.append(card)
-
-        if frame_count % skip_frames != 0:
-            return
-        frame, _meta = renderer.render_frame(heightmap, state, dyn_state)
-        frames.append(frame)
+    capture = EpisodeCapture()
+    cb = make_capture_callback(capture, record_dyn=True)
 
     t0 = time.perf_counter()
-    result = run_episode(scenario_id, planner_id, seed, frame_callback=frame_callback)
+    result = run_episode(scenario_id, planner_id, seed, frame_callback=cb)
     elapsed = time.perf_counter() - t0
+
+    m = result.metrics
+    success = bool(m.get("success", False))
+    term = m.get("termination_reason", "?")
+
+    pr = PaperFrameRenderer(config)
+    goal_xy = tuple(capture.state0.get("goal_xy", (0, 0)))
+    total_steps = len(capture.trajectory)
+
+    frames = []
+    if total_steps > 0:
+        briefing_panel = PanelSpec(
+            planner_id=planner_id,
+            trajectory=growing_trajectory(capture.trajectory, 0),
+            goal_xy=goal_xy,
+            success=None,
+        )
+        briefing = pr.render_frame(
+            capture.heightmap,
+            capture.state0,
+            pick_dyn_snapshot(capture.dyn_snapshots, 0),
+            panels=[briefing_panel],
+            suptitle=f"{scenario_id} · {planner_id} · seed {seed}",
+            annotations=[
+                Annotation(text="Mission briefing", xy=(0.5, 0.92),
+                           fontsize=8, ha="center"),
+            ],
+        )
+        n_brief = max(1, int(briefing_duration_s * fps))
+        for _ in range(n_brief):
+            frames.append(briefing)
+
+    for t in range(0, total_steps, max(1, skip_frames)):
+        finished = (t >= total_steps - 1)
+        panel = PanelSpec(
+            planner_id=planner_id,
+            trajectory=growing_trajectory(capture.trajectory, t),
+            goal_xy=goal_xy,
+            success=success if finished else None,
+            termination_reason=(term if finished and not success else None),
+        )
+        frames.append(
+            pr.render_frame(
+                capture.heightmap,
+                capture.state0,
+                pick_dyn_snapshot(capture.dyn_snapshots, t),
+                panels=[panel],
+                suptitle=f"{scenario_id} · {planner_id} · step {t}",
+            )
+        )
 
     if frames:
         gif_path.parent.mkdir(parents=True, exist_ok=True)
@@ -104,12 +136,11 @@ def generate_gif(
             loop=0,
         )
 
-    m = result.metrics
     return {
-        "success": m.get("success", False),
+        "success": success,
         "steps": m.get("executed_steps_len", 0),
         "replans": m.get("replans", 0),
-        "termination": m.get("termination_reason", "?"),
+        "termination": term,
         "frames_rendered": len(frames),
         "elapsed_s": elapsed,
         "gif_path": str(gif_path),
@@ -118,13 +149,10 @@ def generate_gif(
 
 def main() -> None:
     args = _parse_args()
-    if args.osm:
-        runs = OSM_RUNS
-    else:
-        runs = RUNS
+    runs = OSM_RUNS if args.osm else RUNS
     OUT.mkdir(parents=True, exist_ok=True)
 
-    print(f"=== FLARE Demo GIF Generation ===")
+    print(f"=== FLARE Demo GIF Generation (paper-figure style) ===")
     print(f"  Output: {OUT}")
     print(f"  FPS: {args.fps}")
     print(f"  Skip frames: {args.skip_frames}")

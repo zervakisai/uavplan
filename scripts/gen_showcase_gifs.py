@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Generate 4 showcase GIFs for FLARE GitHub README.
+"""Generate 4 showcase GIFs for FLARE GitHub README (paper-figure style).
 
 Each GIF tells one visual story about FLARE's capabilities:
   1. "The Fire Closes In"    — fire blocks corridor, planner reroutes
   2. "Who Gets Saved?"       — triage 3 casualties, some rescued, some not
   3. "The Collapse Trap"     — building collapse spawns debris, blocks route
   4. "Navigator vs Rescuer"  — side-by-side ranking inversion
+
+Every frame is rendered through `PaperFrameRenderer` so the GIFs look
+identical in style to the static paper figures.
 
 Usage:
     python scripts/gen_showcase_gifs.py [--only 1] [--fps 15] [--skip 2]
@@ -29,18 +32,22 @@ import numpy as np
 
 from flare.benchmark.runner import run_episode
 from flare.scenarios.loader import load_scenario
-from flare.visualization.renderer import Renderer
+from flare.visualization.paper_frame import (
+    Annotation,
+    EpisodeCapture,
+    PanelSpec,
+    PaperFrameRenderer,
+    growing_trajectory,
+    make_capture_callback,
+    pick_dyn_snapshot,
+)
 
-# ── Try PIL for text overlays ──────────────────────────────────────────────
-_pil_ok = False
 try:
-    from PIL import Image, ImageDraw, ImageFont
-
+    from PIL import Image
     _pil_ok = True
 except ImportError:
-    pass
+    _pil_ok = False
 
-# ── Config ─────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = ROOT / "outputs" / "gifs"
 
@@ -49,102 +56,67 @@ SCENARIO_DOWNTOWN = "osm_downtown_fire_surveillance_medium"
 SEED_PAPER = 42
 SEED_INVERSION = 11
 
-# ── Font loading ───────────────────────────────────────────────────────────
-_font_cache: dict[int, object] = {}
-_font_path: str | None = None
 
-_FONT_CANDIDATES = [
-    "/System/Library/Fonts/Menlo.ttc",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-    "DejaVuSansMono.ttf",
-]
+# ── Episode capture helper ─────────────────────────────────────────────────
+def _capture_episode(
+    scenario_id: str,
+    planner_id: str,
+    seed: int,
+) -> tuple[EpisodeCapture, dict]:
+    capture = EpisodeCapture()
+    cb = make_capture_callback(capture, record_dyn=True)
 
-
-def _get_font(size: int = 14):
-    global _font_path
-    if not _pil_ok:
-        return None
-    if size in _font_cache:
-        return _font_cache[size]
-    if _font_path is not None:
-        try:
-            f = ImageFont.truetype(_font_path, size)
-            _font_cache[size] = f
-            return f
-        except (OSError, IOError):
-            _font_path = None
-    for cand in _FONT_CANDIDATES:
-        try:
-            f = ImageFont.truetype(cand, size)
-            _font_path = cand
-            _font_cache[size] = f
-            return f
-        except (OSError, IOError):
-            continue
-    f = ImageFont.load_default()
-    _font_cache[size] = f
-    return f
-
-
-# ── Text overlay ───────────────────────────────────────────────────────────
-def overlay_text(
-    frame: np.ndarray,
-    text: str,
-    xy: tuple[int, int],
-    font_size: int = 14,
-    color: tuple[int, ...] = (255, 255, 255),
-    bg_alpha: int = 180,
-    center: bool = False,
-) -> np.ndarray:
-    """Draw text with semi-transparent dark background on frame."""
-    if not _pil_ok:
-        return frame
-    img = Image.fromarray(frame).convert("RGBA")
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    font = _get_font(font_size)
-
-    bbox = draw.multiline_textbbox((0, 0), text, font=font)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    if center:
-        x = xy[0] - tw // 2
-        y = xy[1] - th // 2
-    else:
-        x, y = xy
-
-    pad = 6
-    draw.rectangle(
-        [x - pad, y - pad, x + tw + pad, y + th + pad],
-        fill=(10, 15, 26, bg_alpha),
+    print(f"  Running {planner_id} on {scenario_id} seed={seed} ...")
+    t0 = time.perf_counter()
+    result = run_episode(scenario_id, planner_id, seed, frame_callback=cb)
+    elapsed = time.perf_counter() - t0
+    m = result.metrics
+    status = "OK" if m.get("success") else m.get("termination_reason", "?")
+    print(
+        f"    [{status}] steps={m.get('executed_steps_len', 0)} "
+        f"score={m.get('mission_score', 0):.3f} "
+        f"tasks={m.get('tasks_completed', 0)}/{m.get('tasks_total', '?')} "
+        f"replans={m.get('replans', 0)} ({elapsed:.1f}s)"
     )
-    fill = color if len(color) == 4 else color + (255,)
-    draw.multiline_text((x, y), text, font=font, fill=fill)
-
-    img = Image.alpha_composite(img, overlay)
-    return np.array(img.convert("RGB"))
+    return capture, m
 
 
-# ── Frame utilities ────────────────────────────────────────────────────────
-def downscale(frame: np.ndarray, max_w: int) -> np.ndarray:
-    """Resize frame so width <= max_w, preserving aspect ratio."""
-    if not _pil_ok:
-        return frame
-    h, w = frame.shape[:2]
-    if w <= max_w:
-        return frame
-    scale = max_w / w
-    new_w, new_h = int(w * scale), int(h * scale)
-    img = Image.fromarray(frame).resize((new_w, new_h), Image.LANCZOS)
-    return np.array(img)
+def _render_story_frames(
+    capture: EpisodeCapture,
+    config,
+    planner_id: str,
+    skip: int,
+    suptitle_fmt: str,
+    annotations_for_step=None,
+) -> list[np.ndarray]:
+    """Render paper-figure style frames from a captured episode."""
+    pr = PaperFrameRenderer(config)
+    total = len(capture.trajectory)
+    goal_xy = tuple(capture.state0.get("goal_xy", (0, 0)))
+    frames: list[np.ndarray] = []
+    if total == 0:
+        return frames
 
-
-def resize_to(frame: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
-    """Resize frame to exact dimensions."""
-    if not _pil_ok:
-        return frame
-    img = Image.fromarray(frame).resize((target_w, target_h), Image.LANCZOS)
-    return np.array(img)
+    for t in range(0, total, max(1, skip)):
+        finished = (t >= total - 1)
+        panel = PanelSpec(
+            planner_id=planner_id,
+            trajectory=growing_trajectory(capture.trajectory, t),
+            goal_xy=goal_xy,
+            success=True if finished else None,
+        )
+        anns = annotations_for_step(t) if annotations_for_step else None
+        frames.append(
+            pr.render_frame(
+                capture.heightmap,
+                capture.state0,
+                pick_dyn_snapshot(capture.dyn_snapshots, t),
+                panels=[panel],
+                suptitle=suptitle_fmt.format(step=t),
+                annotations=anns,
+            )
+        )
+    return frames
 
 
 def save_gif(
@@ -154,24 +126,21 @@ def save_gif(
     hold_last_s: float = 3.0,
     max_frames: int = 180,
 ) -> float:
-    """Save frames as looping GIF, optimized with gifsicle. Returns size in MB."""
+    """Save frames as looping GIF, optionally optimize with gifsicle."""
     if not frames:
         print(f"  WARNING: No frames for {path}")
         return 0.0
 
-    # Subsample if too many content frames
     if len(frames) > max_frames:
         indices = np.linspace(0, len(frames) - 1, max_frames, dtype=int)
         frames = [frames[i] for i in indices]
 
-    # Hold last frame
     hold_n = int(fps * hold_last_s)
     out = list(frames) + [frames[-1]] * hold_n
 
     path.parent.mkdir(parents=True, exist_ok=True)
     duration_ms = 1000 / fps
 
-    # Use Pillow encoder for better palette control
     if _pil_ok:
         pil_frames = [Image.fromarray(f).quantize(colors=192, method=2) for f in out]
         pil_frames[0].save(
@@ -183,9 +152,9 @@ def save_gif(
             optimize=True,
         )
     else:
-        iio.imwrite(str(path), out, extension=".gif", duration=duration_ms, loop=0)
+        iio.imwrite(str(path), out, extension=".gif",
+                    duration=duration_ms, loop=0)
 
-    # Optimize with gifsicle if available
     import shutil
     import subprocess
 
@@ -208,279 +177,184 @@ def save_gif(
     return size_mb
 
 
-# ── Episode runner ─────────────────────────────────────────────────────────
-def run_and_capture(
-    scenario_id: str,
-    planner_id: str,
-    seed: int,
-    skip: int = 2,
-    extra_cb=None,
-) -> tuple[list[np.ndarray], object]:
-    """Run episode, capture every skip-th rendered frame.
-
-    extra_cb(heightmap, state, dyn_state, cfg, step_counter) is called
-    at EVERY step for metadata tracking (even if frame is skipped).
-    """
-    config = load_scenario(scenario_id)
-    renderer = Renderer(config, mode="ops_full")
-    frames: list[np.ndarray] = []
-    counter = [0]
-
-    def cb(heightmap, state, dyn_state, cfg):
-        if extra_cb:
-            extra_cb(heightmap, state, dyn_state, cfg, counter[0])
-        if counter[0] % skip == 0:
-            frame, _ = renderer.render_frame(heightmap, state, dyn_state)
-            frames.append(frame)
-        counter[0] += 1
-
-    print(f"  Running {planner_id} on {scenario_id} seed={seed} ...")
-    t0 = time.perf_counter()
-    result = run_episode(scenario_id, planner_id, seed, frame_callback=cb)
-    elapsed = time.perf_counter() - t0
-    m = result.metrics
-    status = "OK" if m.get("success") else m.get("termination_reason", "?")
-    print(
-        f"    [{status}] steps={m.get('executed_steps_len', 0)} "
-        f"score={m.get('mission_score', 0):.3f} "
-        f"tasks={m.get('tasks_completed', 0)}/{m.get('tasks_total', '?')} "
-        f"replans={m.get('replans', 0)} ({elapsed:.1f}s) "
-        f"-> {len(frames)} frames captured"
-    )
-    return frames, result
-
-
 # ═══════════════════════════════════════════════════════════════════════════
-# GIF 1: The Fire Closes In (Penteli, periodic_replan)
+# GIF 1: The Fire Closes In
 # ═══════════════════════════════════════════════════════════════════════════
-def gif1_fire_closes_in(fps: int = 15, skip: int = 2) -> None:
-    """Fire blocks corridor, planner reroutes around it."""
+def gif1_fire_closes_in(fps: int = 15, skip: int = 3) -> None:
     print("\n" + "=" * 60)
     print("GIF 1: THE FIRE CLOSES IN")
     print("=" * 60)
 
-    frames, result = run_and_capture(
-        SCENARIO_PENTELI, "periodic_replan", SEED_PAPER, skip=skip,
+    config = load_scenario(SCENARIO_PENTELI)
+    capture, _m = _capture_episode(SCENARIO_PENTELI, "periodic_replan", SEED_PAPER)
+    frames = _render_story_frames(
+        capture, config, "periodic_replan", skip,
+        suptitle_fmt="The fire closes in · step {step}",
     )
-    frames = [downscale(f, 600) for f in frames]
     save_gif(frames, OUTPUT_DIR / "01_fire_closes_in.gif", fps=fps)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# GIF 2: Who Gets Saved? (Piraeus, aggressive_replan)
+# GIF 2: Who Gets Saved?
 # ═══════════════════════════════════════════════════════════════════════════
-def gif2_who_gets_saved(fps: int = 15, skip: int = 2) -> None:
-    """Drone surveys 3 fire hotspots — completes all tasks."""
+def gif2_who_gets_saved(fps: int = 15, skip: int = 3) -> None:
     print("\n" + "=" * 60)
     print("GIF 2: WHO GETS SAVED?")
     print("=" * 60)
 
-    frames, result = run_and_capture(
-        SCENARIO_DOWNTOWN, "aggressive_replan", SEED_INVERSION, skip=skip,
+    config = load_scenario(SCENARIO_DOWNTOWN)
+    capture, _m = _capture_episode(
+        SCENARIO_DOWNTOWN, "aggressive_replan", SEED_INVERSION,
     )
-    frames = [downscale(f, 600) for f in frames]
+    frames = _render_story_frames(
+        capture, config, "aggressive_replan", skip,
+        suptitle_fmt="Who gets saved? · step {step}",
+    )
     save_gif(frames, OUTPUT_DIR / "02_who_gets_saved.gif", fps=fps)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# GIF 3: The Collapse Trap (Penteli, aggressive_replan, zoomed)
+# GIF 3: The Collapse Trap
 # ═══════════════════════════════════════════════════════════════════════════
-def gif3_collapse_trap(fps: int = 15, skip: int = 2) -> None:
-    """Fire spreads, buildings collapse into permanent debris."""
+def gif3_collapse_trap(fps: int = 15, skip: int = 3) -> None:
     print("\n" + "=" * 60)
     print("GIF 3: THE COLLAPSE TRAP")
     print("=" * 60)
 
-    # Downtown seed 44: debris_caught termination — drone trapped by collapse
     scenario = SCENARIO_DOWNTOWN
     seed = 44
     config = load_scenario(scenario)
-    renderer = Renderer(config, mode="ops_full")
+    capture, _m = _capture_episode(scenario, "aggressive_replan", seed)
 
-    frames: list[np.ndarray] = []
-    debris_counts: list[int] = []
-    step_indices: list[int] = []
-    counter = [0]
-
-    def cb(heightmap, state, dyn_state, cfg):
-        debris = dyn_state.get("debris_mask")
+    # Pre-compute debris counts for annotation
+    def ann_for(step):
+        dyn = pick_dyn_snapshot(capture.dyn_snapshots, step)
+        debris = dyn.get("debris_mask")
         n = int(np.count_nonzero(debris)) if debris is not None else 0
+        return [Annotation(
+            text=f"Step {step} · Debris: {n} cells",
+            xy=(0.02, 0.97), fontsize=7, ha="left", va="top",
+        )]
 
-        if counter[0] % skip == 0:
-            # Render WITHOUT risk heatmap so fire/debris are clearly distinct
-            state_noheat = dict(state)
-            state_noheat["cost_map"] = None
-            frame, _ = renderer.render_frame(heightmap, state_noheat, dyn_state)
-            frames.append(frame)
-            debris_counts.append(n)
-            step_indices.append(state.get("step_idx", counter[0]))
-        counter[0] += 1
-
-    print(f"  Running aggressive_replan on {scenario} seed={seed} ...")
-    t0 = time.perf_counter()
-    result = run_episode(
-        scenario, "aggressive_replan", seed, frame_callback=cb,
+    frames = _render_story_frames(
+        capture, config, "aggressive_replan", skip,
+        suptitle_fmt="The collapse trap",
+        annotations_for_step=ann_for,
     )
-    elapsed = time.perf_counter() - t0
-    m = result.metrics
-    print(
-        f"    steps={m.get('executed_steps_len', 0)} "
-        f"score={m.get('mission_score', 0):.3f} ({elapsed:.1f}s) "
-        f"-> {len(frames)} frames captured"
-    )
-
-    # ── Overlay debris counter ─────────────────────────────────────────────
-    for i in range(len(frames)):
-        count = debris_counts[i] if i < len(debris_counts) else 0
-        step = step_indices[i] if i < len(step_indices) else 0
-        frames[i] = overlay_text(
-            frames[i],
-            f"Step {step} | Debris: {count} cells",
-            (8, 8),
-            font_size=12,
-            color=(220, 180, 120),
-        )
-
-    frames = [downscale(f, 600) for f in frames]
     save_gif(frames, OUTPUT_DIR / "03_collapse_trap.gif", fps=fps)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# GIF 4: Best Navigator != Best Rescuer (side-by-side)
+# GIF 4: Navigator vs Rescuer (2-panel figure-style frame)
 # ═══════════════════════════════════════════════════════════════════════════
-def gif4_navigator_vs_rescuer(fps: int = 15, skip: int = 2) -> None:
-    """Side-by-side: Incr.A* reaches goal fast but rescues nobody;
-    Aggressive is slower but rescues 2/3 casualties."""
+def gif4_navigator_vs_rescuer(fps: int = 15, skip: int = 3) -> None:
     print("\n" + "=" * 60)
     print("GIF 4: NAVIGATOR vs RESCUER")
     print("=" * 60)
 
-    # Run both episodes
-    frames_nav, result_nav = run_and_capture(
-        SCENARIO_DOWNTOWN, "incremental_astar", SEED_INVERSION, skip=skip,
-    )
-    frames_res, result_res = run_and_capture(
-        SCENARIO_DOWNTOWN, "aggressive_replan", SEED_INVERSION, skip=skip,
-    )
-    m_nav = result_nav.metrics
-    m_res = result_res.metrics
+    scenario = SCENARIO_DOWNTOWN
+    config = load_scenario(scenario)
 
-    # Downscale both panels to same width
-    panel_w = 480
-    frames_nav = [downscale(f, panel_w) for f in frames_nav]
-    frames_res = [downscale(f, panel_w) for f in frames_res]
+    cap_nav, m_nav = _capture_episode(scenario, "incremental_astar", SEED_INVERSION)
+    cap_res, m_res = _capture_episode(scenario, "aggressive_replan", SEED_INVERSION)
 
-    if not frames_nav or not frames_res:
+    # Use nav's basemap/state0 (same scenario/seed → same map)
+    pr = PaperFrameRenderer(config)
+    goal_nav = tuple(cap_nav.state0.get("goal_xy", (0, 0)))
+    goal_res = tuple(cap_res.state0.get("goal_xy", (0, 0)))
+
+    total_nav = len(cap_nav.trajectory)
+    total_res = len(cap_res.trajectory)
+    total = max(total_nav, total_res)
+    if total == 0:
         print("  ERROR: No frames captured")
         return
 
-    # Ensure identical dimensions for both panels
-    h_nav, w_nav = frames_nav[0].shape[:2]
-    h_res, w_res = frames_res[0].shape[:2]
-    target_h = max(h_nav, h_res)
-    target_w = max(w_nav, w_res)
-    frames_nav = [resize_to(f, target_w, target_h) for f in frames_nav]
-    frames_res = [resize_to(f, target_w, target_h) for f in frames_res]
-
-    # ── Pad shorter episode with frozen "GOAL REACHED" frame ───────────
-    max_len = max(len(frames_nav), len(frames_res))
+    def clamp_step(t, n):
+        return min(t, max(0, n - 1))
 
     nav_score = m_nav.get("mission_score", 0)
-    nav_tasks_done = m_nav.get("tasks_completed", 0)
-    nav_tasks_total = m_nav.get("tasks_total", "?")
-
+    nav_done = m_nav.get("tasks_completed", 0)
+    nav_total = m_nav.get("tasks_total", "?")
     res_score = m_res.get("mission_score", 0)
-    res_tasks_done = m_res.get("tasks_completed", 0)
-    res_tasks_total = m_res.get("tasks_total", "?")
+    res_done = m_res.get("tasks_completed", 0)
+    res_total = m_res.get("tasks_total", "?")
 
-    def make_frozen(last_frame, score, tasks_done, tasks_total):
-        frozen = last_frame.copy()
-        frozen = overlay_text(
-            frozen,
-            f"GOAL REACHED\nScore: {score:.2f}\nTasks: {tasks_done}/{tasks_total}",
-            (frozen.shape[1] // 2, frozen.shape[0] // 2 - 20),
-            font_size=16,
-            color=(80, 255, 120),
-            bg_alpha=200,
-            center=True,
+    frames: list[np.ndarray] = []
+    for t in range(0, total, max(1, skip)):
+        t_nav = clamp_step(t, total_nav)
+        t_res = clamp_step(t, total_res)
+
+        nav_finished = (t_nav >= total_nav - 1)
+        res_finished = (t_res >= total_res - 1)
+
+        nav_panel = PanelSpec(
+            planner_id="incremental_astar",
+            trajectory=growing_trajectory(cap_nav.trajectory, t_nav),
+            goal_xy=goal_nav,
+            success=True if nav_finished else None,
+            title_override="Incr. A* (Navigator)",
+            subtitle_override=f"t={t_nav} · score {nav_score:.2f} · {nav_done}/{nav_total}",
         )
-        return frozen
-
-    if len(frames_nav) < max_len:
-        frozen = make_frozen(frames_nav[-1], nav_score, nav_tasks_done, nav_tasks_total)
-        frames_nav.extend([frozen] * (max_len - len(frames_nav)))
-
-    if len(frames_res) < max_len:
-        frozen = make_frozen(frames_res[-1], res_score, res_tasks_done, res_tasks_total)
-        frames_res.extend([frozen] * (max_len - len(frames_res)))
-
-    # ── Compose side-by-side ───────────────────────────────────────────────
-    divider_w = 3
-    composed: list[np.ndarray] = []
-
-    for f_left, f_right in zip(frames_nav, frames_res):
-        divider = np.full((target_h, divider_w, 3), 200, dtype=np.uint8)
-        combined = np.hstack([f_left, divider, f_right])
-
-        # Panel titles at top
-        combined = overlay_text(
-            combined,
-            "Incr. A*  (Navigator)",
-            (10, 4),
-            font_size=11,
-            color=(180, 180, 255),
-            bg_alpha=200,
+        res_panel = PanelSpec(
+            planner_id="aggressive_replan",
+            trajectory=growing_trajectory(cap_res.trajectory, t_res),
+            goal_xy=goal_res,
+            success=True if res_finished else None,
+            title_override="Aggressive (Rescuer)",
+            subtitle_override=f"t={t_res} · score {res_score:.2f} · {res_done}/{res_total}",
         )
-        combined = overlay_text(
-            combined,
-            "Aggressive  (Rescuer)",
-            (target_w + divider_w + 10, 4),
-            font_size=11,
-            color=(255, 180, 180),
-            bg_alpha=200,
-        )
-        composed.append(combined)
 
-    # ── Final comparison frame (hold extra) ────────────────────────────────
-    if composed:
-        final = composed[-1].copy()
-        total_w = final.shape[1]
+        # Use nav's capture as the basemap / dyn source (FD-4: fire is
+        # agent-independent, so both planners see the same fire timeline).
+        frames.append(
+            pr.render_frame(
+                cap_nav.heightmap,
+                cap_nav.state0,
+                pick_dyn_snapshot(cap_nav.dyn_snapshots, t_nav),
+                panels=[nav_panel, res_panel],
+                suptitle=f"Best navigator ≠ best rescuer · step {t}",
+            )
+        )
 
-        final = overlay_text(
-            final,
-            "Best navigator != Best rescuer",
-            (total_w // 2, final.shape[0] // 2 - 15),
-            font_size=20,
-            color=(255, 255, 80),
-            bg_alpha=210,
-            center=True,
+    # Final emphasis frame
+    if frames:
+        final_panel_nav = PanelSpec(
+            planner_id="incremental_astar",
+            trajectory=list(cap_nav.trajectory),
+            goal_xy=goal_nav,
+            success=True,
+            title_override="Incr. A* (Navigator)",
+            subtitle_override=f"score {nav_score:.2f} · {nav_done}/{nav_total}",
         )
-        final = overlay_text(
-            final,
-            f"Score {nav_score:.2f} | Tasks {nav_tasks_done}/{nav_tasks_total}",
-            (target_w // 2, final.shape[0] // 2 + 25),
-            font_size=12,
-            color=(180, 180, 255),
-            bg_alpha=190,
-            center=True,
+        final_panel_res = PanelSpec(
+            planner_id="aggressive_replan",
+            trajectory=list(cap_res.trajectory),
+            goal_xy=goal_res,
+            success=True,
+            title_override="Aggressive (Rescuer)",
+            subtitle_override=f"score {res_score:.2f} · {res_done}/{res_total}",
         )
-        final = overlay_text(
-            final,
-            f"Score {res_score:.2f} | Tasks {res_tasks_done}/{res_tasks_total}",
-            (target_w + divider_w + target_w // 2, final.shape[0] // 2 + 25),
-            font_size=12,
-            color=(255, 180, 180),
-            bg_alpha=190,
-            center=True,
+        final = pr.render_frame(
+            cap_nav.heightmap,
+            cap_nav.state0,
+            pick_dyn_snapshot(cap_nav.dyn_snapshots, total_nav - 1),
+            panels=[final_panel_nav, final_panel_res],
+            suptitle="Best navigator ≠ best rescuer",
+            annotations=[
+                Annotation(
+                    text="Best navigator ≠ best rescuer",
+                    xy=(0.5, 0.08), fontsize=10, ha="center", va="bottom",
+                ),
+            ],
         )
-        hold_final = int(fps * 4)
-        composed.extend([final] * hold_final)
+        frames.extend([final] * int(fps * 2))
 
     save_gif(
-        composed,
+        frames,
         OUTPUT_DIR / "04_navigator_vs_rescuer.gif",
         fps=fps,
-        hold_last_s=0,  # already added hold via final frame
+        hold_last_s=0,
     )
 
 
@@ -489,13 +363,11 @@ def gif4_navigator_vs_rescuer(fps: int = 15, skip: int = 2) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate FLARE showcase GIFs")
-    parser.add_argument(
-        "--only", type=int, choices=[1, 2, 3, 4], help="Generate only this GIF"
-    )
+    parser.add_argument("--only", type=int, choices=[1, 2, 3, 4],
+                        help="Generate only this GIF")
     parser.add_argument("--fps", type=int, default=15, help="GIF frame rate")
-    parser.add_argument(
-        "--skip", type=int, default=3, help="Capture every Nth frame"
-    )
+    parser.add_argument("--skip", type=int, default=3,
+                        help="Render every Nth step")
     args = parser.parse_args()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -515,29 +387,11 @@ def main() -> None:
         except Exception as e:
             print(f"\n  ERROR generating GIF {n}: {e}")
             import traceback
-
             traceback.print_exc()
 
     elapsed = time.perf_counter() - t0
     print(f"\n{'=' * 60}")
     print(f"Done in {elapsed:.0f}s  ->  {OUTPUT_DIR}/")
-
-    # README snippet
-    print(f"\n{'─' * 60}")
-    print("README snippet:\n")
-    print(
-        """\
-## Demos
-
-| Fire blocks corridor | Triage: who gets saved? |
-|:---:|:---:|
-| ![fire](outputs/gifs/01_fire_closes_in.gif) | ![triage](outputs/gifs/02_who_gets_saved.gif) |
-
-| Collapse trap | Navigator != Rescuer |
-|:---:|:---:|
-| ![collapse](outputs/gifs/03_collapse_trap.gif) | ![inversion](outputs/gifs/04_navigator_vs_rescuer.gif) |
-"""
-    )
 
 
 if __name__ == "__main__":
