@@ -1,11 +1,39 @@
-@software{uavbench2026,
-  title     = {UAVBench: A Reproducible Benchmark for UAV Path Planning in Urban Environments},
-  year      = {2026},
-  url       = {https://github.com/uavbench/uavbench},
-  license   = {MIT},
-  abstract  = {UAVBench is a benchmark framework for evaluating UAV path planning
-               algorithms in realistic urban environments. It provides 3 operational
-               scenarios using real OpenStreetMap data from Athens, Greece, with
-               dynamic fire spread and traffic models, and standardized metrics for
-               safety, efficiency, and feasibility assessment.},
+% Citation entries for FLARE
+%
+% The PAPER entry (zervakis2026ranking) is the primary citation for the
+% research findings. The SOFTWARE entry (flare2026) should be cited in
+% addition if you use the FLARE codebase itself.
+
+@article{zervakis2026ranking,
+  author   = {Zervakis, Konstantinos and Panagiotopoulos, Ilias},
+  title    = {Ranking Inversion in Risk-Parameterised UAV Path Planning
+              for Wildfire Emergency Response},
+  journal  = {Drones},
+  year     = {2026},
+  note     = {Submitted},
+  abstract = {Existing UAV planning evaluations rely on navigation-centric
+              metrics that ignore the temporal value of the mission objective.
+              This paper identifies and characterises the ranking inversion
+              phenomenon: planner orderings by navigation success rate diverge
+              from orderings by mission effectiveness. The inversion is
+              confirmed across 450 episodes (Friedman p < 0.001). A single
+              risk coefficient rho governs the survival-timeliness trade-off,
+              enabling principled, deployment-specific planner configuration.},
+}
+
+@software{flare2026,
+  author   = {Zervakis, Konstantinos and Panagiotopoulos, Ilias},
+  title    = {FLARE: Risk-Parameterised UAV Planning Benchmark for
+              Wildfire Emergency Response},
+  year     = {2026},
+  url      = {https://github.com/zervakisai/uavplan},
+  license  = {MIT},
+  abstract = {FLARE is a reproducible benchmark framework for evaluating UAV
+               path planners under hazard-coupled dynamics. It provides three
+               operational scenarios on real OpenStreetMap data (Athens,
+               Greece), wind-driven fire spread (Alexandridis 2008),
+               structural collapse, traffic dynamics, and risk-parameterised
+               planner cost maps. The framework enforces bit-identical
+               determinism across runs via a single RNG source and a unified
+               blocking-mask contract.},
 }

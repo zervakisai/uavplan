@@ -123,13 +123,30 @@ episode twice and asserts SHA-256 hash equality of events, trajectory, and metri
 
 ## Citation
 
-If you use FLARE in your research, please cite:
+If you use this work, please cite **both** the paper and the software:
+
+**Paper** (primary — cite this for the research findings):
+
+```bibtex
+@article{zervakis2026ranking,
+  author  = {Zervakis, Konstantinos and Panagiotopoulos, Ilias},
+  title   = {Ranking Inversion in Risk-Parameterised UAV Path Planning
+             for Wildfire Emergency Response},
+  journal = {Drones},
+  year    = {2026},
+  note    = {Submitted}
+}
+```
+
+**Software** (cite in addition if you use the FLARE codebase):
 
 ```bibtex
 @software{flare2026,
-  title  = {FLARE: A Reproducible UAV Planning Benchmark},
+  author = {Zervakis, Konstantinos and Panagiotopoulos, Ilias},
+  title  = {FLARE: Risk-Parameterised UAV Planning Benchmark for
+            Wildfire Emergency Response},
   year   = {2026},
-  url    = {https://github.com/flare/flare}
+  url    = {https://github.com/zervakisai/uavplan}
 }
 ```
 
