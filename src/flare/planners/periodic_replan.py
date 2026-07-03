@@ -40,6 +40,8 @@ class PeriodicReplanPlanner(PlannerBase):
         self._cooldown = 3
         # Pre-compute static mask once
         self._static_mask = (heightmap > 0) | no_fly
+        # Unified risk coefficient (config.risk_rho overrides α=5.0 default)
+        self._rho = getattr(config, "risk_rho", None)
 
         # Path-progress tracking (RS-1)
         self._last_replan_step = -self._cooldown  # allow first replan
@@ -59,10 +61,12 @@ class PeriodicReplanPlanner(PlannerBase):
         Uses cached blocking mask from update() to avoid recomputation.
         Applies risk coefficient α=5.0 (risk-averse).
         """
-        # Apply risk-averse cost weighting
+        # Apply risk cost weighting. ρ defaults to the historical per-family
+        # coefficient (α=5.0) unless config.risk_rho overrides it (unified sweep).
+        coeff = self._rho if self._rho is not None else _RISK_ALPHA
         weighted = None
         if cost_map is not None:
-            weighted = (1.0 + _RISK_ALPHA * cost_map).astype(np.float32)
+            weighted = (1.0 + coeff * cost_map).astype(np.float32)
 
         if self._cached_mask is not None:
             effective_height = self._heightmap.copy()

@@ -70,6 +70,10 @@ class APFPlanner(PlannerBase):
         self._wind_speed = getattr(config, "wind_speed", 0.0) if config else 0.0
         self._wind_dir = math.radians(getattr(config, "wind_direction_deg", 0.0)) if config else 0.0
         self._momentum_alpha = 0.7  # blending: 0.7*prev + 0.3*gradient
+        # Unified risk coefficient (config.risk_rho overrides δ=3.0 default).
+        # Applied to the repulsive-field gain: same (1+ρ·R) form as the
+        # graph-search planners' edge cost, so ρ is comparable across families.
+        self._rho = getattr(config, "risk_rho", None)
 
     def plan(
         self,
@@ -84,6 +88,9 @@ class APFPlanner(PlannerBase):
         Falls back to A* if stuck in a local minimum.
         """
         t0 = time.perf_counter()
+
+        # Unified risk coefficient: δ=3.0 default unless config.risk_rho overrides.
+        coeff = self._rho if self._rho is not None else _RISK_DELTA
 
         blocked = self._get_blocked()
         sx, sy = start
@@ -125,7 +132,7 @@ class APFPlanner(PlannerBase):
                 u_rep = 0.0
                 if 0 < d < self._d0:
                     local_risk = float(cost_map[ny, nx]) if cost_map is not None else 0.0
-                    k_rep_eff = self._k_rep * (1.0 + _RISK_DELTA * local_risk)
+                    k_rep_eff = self._k_rep * (1.0 + coeff * local_risk)
                     u_rep = k_rep_eff * ((1.0 / d) - (1.0 / self._d0)) ** 2
                     # Wind bias: favor moving upwind (safer from fire spread)
                     if self._wind_speed > 0:

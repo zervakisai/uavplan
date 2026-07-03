@@ -42,6 +42,8 @@ class IncrementalAStarPlanner(PlannerBase):
         self._cooldown = 3
         # Pre-compute static mask once
         self._static_mask = (heightmap > 0) | no_fly
+        # Unified risk coefficient (config.risk_rho overrides γ=2.0 default)
+        self._rho = getattr(config, "risk_rho", None)
 
         # Incremental state
         self._last_mask: np.ndarray | None = None
@@ -65,9 +67,10 @@ class IncrementalAStarPlanner(PlannerBase):
         """
         t0 = time.perf_counter()
 
+        coeff = self._rho if self._rho is not None else _RISK_GAMMA
         weighted = None
         if cost_map is not None:
-            weighted = (1.0 + _RISK_GAMMA * cost_map).astype(np.float32)
+            weighted = (1.0 + coeff * cost_map).astype(np.float32)
 
         if self._cached_mask is not None:
             effective_height = self._heightmap.copy()

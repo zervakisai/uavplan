@@ -335,13 +335,21 @@ class MissionEngine:
         agent_xy: tuple[int, int],
         action: int,
         step_idx: int,
+        fire_mask: np.ndarray | None = None,
     ) -> None:
         """Update mission state after an env step.
 
         Checks if agent is at a task POI and tracks STAY progress.
         Fires task_completed event when service_time is met (MC-2).
+
+        When fire_mask is provided, each task_completed event records d_fire
+        (L2 distance from the task cell to the nearest active fire at completion),
+        enabling the fire-coupled survival score S=exp(-λ_eff·t) with
+        λ_eff=λ₀(1+κ/max(d_fire,1)) of paper Eq.(3). No fire → d_fire large →
+        negligible coupling. Does not affect trajectory/termination.
         """
         stay_action = 4  # STAY
+        _fire_dist = None  # lazily computed distance-to-fire map (only on completion)
 
         for task in self._tasks:
             if task.status not in (TaskStatus.PENDING, TaskStatus.ACTIVE):
@@ -360,12 +368,24 @@ class MissionEngine:
                 if task.service_time == 0 or task.stay_counter >= task.service_time:
                     task.status = TaskStatus.COMPLETED
                     self._completed_count += 1
+                    # Fire-coupled survival (Eq. 3): distance from this task's
+                    # cell to the nearest active fire at completion time.
+                    d_fire = 999.0
+                    if fire_mask is not None and fire_mask.any():
+                        if _fire_dist is None:
+                            from scipy.ndimage import distance_transform_edt
+                            _fire_dist = distance_transform_edt(
+                                ~fire_mask
+                            ).astype(np.float32)
+                        tx, ty = task.xy
+                        d_fire = float(_fire_dist[ty, tx])
                     self._events.append({
                         "type": "task_completed",
                         "task_id": task.task_id,
                         "step_idx": step_idx,
                         "xy": task.xy,
                         "weight": task.weight,
+                        "d_fire": d_fire,
                     })
             else:
                 # Agent left POI — reset stay counter

@@ -395,6 +395,9 @@ def run_episode(
         goal_xy=goal_xy,
         mission_type=config.mission_type.value,
         max_steps=config.effective_max_steps,
+        decay_horizon=getattr(config, "mission_decay_horizon", 800),
+        kappa=getattr(config, "mission_fire_kappa", 5.0),
+        lambda_scale=getattr(config, "mission_lambda_scale", 1.0),
     )
     # Augment with runner-tracked fields
     metrics["planned_waypoints_len"] = planned_waypoints_total

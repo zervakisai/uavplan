@@ -33,6 +33,9 @@ class AStarPlanner(PlannerBase):
     ) -> None:
         super().__init__(heightmap, no_fly, config)
         self._max_expansions = 80_000
+        # Unified risk coefficient: None → ρ=0 (uniform-cost static baseline).
+        # When config.risk_rho > 0, A* becomes a risk-aware static planner.
+        self._rho = getattr(config, "risk_rho", None)
 
     def plan(
         self,
@@ -40,8 +43,18 @@ class AStarPlanner(PlannerBase):
         goal: tuple[int, int],
         cost_map: np.ndarray | None = None,
     ) -> PlanResult:
-        """Static A* baseline. Ignores cost_map (uniform cost 1.0)."""
-        return self.search(start, goal, cost_map=None)
+        """Static A* baseline.
+
+        Historically ignores cost_map (uniform cost 1.0, ρ=0). When
+        config.risk_rho > 0, becomes a risk-aware static A* using the shared
+        cost-inflation law w(x)=1+ρ·R(x), letting A* join the unified ρ sweep.
+        ρ=None or ρ=0 → bit-identical uniform-cost baseline.
+        """
+        coeff = self._rho if self._rho is not None else 0.0
+        weighted = None
+        if coeff > 0 and cost_map is not None:
+            weighted = (1.0 + coeff * cost_map).astype(np.float32)
+        return self.search(start, goal, cost_map=weighted)
 
     def search(
         self,

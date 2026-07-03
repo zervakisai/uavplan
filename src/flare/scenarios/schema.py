@@ -124,6 +124,19 @@ class ScenarioConfig:
     replan_every_steps: int = 6
     max_replans_per_episode: int = 2000
 
+    # Unified risk coefficient (reviewer revision: isolate ρ from planner
+    # architecture). None → each planner uses its historical per-family
+    # coefficient (α/β/γ/δ), giving the bit-identical baseline "diagonal".
+    # When set, ALL planners apply the same ρ in the shared cost-inflation
+    # law w(x) = 1 + ρ·R(x), enabling a within-planner ρ sweep.
+    risk_rho: float | None = None
+
+    # Mission-scoring parameters (reviewer revision: decouple the scoring
+    # model from episode length + expose for the Comment-2 sensitivity sweep).
+    mission_decay_horizon: int = 800   # T in pharma E(t) and surveillance F(t)
+    mission_fire_kappa: float = 5.0    # κ fire-coupling in SAR survival (Eq. 3)
+    mission_lambda_scale: float = 1.0  # scales per-severity λ₀ (survival coeff)
+
     # Comms
     comms_dropout_prob: float = 0.0
     comms_latency_steps: int = 0

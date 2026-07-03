@@ -302,8 +302,10 @@ def main() -> None:
     ax_timeline.grid(axis="x", alpha=0.12)
 
     # === BOTTOM ROW: 4 rendered map snapshots ===
-    snap_labels = [
-        "(b) t=0: Before fire",
+    # Descriptive labels; the concrete step number is shown inside each
+    # panel as a black overlay so title and overlay never disagree.
+    snap_labels_desc = [
+        "(b) Early episode",
         "(c) Fire approaching",
         "(d) First collapse",
         "(e) Debris permanent",
@@ -336,10 +338,12 @@ def main() -> None:
                     fontsize=5, color="white", va="top",
                     bbox=dict(facecolor="black", alpha=0.5, pad=1, edgecolor="none",
                               boxstyle="round,pad=0.2"))
+            title = f"{snap_labels_desc[col]} (t={actual})"
         else:
             ax.set_facecolor("#f0f0f0")
+            title = snap_labels_desc[col]
 
-        ax.set_title(snap_labels[col], fontsize=7, fontweight="normal", color="black")
+        ax.set_title(title, fontsize=7, fontweight="normal", color="black")
         ax.axis("off")
 
     fig.suptitle(

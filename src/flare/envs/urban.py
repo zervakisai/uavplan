@@ -435,7 +435,12 @@ class UrbanEnvV2(gym.Env):
         # Mission engine step (MC-2)
         if self._mission is not None:
             events_before = len(self._mission.events)
-            self._mission.step(self._agent_xy, action, self._step_idx)
+            # Pass current (post-dynamics) fire mask so task_completed events
+            # record d_fire for the fire-coupled survival score (Eq. 3).
+            _mission_fire = self._fire.fire_mask if self._fire is not None else None
+            self._mission.step(
+                self._agent_xy, action, self._step_idx, fire_mask=_mission_fire
+            )
             # Append any new mission events to env events
             for evt in self._mission.events[events_before:]:
                 self._events.append(evt)

@@ -11,27 +11,47 @@ from flare.metrics.schema import EpisodeMetrics
 # Mission-impact scoring (Change B)
 # ---------------------------------------------------------------------------
 
-def medication_efficacy(delivery_step: int, max_steps: int = 800) -> float:
-    """Insulin / pharma efficacy: degrades quadratically with delay.
+# Fire-coupled survival parameters (paper Eq. 3).
+_KAPPA = 5.0  # fire-coupling constant κ
+# Per-severity base decay λ₀ keyed by casualty weight
+# (3.0 → CRITICAL, 2.0 → SERIOUS, 1.0 → MINOR), matching missions/triage.py.
+_WEIGHT_TO_LAMBDA0 = {3.0: 0.02, 2.0: 0.008, 1.0: 0.002}
 
-    Returns 1.0 if delivered instantly, 0.0 if never delivered or
-    delivered at/after max_steps.
+# Canonical mission-score decay horizon T (paper §3.5: T = 800 steps).
+_DECAY_HORIZON = 800
+
+
+def medication_efficacy(
+    delivery_step: int,
+    decay_horizon: int = _DECAY_HORIZON,
+    max_steps: int = 2000,
+) -> float:
+    """Insulin / pharma efficacy: degrades quadratically with delay, E(t).
+
+    E(t) = max(0, 1 - (t/T)^2) with decay horizon T = decay_horizon.
+    Returns 1.0 if delivered instantly, 0.0 if never delivered (delivery_step
+    at/after max_steps = episode length).
     """
     if delivery_step <= 0:
         return 1.0
     if delivery_step >= max_steps:
         return 0.0
-    return max(0.0, 1.0 - (delivery_step / max_steps) ** 2)
+    return max(0.0, 1.0 - (delivery_step / decay_horizon) ** 2)
 
 
 def triage_value(
     task_events: list[dict],
-    max_steps: int = 800,
+    max_steps: int = 2000,
+    kappa: float = _KAPPA,
+    lambda_scale: float = 1.0,
 ) -> float:
-    """Flood rescue value: Σ(severity_weight × survival_probability).
+    """SAR rescue value: Σ(weight × fire-coupled survival) — paper Eq. (3).
 
-    Each task_completed event should have 'weight' and 'step_idx'.
-    Survival decays exponentially with step_idx.
+    S_i(t) = exp(-λ_eff·t), λ_eff = λ₀(1 + κ / max(d_fire, 1)), where λ₀ is the
+    per-severity base decay rate (mapped from the casualty weight and scaled by
+    lambda_scale) and κ (kappa) is the fire-coupling constant. Each
+    task_completed event carries 'weight', 'step_idx' (t) and 'd_fire' (L2
+    distance to the nearest active fire at completion; large → no coupling).
     """
     total = 0.0
     for ev in task_events:
@@ -39,28 +59,31 @@ def triage_value(
             continue
         w = ev.get("weight", 1.0)
         t = ev.get("step_idx", max_steps)
-        # Exponential survival decay: S(t) = exp(-0.003 * t)
-        survival = math.exp(-0.003 * t)
-        total += w * survival
+        d_fire = ev.get("d_fire", 999.0)
+        lambda0 = _WEIGHT_TO_LAMBDA0.get(w, 0.008) * lambda_scale
+        lambda_eff = lambda0 * (1.0 + kappa / max(d_fire, 1.0))
+        total += w * math.exp(-lambda_eff * t)
     return total
 
 
 def surveillance_value(
     task_events: list[dict],
     fire_areas: list[int] | None = None,
-    max_steps: int = 800,
+    decay_horizon: int = _DECAY_HORIZON,
+    max_steps: int = 2000,
 ) -> float:
-    """Fire surveillance value: Σ(freshness × fire_proximity).
+    """Fire-perimeter surveillance value: Σ freshness — paper F(t) = 1 − t/T.
 
-    freshness = 1 - step/max_steps (earlier surveys are more valuable).
-    fire_proximity = 1.0 (default; scales with fire area if provided).
+    freshness = max(0, 1 − t/T) with T = decay_horizon (earlier surveys are
+    more valuable). fire_proximity weighting is not applied in the reported
+    model (fixed at 1.0); documented as a modeling simplification.
     """
     total = 0.0
     for ev in task_events:
         if ev.get("type") != "task_completed":
             continue
         t = ev.get("step_idx", max_steps)
-        freshness = max(0.0, 1.0 - t / max_steps)
+        freshness = max(0.0, 1.0 - t / decay_horizon)
         total += freshness
     return total
 
@@ -76,7 +99,10 @@ def compute_episode_metrics(
     replan_count: int = 0,
     goal_xy: tuple[int, int] | None = None,
     mission_type: str = "",
-    max_steps: int = 800,
+    max_steps: int = 2000,
+    decay_horizon: int = _DECAY_HORIZON,
+    kappa: float = _KAPPA,
+    lambda_scale: float = 1.0,
 ) -> dict:
     """Compute per-episode metrics dict (ME-1)."""
     success = final_info.get("termination_reason", "").value == "success" if hasattr(
@@ -114,11 +140,17 @@ def compute_episode_metrics(
     mission_score = 0.0
     if mission_type == "pharma_delivery":
         delivery_step = task_events[0]["step_idx"] if task_events else max_steps
-        mission_score = medication_efficacy(delivery_step, max_steps)
+        mission_score = medication_efficacy(
+            delivery_step, decay_horizon=decay_horizon, max_steps=max_steps
+        )
     elif mission_type == "urban_rescue":
-        mission_score = triage_value(task_events, max_steps)
+        mission_score = triage_value(
+            task_events, max_steps=max_steps, kappa=kappa, lambda_scale=lambda_scale
+        )
     elif mission_type == "fire_surveillance":
-        mission_score = surveillance_value(task_events, max_steps=max_steps)
+        mission_score = surveillance_value(
+            task_events, decay_horizon=decay_horizon, max_steps=max_steps
+        )
 
     return {
         "scenario_id": scenario_id,

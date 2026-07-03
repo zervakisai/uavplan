@@ -37,6 +37,8 @@ class AggressiveReplanPlanner(PlannerBase):
         self._cooldown = 3
         # Pre-compute static mask once (avoids recomputing heightmap > 0 every call)
         self._static_mask = (heightmap > 0) | no_fly
+        # Unified risk coefficient (config.risk_rho overrides β=0.5 default)
+        self._rho = getattr(config, "risk_rho", None)
 
         # Tracking
         self._last_mask_hash: str = ""
@@ -56,9 +58,10 @@ class AggressiveReplanPlanner(PlannerBase):
         Uses cached blocking mask from update() to avoid recomputation.
         Applies risk coefficient β=0.5 (risk-tolerant).
         """
+        coeff = self._rho if self._rho is not None else _RISK_BETA
         weighted = None
         if cost_map is not None:
-            weighted = (1.0 + _RISK_BETA * cost_map).astype(np.float32)
+            weighted = (1.0 + coeff * cost_map).astype(np.float32)
 
         if self._cached_mask is not None:
             effective_height = self._heightmap.copy()

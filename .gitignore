@@ -39,3 +39,13 @@ tools/osm_pipeline/__pycache__/
 
 # Fast-dev benchmark runs (ephemeral, not paper results)
 results/paper_fast_dev/
+
+# Local manuscript drafts & working docs (not part of the code/data repo)
+/UAV_*
+/Konstantinos_Zervakis_CV_ML_Engineer.docx
+/Zervakis_FLARE_Drones_tracked.docx
+/UAV_Summary_2page_revised.docx
+/UAV_figures_moved.docx
+/revision/
+/docs/plans/
+/paper/mdpi/UAV_final_*.docx

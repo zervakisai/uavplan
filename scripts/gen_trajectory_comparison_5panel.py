@@ -201,8 +201,8 @@ def main() -> None:
 
     # --- Step 4: Create 3-panel figure (key contrast) ---
     PANEL_PLANNERS = ["astar", "aggressive_replan", "periodic_replan"]
-    fig, axes = plt.subplots(1, 3, figsize=(7.16, 2.2))
-    fig.subplots_adjust(wspace=0.05)
+    fig, axes = plt.subplots(1, 3, figsize=(7.16, 2.4))
+    fig.subplots_adjust(wspace=0.05, top=0.78)
 
     for ax, pid in zip(axes, PANEL_PLANNERS):
         ax.imshow(
@@ -262,7 +262,7 @@ def main() -> None:
         ax.axis("off")
 
     fig.suptitle(f"Three planners, same wildfire (seed {SEED})",
-                 fontsize=8, fontweight="normal", color="black")
+                 fontsize=8, fontweight="normal", color="black", y=0.99)
 
     _save(fig, "trajectory_comparison_5panel")
 
