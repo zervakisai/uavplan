@@ -37,7 +37,7 @@ import time
 
 OUTPUT_DIR = "outputs/rho_sweep"
 ERROR_LOG = os.path.join(OUTPUT_DIR, "errors.log")
-MAX_WORKERS = 6
+MAX_WORKERS = 7
 
 SWEEP_PLANNERS = ["periodic_replan", "aggressive_replan", "incremental_astar", "apf"]
 BASELINE_PLANNERS = ["astar", "periodic_replan", "aggressive_replan",
